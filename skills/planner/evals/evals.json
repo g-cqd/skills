@@ -1,0 +1,71 @@
+{
+  "skill_name": "planner",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Plan the migration of our app from CocoaPods to Swift Package Manager across 14 modules, with rollback safety.",
+      "expected_output": "A phased, dependency-ordered migration plan with validation checkpoints, produced via the planner skill (project/execution mode).",
+      "expectations": [
+        "The planner skill was activated",
+        "The output contains ordered phases with validation gates",
+        "Risks and rollback strategy are explicitly listed"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Decompose 'add offline support to the notes feature' into atomic tasks I can hand to three engineers.",
+      "expected_output": "Task-mode decomposition into independent, atomic tasks with clear acceptance criteria.",
+      "expectations": [
+        "The planner skill was activated",
+        "Each task is independently completable and testable",
+        "Dependencies between tasks are stated"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Formulate an execution contract for a security audit of our payment module.",
+      "expected_output": "A typed XML execution request based on the security-audit template.",
+      "expectations": [
+        "The planner skill was activated",
+        "Output references or instantiates the security-audit execution template",
+        "Contract includes gates, validation cadence, and report format"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Orchestrate parallel agents to refactor the networking layer while another agent updates its tests.",
+      "expected_output": "Orchestration-mode plan with phase DAG and lock/log protocol.",
+      "expectations": [
+        "The planner skill was activated",
+        "Plan defines phases that can run in parallel and their synchronization points"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "What's the difference between a Task and a TaskGroup in Swift?",
+      "expected_output": "A direct factual answer about Swift concurrency, no planning workflow.",
+      "expectations": [
+        "The planner skill was NOT activated",
+        "The swift skill (concurrency) is the relevant knowledge source"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Rename this variable from userId to accountId.",
+      "expected_output": "A direct one-line edit with no plan artifacts.",
+      "expectations": [
+        "The planner skill was NOT activated",
+        "No plan document or task list is produced for a trivial edit"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Write a PR description for the change I just made.",
+      "expected_output": "PR documentation produced by the work-docs skill.",
+      "expectations": [
+        "The planner skill was NOT activated",
+        "The work-docs skill was activated"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+<request type="review">
+  <scope>
+    <target>$TARGET</target>
+    <depth level="$DEPTH" />
+  </scope>
+
+  <sub-task type="audit" target="code" />
+  <sub-task type="audit" target="meta-code" />
+  <sub-task type="audit" target="test-coverage" />
+
+  <criterias for="code,meta-code,test-coverage">
+    <criteria name="performance" />
+    <criteria name="security" />
+    <criteria name="safety" />
+    <criteria name="concurrency_safety" />
+    <criteria name="error_handling" />
+    <criteria name="api_design" />
+    <criteria name="code_practices" />
+    <criteria name="code_quality" />
+    <criteria name="consistency" />
+    <criteria name="documentation" />
+    <criteria name="test_coverage" />
+    <criteria name="holes_coverage" />
+    <criteria name="gaps_coverage" />
+    <criteria name="edge_cases_coverage" />
+  </criterias>
+
+  <meta-criterias for="code,meta-code">
+    <match target="comments:documentation:code" />
+    <match target="test:fixtures:integration:unit" />
+    <match target="naming:conventions:consistency" />
+  </meta-criterias>
+
+  <report>
+    <destination path="./review.$AIPROVIDER-$AIPROVIDER_MODEL.yml" aiprovider="infer-from-chat-session" aiprovider-model="infer-from-chat-session" />
+    <requirement type="schema" format="yaml" strict="true">
+      <top-level required="meta,scorecard,findings,meta_code_alignment,test_gaps,improvement_plan,summary" />
+      <yaml-schema><![CDATA[
+meta:
+  project: string
+  type: string
+  language: string
+  language_version: string
+  language_mode: string
+  platforms: [string]
+  files: { source: integer, test: integer, loc: string|integer }
+  scope: { audits: [string], criteria: [string], meta_criteria: [string] }
+  auditors: [{ pass: string, model: string }]
+  skills: [string]
+  tests: { command: string, result: string, total: integer, suites: [{ name: string, count: integer }] }
+  coverage:
+    production: { covered: integer, total: integer, pct: number }
+    with_stubs: { covered: integer, total: integer, pct: number }
+    lowest: [{ file: string, pct: number, lines: string }]
+  well_covered: [string]
+  traceability: string
+scorecard:
+  performance: string
+  security: string
+  safety: string
+  concurrency: string
+  error_handling: string
+  api_design: string
+  code_practices: string
+  code_quality: string
+  consistency: string
+  documentation: string
+  naming: string
+  test_coverage: string
+  platform: string
+  overall: string
+findings:
+  - id: string
+    severity: critical|high|medium|low|info
+    effort: quick|fast|moderate|long
+    area: [string]
+    title: string
+    location: [string]?
+    detail: string?
+    fix: string?
+    references: [string]?
+meta_code_alignment:
+  comments_docs_code: { rating: string, notes: [string] }
+  test_fixtures_integration_unit: { rating: string, notes: [string] }
+  naming_conventions: { rating: string, notes: [string] }
+test_gaps:
+  critical: { effort: string, items: [object] }
+  high: { effort: string, items: [object] }
+  medium: { effort: string, items: [object] }
+  low: { effort: string, items: [object] }
+  edge_cases: { effort: string, items: [string] }
+improvement_plan:
+  - phase: integer
+    priority: string
+    effort: string
+    goal: string
+    items: [object]
+    dependencies: [integer]?
+summary: string
+]]></yaml-schema>
+    </requirement>
+    <appendix id="a0" content="improvement plan" role="proposal" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

@@ -1,0 +1,47 @@
+<request type="test-coverage">
+  <source path="./review.*.yml" when="available">
+    <section name="findings" />
+    <section name="test_gaps" />
+    <section name="improvement_plan" />
+  </source>
+
+  <goal>Increase test coverage, close gaps, improve test coherency, and add edge-case coverage.</goal>
+
+  <scope>
+    <include targets="critical-paths,changed-code,high-risk-modules" />
+    <resolve-refs from="review.*.yml" when="available" />
+    <strategy policy="risk-first-then-breadth" />
+  </scope>
+
+  <execution>
+    <order strategy="sequential-by-priority,item-safe-concurrency" />
+    <implementation policy="minimal-safe-change" />
+    <testing policy="add-or-update-tests-for-each-fix" />
+    <validation require="build,test,coverage-regression-check" cadence="per-phase" />
+    <traceability require="item,ref-or-action,status,changeset" />
+  </execution>
+
+  <coverage-targets>
+    <target name="overall" policy="non-regression" />
+    <target name="changed-files" minimum="90%" />
+    <target name="critical-paths" minimum="100%" />
+    <target name="edge-cases" require="boundaries,empty-null,error-paths,state-transitions,concurrency" />
+  </coverage-targets>
+
+  <quality>
+    <require name="test-suite-coherency" />
+    <require name="naming-consistency" />
+    <require name="fixture-consistency" />
+    <require name="no-flaky-tests" />
+    <require name="deterministic-timing" note="use manual clocks, not real delays" />
+  </quality>
+
+  <report>
+    <destination path="./coverage.execution.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="completed,deferred,blocked,coverage-before-after,mutation-resistance,risks,next-steps" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

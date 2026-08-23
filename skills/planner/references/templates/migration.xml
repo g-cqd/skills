@@ -1,0 +1,179 @@
+<project-plan context="migration" tailoring="high-dependency,phased-predictive">
+  <initiative-brief fill="required">
+    <name>$PROJECT_NAME</name>
+    <migration-scope>
+      <from>$CURRENT_STATE</from>
+      <to>$TARGET_STATE</to>
+      <affected-systems>$AFFECTED_SYSTEMS</affected-systems>
+    </migration-scope>
+    <problem-statement>$PROBLEM_STATEMENT</problem-statement>
+    <desired-outcome>$DESIRED_OUTCOME</desired-outcome>
+    <success-metrics>
+      <metric id="SM-01" baseline="$BASELINE" target="$TARGET">$METRIC_DESCRIPTION</metric>
+      <metric id="SM-02" baseline="current" target="zero">Migration-related incidents in production</metric>
+    </success-metrics>
+    <constraints>
+      <item id="C-01">Zero downtime / minimal service disruption during cutover</item>
+      <item id="C-02">$CONSTRAINT</item>
+    </constraints>
+    <non-goals>
+      <item id="NG-01">Feature additions during migration (scope hammer)</item>
+      <item id="NG-02">$NON_GOAL</item>
+    </non-goals>
+    <primary-risks>
+      <risk id="R-01" category="data-integrity" likelihood="medium" impact="critical">Data loss or corruption during migration</risk>
+      <risk id="R-02" category="dependency" likelihood="high" impact="high">Downstream systems break on interface changes</risk>
+      <risk id="R-03" category="$CATEGORY" likelihood="$LIKELIHOOD" impact="$IMPACT">$RISK_DESCRIPTION</risk>
+    </primary-risks>
+    <rollback-strategy required="true">$ROLLBACK_APPROACH</rollback-strategy>
+    <decision-owner>$DECISION_OWNER</decision-owner>
+  </initiative-brief>
+
+  <context-assessment>
+    <uncertainty level="medium" evidence="[E-09]">Migration target is known but hidden coupling and edge cases create execution uncertainty. Flyvbjerg: IT projects average 27% cost overrun.</uncertainty>
+    <dependency-density level="high" evidence="[E-17]">Migrations touch cross-cutting concerns. Every integration point is a risk surface.</dependency-density>
+    <regulatory-burden level="$REGULATORY_LEVEL" evidence="[E-29]" />
+    <work-arrival mode="batched" evidence="[E-27]">Migration work is planned in waves. Rolling-wave planning handles discovery of hidden complexity.</work-arrival>
+  </context-assessment>
+
+  <methodology-selection evidence="[E-23][E-26][E-27]">
+    <primary approach="phased-predictive-with-flow-execution" rationale="Migration requires upfront dependency mapping and sequencing, with iterative execution within each phase.">
+      <planning mode="rolling-wave" evidence="[E-27]">Detail current phase; keep future phases higher-level. Revise as hidden complexity surfaces.</planning>
+      <execution mode="kanban-within-phase" evidence="[E-25]">WIP-limited flow execution within each migration phase.</execution>
+      <gates mode="risk-checkpoints" evidence="[E-29]">Go/no-go decisions at phase boundaries based on data, not deadlines.</gates>
+    </primary>
+    <anti-patterns warn="[AP-05][AP-08][AP-04]">
+      <item ref="AP-05">Late integration: migrate and verify in small increments. No big-bang cutover if avoidable.</item>
+      <item ref="AP-08">Estimate-as-promise: use probabilistic forecasting. Migrations always surface surprises.</item>
+      <item ref="AP-04">Over-commitment: limit parallel migration streams. Each stream needs verification capacity.</item>
+    </anti-patterns>
+  </methodology-selection>
+
+  <research evidence="[E-16]">
+    <changelog from="$FROM_VERSION" to="$TO_VERSION" />
+    <breaking-changes required="true" />
+    <deprecations required="true" />
+    <migration-guides check="official-sources" />
+    <output path="./migration.research.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+  </research>
+
+  <decomposition evidence="[E-13][E-14][E-15]">
+    <goals>
+      <goal id="G-01" timebox="$TIMEBOX">Complete migration from $CURRENT_STATE to $TARGET_STATE with zero data loss and minimal disruption.</goal>
+    </goals>
+
+    <migration-waves strategy="risk-first-then-breadth">
+      <wave id="W-01" name="pilot" scope="lowest-risk-subset" purpose="validate-migration-path">
+        <items>
+          <item id="MW-01">$PILOT_COMPONENT</item>
+        </items>
+        <gate criteria="pilot-success-metrics-met,no-regressions,rollback-tested" />
+      </wave>
+      <wave id="W-02" name="core" scope="highest-value-components" purpose="migrate-critical-path">
+        <items>
+          <item id="MW-02">$CORE_COMPONENT</item>
+        </items>
+        <gate criteria="core-functionality-verified,performance-baseline-met" />
+      </wave>
+      <wave id="W-03" name="tail" scope="remaining-components" purpose="complete-migration">
+        <items>
+          <item id="MW-03">$REMAINING_COMPONENT</item>
+        </items>
+        <gate criteria="all-systems-migrated,decommission-ready" />
+      </wave>
+    </migration-waves>
+
+    <features slicing="vertical-per-migration-unit" evidence="[E-13]">
+      <feature id="F-01" wave-ref="W-01" slice-type="migrate-verify-rollback">
+        <name>$MIGRATION_UNIT</name>
+        <acceptance-criteria>
+          <scenario id="AC-01">Migrated system produces identical outputs for same inputs</scenario>
+          <scenario id="AC-02">Rollback completes within $ROLLBACK_SLA</scenario>
+          <scenario id="AC-03">Performance within $PERF_THRESHOLD of baseline</scenario>
+        </acceptance-criteria>
+      </feature>
+    </features>
+
+    <tasks-per-migration-unit>
+      <task id="T-01" type="analysis">Map interfaces and data flows for migration unit</task>
+      <task id="T-02" type="preparation">Create migration scripts with idempotent execution</task>
+      <task id="T-03" type="testing">Build verification suite (output comparison, performance, data integrity)</task>
+      <task id="T-04" type="execution">Execute migration in staging</task>
+      <task id="T-05" type="verification">Run full verification suite</task>
+      <task id="T-06" type="cutover">Execute production migration with monitoring</task>
+      <task id="T-07" type="validation">Post-migration validation and monitoring period</task>
+      <task id="T-08" type="cleanup">Decommission old system components (after soak period)</task>
+    </tasks-per-migration-unit>
+  </decomposition>
+
+  <dependency-management evidence="[E-17][E-18]">
+    <strategy policy="map-all-interfaces-first">Map every integration point. Define contract compatibility requirements. Build contract tests before migrating.</strategy>
+    <dependencies>
+      <dependency id="D-01" type="$TYPE" owner="$OWNER" interface="$CONTRACT" needed-by="$WAVE" risk-if-late="$RISK" mitigation="$MITIGATION" />
+    </dependencies>
+    <integration evidence="[E-04]">
+      <pattern name="strangler-fig" when="replacing-system-incrementally" />
+      <pattern name="parallel-run" when="verifying-equivalence" />
+      <pattern name="trunk-based" merge-frequency="daily" />
+    </integration>
+  </dependency-management>
+
+  <team-structure evidence="[E-20][E-22]">
+    <recommended-size range="$RANGE" evidence="[E-20]" />
+    <topology type="stream-aligned-per-wave" evidence="[E-22]">Teams own complete migration waves. Platform team provides shared migration tooling.</topology>
+    <decision-rights framework="RACI" evidence="[E-29]">
+      <role area="go-no-go-cutover" responsible="$R" accountable="$A" consulted="$C" informed="$I" />
+      <role area="rollback-decision" responsible="$R" accountable="$A" consulted="$C" informed="$I" />
+    </decision-rights>
+  </team-structure>
+
+  <estimation evidence="[E-09][E-10][E-11]">
+    <approach primary="reference-class-plus-monte-carlo" evidence="[E-10][E-11]">Anchor to actual migration durations from comparable past efforts. Run Monte Carlo on per-wave throughput.</approach>
+    <buffer policy="explicit-contingency" evidence="[E-09]">Add 25-40% contingency for hidden coupling. Migrations always surface surprises.</buffer>
+  </estimation>
+
+  <risk-management evidence="[E-28]">
+    <risk-register>
+      <risk id="RR-01" category="data-integrity" likelihood="medium" impact="critical" early-indicator="verification-suite-failures" mitigation="idempotent-scripts,parallel-run,rollback-plan" owner="$OWNER" review-cadence="daily-during-cutover" />
+      <risk id="RR-02" category="hidden-coupling" likelihood="high" impact="medium" early-indicator="unexpected-test-failures-in-unrelated-modules" mitigation="interface-contract-tests,incremental-migration" owner="$OWNER" review-cadence="per-wave" />
+      <risk id="RR-03" category="performance-regression" likelihood="medium" impact="high" early-indicator="latency-above-baseline" mitigation="performance-benchmarks-per-wave,rollback-plan" owner="$OWNER" review-cadence="per-wave" />
+    </risk-register>
+  </risk-management>
+
+  <metrics evidence="[E-30]">
+    <migration-specific>
+      <metric name="migration-units-completed" purpose="progress" />
+      <metric name="verification-pass-rate" purpose="quality" />
+      <metric name="rollback-count" purpose="stability" />
+      <metric name="performance-delta-vs-baseline" purpose="regression-detection" />
+    </migration-specific>
+    <flow-metrics evidence="[E-01]">
+      <metric name="cycle-time-per-migration-unit" /><metric name="wip" />
+    </flow-metrics>
+  </metrics>
+
+  <roadmap>
+    <phase id="P-00" name="research-and-mapping" duration="$DURATION" gate="all-interfaces-mapped">
+      <goal>Complete interface inventory. Verification suite designed. Migration tooling ready.</goal>
+    </phase>
+    <phase id="P-01" name="pilot-wave" duration="$DURATION" gate="pilot-success-verified">
+      <goal>Migrate pilot subset. Validate approach. Refine estimates.</goal>
+    </phase>
+    <phase id="P-02" name="core-migration" duration="$DURATION" gate="core-systems-migrated">
+      <goal>Migrate critical-path systems. Parallel run where needed.</goal>
+    </phase>
+    <phase id="P-03" name="tail-and-decommission" duration="$DURATION" gate="migration-complete">
+      <goal>Migrate remaining systems. Decommission old infrastructure after soak period.</goal>
+    </phase>
+    <review-cadence evidence="[E-33]">
+      <review type="wave-gate" frequency="per-wave" />
+      <review type="retrospective" frequency="per-wave" />
+    </review-cadence>
+  </roadmap>
+
+  <report>
+    <destination path="./project-plan.$PROJECT_NAME.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="initiative-brief,context-assessment,research,decomposition,dependencies,team-structure,estimation,risks,metrics,roadmap" />
+    <format>yaml</format>
+  </report>
+</project-plan>

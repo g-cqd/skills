@@ -1,0 +1,42 @@
+<request type="dependency-update">
+  <goal>Update $DEPENDENCY from $FROM_VERSION to $TO_VERSION</goal>
+
+  <scope>
+    <dependency name="$DEPENDENCY" />
+    <from version="$FROM_VERSION" />
+    <to version="$TO_VERSION" />
+    <package-manager>$PACKAGE_MANAGER</package-manager>
+    <affected-modules>$AFFECTED_MODULES</affected-modules>
+  </scope>
+
+  <research>
+    <changelog from="$FROM_VERSION" to="$TO_VERSION" />
+    <breaking-changes required="true" />
+    <security-advisories required="true" />
+    <transitive-dependencies check="version-conflicts,compatibility" />
+    <verify policy="official-sources-only" />
+  </research>
+
+  <discovery>
+    <study target="codebase" include="import-sites,api-usage,configuration,wrapper-layers" />
+    <impact-analysis required="true" />
+  </discovery>
+
+  <execution>
+    <order strategy="update-manifest,resolve-deps,fix-breaking,verify" />
+    <implementation policy="minimal-safe-change" />
+    <testing policy="verify-existing-tests-pass" />
+    <validation require="build,test,integration-test" cadence="post-update" />
+    <traceability require="api-changes,migration-steps,status" />
+    <rollback policy="revert-manifest-on-failure" />
+  </execution>
+
+  <report>
+    <destination path="./dependency-update.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="changes-required,breaking-api-fixes,security-fixes,transitive-changes,risks" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

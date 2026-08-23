@@ -1,0 +1,176 @@
+<project-plan context="scaling" tailoring="coordination-heavy,multi-team">
+  <initiative-brief fill="required">
+    <name>$PROJECT_NAME</name>
+    <scaling-scope>
+      <current-state teams="$CURRENT_TEAM_COUNT" people="$CURRENT_PEOPLE_COUNT">$CURRENT_DESCRIPTION</current-state>
+      <target-state teams="$TARGET_TEAM_COUNT" people="$TARGET_PEOPLE_COUNT">$TARGET_DESCRIPTION</target-state>
+    </scaling-scope>
+    <problem-statement>$PROBLEM_STATEMENT</problem-statement>
+    <desired-outcome>$DESIRED_OUTCOME</desired-outcome>
+    <success-metrics>
+      <metric id="SM-01" baseline="$BASELINE" target="$TARGET">$DELIVERY_PERFORMANCE_METRIC</metric>
+      <metric id="SM-02" baseline="$BASELINE" target="$TARGET">$COORDINATION_COST_METRIC</metric>
+      <metric id="SM-03" baseline="$BASELINE" target="$TARGET">$TEAM_AUTONOMY_METRIC</metric>
+    </success-metrics>
+    <constraints>
+      <item id="C-01">$CONSTRAINT</item>
+    </constraints>
+    <non-goals>
+      <item id="NG-01">Adopting a named scaling framework wholesale [E-23]</item>
+      <item id="NG-02">$NON_GOAL</item>
+    </non-goals>
+    <primary-risks>
+      <risk id="R-01" category="coordination-overhead" likelihood="high" impact="high">Scaling adds communication paths (N(N-1)/2) faster than capability</risk>
+      <risk id="R-02" category="conways-law" likelihood="high" impact="high">Team structure misaligned with desired architecture</risk>
+    </primary-risks>
+    <decision-owner>$DECISION_OWNER</decision-owner>
+  </initiative-brief>
+
+  <context-assessment>
+    <uncertainty level="medium" evidence="[E-23]">Scaling paths are context-dependent. Framework label is not the dominant predictor; execution context matters.</uncertainty>
+    <dependency-density level="high" evidence="[E-17]">Multi-team work multiplies dependency surfaces. Conway's Law is a force of nature, not advice.</dependency-density>
+    <regulatory-burden level="$REGULATORY_LEVEL" />
+    <work-arrival mode="$ARRIVAL_MODE" />
+  </context-assessment>
+
+  <methodology-selection evidence="[E-23][E-26]">
+    <primary approach="context-driven-hybrid-per-team" rationale="Scaling framework choice has negligible practical effect size. Local context, experience, and execution quality dominate.">
+      <team-level evidence="[E-24][E-25]">Each team chooses cadence (Scrum) or flow (Kanban) based on their work arrival mode and preference.</team-level>
+      <cross-team evidence="[E-29]">Lightweight alignment through shared outcomes (OKR-like), dependency management, and integration cadence.</cross-team>
+      <governance evidence="[E-29]">Quarterly/half-year outcomes to align. Execution stays at team level through WIP limits and small increments.</governance>
+    </primary>
+    <scaling-framework-guidance evidence="[E-23]">
+      <principle>Scaling frameworks are most useful when they standardize interfaces and decision rights, create reusable patterns for multi-team cadence, and reduce coupling through architecture investment.</principle>
+      <warning>Empirical comparisons suggest scaling brand choice has negligible practical effect size. Tailor locally rather than adopting wholesale.</warning>
+    </scaling-framework-guidance>
+    <anti-patterns warn="[AP-09][AP-06][AP-10]">
+      <item ref="AP-09">Framework orthodoxy: do not adopt SAFe/LeSS/Scrum-of-Scrums wholesale. Tailoring matters more than brand.</item>
+      <item ref="AP-06">Meeting overload: scaling multiplies rituals. Each meeting must demonstrably improve coordination or be eliminated.</item>
+      <item ref="AP-10">Leadership disengagement: only 15% of leaders actively participate — this is the top failure predictor. Leaders must engage.</item>
+    </anti-patterns>
+  </methodology-selection>
+
+  <organizational-design evidence="[E-17][E-20][E-21][E-22]">
+    <conways-law evidence="[E-17]">
+      <principle>Organization structure will mirror in architecture. Design teams to promote the desired architecture (Inverse Conway Maneuver).</principle>
+      <assessment>Map current team structure against desired system architecture. Identify misalignments.</assessment>
+    </conways-law>
+
+    <team-topologies evidence="[E-22]">
+      <team id="ST-01" type="stream-aligned" purpose="$VALUE_STREAM" size="4-7">
+        <value-stream>$VALUE_STREAM_DESCRIPTION</value-stream>
+        <capabilities>Cross-functional, end-to-end ownership</capabilities>
+      </team>
+      <team id="PT-01" type="platform" purpose="$PLATFORM_CAPABILITY" size="4-7" when="shared-capabilities-cause-repeated-dependencies">
+        <provides>$SELF_SERVICE_CAPABILITY</provides>
+        <interaction-mode>x-as-a-service</interaction-mode>
+      </team>
+      <team id="ET-01" type="enabling" purpose="$CAPABILITY_GAP" size="2-4" when="teams-need-temporary-coaching">
+        <provides>$COACHING_AREA</provides>
+        <interaction-mode>facilitating</interaction-mode>
+        <duration>weeks, not permanent</duration>
+      </team>
+      <team id="CS-01" type="complicated-subsystem" purpose="$HIGH_COMPLEXITY_AREA" size="3-6" when="cognitive-load-exceeds-stream-aligned-capacity">
+        <provides>$REUSABLE_COMPONENT</provides>
+        <interaction-mode>x-as-a-service</interaction-mode>
+      </team>
+    </team-topologies>
+
+    <communication-paths evidence="[E-20]">
+      <warning>Communication paths: N(N-1)/2. 6 people = 15 paths, 10 people = 45 paths, 20 people = 190 paths. Keep teams small.</warning>
+      <max-team-size recommended="7" hard-limit="9" evidence="[E-20]">Teams above 9 are 3-4x more expensive with 2-3x more defects.</max-team-size>
+    </communication-paths>
+  </organizational-design>
+
+  <decomposition evidence="[E-14]">
+    <goals>
+      <goal id="G-01">$GOAL_DESCRIPTION</goal>
+    </goals>
+
+    <outcomes-per-team>
+      <outcome id="O-01" team-ref="ST-01" goal-ref="G-01">$TEAM_OUTCOME</outcome>
+    </outcomes-per-team>
+
+    <cross-team-dependencies evidence="[E-17]">
+      <dependency id="CTD-01" from-team="$TEAM_A" to-team="$TEAM_B" type="$TYPE" interface="$CONTRACT" mitigation="$MITIGATION" />
+    </cross-team-dependencies>
+
+    <alignment-mechanisms evidence="[E-29]">
+      <mechanism name="shared-outcomes" frequency="quarterly">Teams align to outcomes, not tasks. Each team owns their decomposition.</mechanism>
+      <mechanism name="dependency-review" frequency="bi-weekly">Cross-team dependency map review. Focus on reducing, not just tracking.</mechanism>
+      <mechanism name="integration-cadence" frequency="daily" evidence="[E-04]">All teams merge to shared trunk daily. CI validates cross-team integration.</mechanism>
+    </alignment-mechanisms>
+  </decomposition>
+
+  <dependency-management evidence="[E-17][E-18]">
+    <strategy policy="reduce-coupling-invest-in-modularity" evidence="[E-18]">
+      <principle>Eliminate dependencies before tracking them. Architecture investment is cheaper than coordination overhead.</principle>
+      <actions>
+        <action>Modular boundaries with stable API contracts between teams</action>
+        <action>Platform team absorbs shared infrastructure dependencies</action>
+        <action>Enabling teams temporarily coach capability gaps instead of creating permanent dependencies</action>
+      </actions>
+    </strategy>
+    <integration evidence="[E-04]">
+      <pattern name="trunk-based" merge-frequency="daily" />
+      <pattern name="contract-testing" purpose="cross-team-interface-verification" />
+      <pattern name="feature-flags" evidence="[E-19]" purpose="decouple-deploy-from-release" />
+    </integration>
+  </dependency-management>
+
+  <estimation evidence="[E-09][E-10][E-11]">
+    <approach primary="per-team-throughput-aggregated" evidence="[E-11]">Each team forecasts from their own throughput data. Program-level forecast aggregates with dependency risk buffer.</approach>
+    <buffer policy="coordination-overhead" evidence="[E-17]">Add 15-25% coordination buffer per additional team involved in a shared outcome.</buffer>
+  </estimation>
+
+  <risk-management evidence="[E-28]">
+    <risk-register>
+      <risk id="RR-01" category="coordination-overhead" likelihood="high" impact="high" early-indicator="cycle-time-increasing,meetings-multiplying" mitigation="reduce-dependencies,protect-team-autonomy,eliminate-unnecessary-rituals" owner="$OWNER" review-cadence="monthly" />
+      <risk id="RR-02" category="conways-law-misalignment" likelihood="high" impact="high" early-indicator="teams-frequently-blocked-by-other-teams" mitigation="inverse-conway-maneuver,architecture-team-alignment-review" owner="$OWNER" review-cadence="quarterly" />
+      <risk id="RR-03" category="framework-theater" likelihood="medium" impact="medium" early-indicator="ceremonies-without-outcomes" mitigation="measure-flow-not-process-compliance" owner="$OWNER" review-cadence="quarterly" />
+    </risk-register>
+  </risk-management>
+
+  <metrics evidence="[E-30][E-31][E-32]">
+    <per-team evidence="[E-30]">
+      <metric name="dora-four-keys" /><metric name="cycle-time" /><metric name="wip" />
+    </per-team>
+    <cross-team>
+      <metric name="cross-team-dependency-count" purpose="coupling-indicator" />
+      <metric name="blocked-time-per-team" purpose="dependency-cost" />
+      <metric name="integration-failure-rate" purpose="interface-quality" />
+    </cross-team>
+    <organizational evidence="[E-31][E-32]">
+      <metric name="team-satisfaction" purpose="health" />
+      <metric name="cognitive-load-survey" purpose="team-capacity" />
+      <metric name="meeting-hours-per-week" purpose="coordination-tax" />
+    </organizational>
+  </metrics>
+
+  <roadmap>
+    <phase id="P-00" name="assess-and-design" duration="$DURATION" gate="team-topology-agreed">
+      <goal>Map current state. Identify Conway's Law misalignments. Design target team topology. Define interaction modes.</goal>
+    </phase>
+    <phase id="P-01" name="seed-teams" duration="$DURATION" gate="teams-formed-and-onboarded">
+      <goal>Form teams. Establish team-level delivery practices. Set up cross-team integration.</goal>
+    </phase>
+    <phase id="P-02" name="establish-flow" duration="$DURATION" gate="teams-delivering-independently">
+      <goal>Teams delivering autonomously. Cross-team dependencies actively reduced. Flow metrics trending positive.</goal>
+    </phase>
+    <phase id="P-03" name="optimize" duration="ongoing" gate="continuous-improvement">
+      <goal>Continuous topology evolution. Dependency reduction. Measurement-driven improvement.</goal>
+    </phase>
+    <review-cadence evidence="[E-33][E-34]">
+      <review type="cross-team-sync" frequency="weekly" duration="30min" purpose="dependency-and-blocker-resolution" />
+      <review type="program-review" frequency="monthly" purpose="outcome-alignment-and-dependency-reduction" />
+      <review type="topology-review" frequency="quarterly" purpose="team-structure-evolution" />
+      <review type="team-retrospective" frequency="per-iteration-per-team" />
+    </review-cadence>
+  </roadmap>
+
+  <report>
+    <destination path="./project-plan.$PROJECT_NAME.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="initiative-brief,context-assessment,organizational-design,decomposition,dependencies,estimation,risks,metrics,roadmap" />
+    <format>yaml</format>
+  </report>
+</project-plan>

@@ -1,0 +1,198 @@
+<project-plan context="regulated" tailoring="compliance-heavy,gate-driven">
+  <initiative-brief fill="required">
+    <name>$PROJECT_NAME</name>
+    <regulatory-context>
+      <standards>$APPLICABLE_STANDARDS</standards><!-- e.g., SOC2, HIPAA, PCI-DSS, DO-178C, ISO 27001, GDPR -->
+      <audit-requirements>$AUDIT_REQUIREMENTS</audit-requirements>
+      <evidence-requirements>$EVIDENCE_TYPES_NEEDED</evidence-requirements>
+    </regulatory-context>
+    <problem-statement>$PROBLEM_STATEMENT</problem-statement>
+    <target-users>$TARGET_USERS</target-users>
+    <desired-outcome>$DESIRED_OUTCOME</desired-outcome>
+    <success-metrics>
+      <metric id="SM-01" baseline="$BASELINE" target="$TARGET">$METRIC_DESCRIPTION</metric>
+      <metric id="SM-02" type="compliance">All required evidence artifacts produced and audit-ready</metric>
+    </success-metrics>
+    <constraints>
+      <item id="C-01">$REGULATORY_CONSTRAINT</item>
+      <item id="C-02">$CONSTRAINT</item>
+    </constraints>
+    <non-goals>
+      <item id="NG-01">$NON_GOAL</item>
+    </non-goals>
+    <primary-risks>
+      <risk id="R-01" category="compliance" likelihood="medium" impact="critical">Audit finding due to insufficient evidence trail</risk>
+      <risk id="R-02" category="$CATEGORY" likelihood="$LIKELIHOOD" impact="$IMPACT">$RISK_DESCRIPTION</risk>
+    </primary-risks>
+    <decision-owner>$DECISION_OWNER</decision-owner>
+  </initiative-brief>
+
+  <context-assessment>
+    <uncertainty level="$UNCERTAINTY_LEVEL" evidence="[E-07]" />
+    <dependency-density level="$DEPENDENCY_LEVEL" evidence="[E-17]" />
+    <regulatory-burden level="heavy" evidence="[E-29][E-26]">Compliance requirements demand traceability, evidence collection, and explicit gate approvals. Gates must control investment and risk, not micro-approve every scope change.</regulatory-burden>
+    <work-arrival mode="$ARRIVAL_MODE" />
+  </context-assessment>
+
+  <methodology-selection evidence="[E-23][E-26][E-29]">
+    <primary approach="hybrid-agile-plus-stage-gate" rationale="Iterative delivery with lightweight gates for compliance evidence. Gates are investment/risk decisions, not approval bottlenecks.">
+      <delivery mode="iterative-incremental" evidence="[E-24]">Short iterations with real DoD that includes compliance requirements.</delivery>
+      <governance mode="stage-gate-for-risk" evidence="[E-26][E-29]">
+        <gate-philosophy>Gates check: (1) Is the investment still justified? (2) Is compliance evidence sufficient? (3) Is risk acceptable? Gates do NOT micro-approve scope changes or delivery details.</gate-philosophy>
+      </governance>
+      <traceability mode="continuous" evidence="[E-05]">Evidence produced incrementally as part of DoD, not in a separate compliance phase.</traceability>
+    </primary>
+    <anti-patterns warn="[AP-02][AP-01][AP-07]">
+      <item ref="AP-02">Water-Scrum-Fall: layering Agile execution between waterfall planning and waterfall compliance review. Compliance evidence should be built incrementally, not in a final phase.</item>
+      <item ref="AP-01">Cargo-cult: regulated environments are especially vulnerable to ceremony-heavy, substance-light Agile. DoD must be real and include compliance requirements.</item>
+      <item ref="AP-07">Scope creep: regulated projects face pressure from both feature requests AND expanding compliance interpretation. Non-goals must cover both.</item>
+    </anti-patterns>
+  </methodology-selection>
+
+  <compliance-framework>
+    <evidence-types>
+      <evidence id="EV-01" type="$TYPE" standard-ref="$STANDARD" required-at="$GATE">$EVIDENCE_DESCRIPTION</evidence>
+    </evidence-types>
+    <traceability-matrix>
+      <trace requirement="$REQUIREMENT_ID" standard="$STANDARD" implementation="$FEATURE_REF" test="$TEST_REF" evidence="$EVIDENCE_REF" />
+    </traceability-matrix>
+    <gates>
+      <gate id="GATE-01" name="$GATE_NAME" phase-ref="$PHASE" decision="go|redirect|kill">
+        <required-evidence>
+          <item ref="EV-01" />
+        </required-evidence>
+        <decision-criteria>$CRITERIA</decision-criteria>
+        <decision-rights framework="RAPID" evidence="[E-29]">
+          <recommend>$R</recommend>
+          <agree-veto>$A</agree-veto>
+          <decide>$D</decide>
+          <inform>$I</inform>
+        </decision-rights>
+      </gate>
+    </gates>
+    <continuous-compliance evidence="[E-05]">
+      <principle>Compliance evidence is a Definition of Done item, not a phase. Every increment produces audit-ready evidence.</principle>
+      <automation>Automate evidence collection where possible: CI logs, test results, security scan reports, deployment records.</automation>
+    </continuous-compliance>
+  </compliance-framework>
+
+  <decomposition evidence="[E-13][E-14]">
+    <goals>
+      <goal id="G-01" timebox="$TIMEBOX">$GOAL_DESCRIPTION</goal>
+    </goals>
+
+    <outcomes>
+      <outcome id="O-01" goal-ref="G-01" metric-ref="SM-01">$OUTCOME_DESCRIPTION</outcome>
+    </outcomes>
+
+    <epics>
+      <epic id="EP-01" outcome-ref="O-01">
+        <name>$EPIC_NAME</name>
+        <compliance-requirements>$APPLICABLE_REQUIREMENTS</compliance-requirements>
+      </epic>
+    </epics>
+
+    <features slicing="vertical" evidence="[E-13]">
+      <feature id="F-01" epic-ref="EP-01">
+        <name>$FEATURE_NAME</name>
+        <acceptance-criteria format="examples-first">
+          <scenario id="AC-01" given="$GIVEN" when="$WHEN" then="$THEN" />
+        </acceptance-criteria>
+        <compliance-criteria>
+          <item standard="$STANDARD" requirement="$REQ_ID">$COMPLIANCE_CRITERION</item>
+        </compliance-criteria>
+      </feature>
+    </features>
+
+    <stories>
+      <story id="S-01" feature-ref="F-01" size="$SIZE_DAYS">
+        <description>$STORY_DESCRIPTION</description>
+        <evidence-produced>$EVIDENCE_TYPE</evidence-produced>
+      </story>
+    </stories>
+  </decomposition>
+
+  <dependency-management evidence="[E-17][E-18]">
+    <dependencies>
+      <dependency id="D-01" type="compliance" owner="$OWNER" interface="$CONTRACT" needed-by="$GATE" risk-if-late="$RISK" mitigation="$MITIGATION" />
+    </dependencies>
+    <integration evidence="[E-04]">
+      <pattern name="trunk-based" merge-frequency="daily" />
+      <ci-gates pre-merge="lint,build,test,security-scan,compliance-checks" />
+    </integration>
+  </dependency-management>
+
+  <team-structure evidence="[E-20][E-22]">
+    <topology evidence="[E-22]">
+      <stream-aligned purpose="delivery" size="4-7" />
+      <enabling purpose="compliance-coaching" interaction="facilitating" duration="temporary" when="team-needs-compliance-expertise" />
+    </topology>
+    <decision-rights framework="RAPID" evidence="[E-29]">
+      <role area="gate-decisions" recommend="$R" agree="$A" decide="$D" inform="$I" />
+      <role area="compliance-interpretation" recommend="$R" agree="$A" decide="$D" inform="$I" />
+      <role area="scope-changes" recommend="$R" agree="$A" decide="$D" inform="$I" />
+    </decision-rights>
+  </team-structure>
+
+  <estimation evidence="[E-09][E-10][E-11]">
+    <approach primary="reference-class-plus-monte-carlo" evidence="[E-10][E-11]">Regulated projects have high overrun rates. Anchor to actual durations from comparable regulated projects.</approach>
+    <buffer policy="compliance-overhead" evidence="[E-09]">Budget 20-35% for compliance evidence production, gate preparation, and audit response.</buffer>
+  </estimation>
+
+  <risk-management evidence="[E-28]">
+    <risk-register>
+      <risk id="RR-01" category="audit-finding" likelihood="medium" impact="critical" early-indicator="evidence-gaps-in-traceability-matrix" mitigation="continuous-compliance,automated-evidence-collection" owner="$OWNER" review-cadence="per-gate" />
+      <risk id="RR-02" category="gate-bottleneck" likelihood="high" impact="medium" early-indicator="gate-reviews-delayed,approvers-unavailable" mitigation="lightweight-gates,async-evidence-review,single-decider" owner="$OWNER" review-cadence="per-gate" />
+      <risk id="RR-03" category="compliance-scope-creep" likelihood="medium" impact="medium" early-indicator="new-compliance-requirements-discovered-mid-project" mitigation="early-compliance-mapping,explicit-scope-boundaries" owner="$OWNER" review-cadence="per-gate" />
+    </risk-register>
+  </risk-management>
+
+  <metrics evidence="[E-30]">
+    <delivery-metrics evidence="[E-30]">
+      <metric name="cycle-time" /><metric name="throughput" /><metric name="change-failure-rate" />
+    </delivery-metrics>
+    <compliance-metrics>
+      <metric name="evidence-completeness" purpose="audit-readiness" />
+      <metric name="traceability-coverage" purpose="requirement-to-test-linkage" />
+      <metric name="gate-pass-rate" purpose="quality-at-checkpoints" />
+      <metric name="time-in-gate-review" purpose="governance-efficiency" />
+    </compliance-metrics>
+  </metrics>
+
+  <roadmap>
+    <phase id="P-00" name="compliance-mapping" duration="$DURATION" gate="GATE-01:requirements-mapped">
+      <goal>Map all compliance requirements. Define evidence strategy. Establish traceability framework.</goal>
+    </phase>
+    <phase id="P-01" name="foundation" duration="$DURATION" gate="GATE-02:architecture-approved">
+      <goal>Architecture validated against compliance requirements. CI/CD with security gates. Evidence automation in place.</goal>
+    </phase>
+    <phase id="P-02" name="incremental-delivery" duration="$DURATION" gate="GATE-03:features-complete-evidence-ready">
+      <goal>Deliver features incrementally. Each increment produces compliance evidence. Traceability matrix kept current.</goal>
+    </phase>
+    <phase id="P-03" name="audit-readiness" duration="$DURATION" gate="GATE-04:audit-ready">
+      <goal>Evidence package complete. Traceability verified. Audit dry-run passed.</goal>
+    </phase>
+    <review-cadence evidence="[E-33]">
+      <review type="gate-review" frequency="per-phase" />
+      <review type="compliance-check" frequency="bi-weekly" />
+      <review type="demo" frequency="per-iteration" />
+      <review type="retrospective" frequency="per-iteration" />
+    </review-cadence>
+  </roadmap>
+
+  <definition-of-done evidence="[E-05]">
+    <item>Code reviewed</item>
+    <item>Tests passing (unit + integration)</item>
+    <item>Security scan passed</item>
+    <item>Compliance evidence produced and linked in traceability matrix</item>
+    <item>Acceptance criteria verified</item>
+    <item>Audit trail complete (who changed what, when, why)</item>
+    <item>Deployed to staging</item>
+  </definition-of-done>
+
+  <report>
+    <destination path="./project-plan.$PROJECT_NAME.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="initiative-brief,context-assessment,compliance-framework,decomposition,dependencies,team-structure,estimation,risks,metrics,roadmap,definition-of-done" />
+    <format>yaml</format>
+  </report>
+</project-plan>

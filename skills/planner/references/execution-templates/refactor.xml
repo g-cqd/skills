@@ -1,0 +1,48 @@
+<request type="refactor">
+  <goal>Refactor $TARGET for $OBJECTIVE</goal>
+
+  <scope>
+    <include targets="$FILES_OR_MODULES" />
+    <constraint policy="preserve-public-api" />
+    <constraint policy="preserve-behavior" />
+    <constraint policy="no-feature-additions" />
+  </scope>
+
+  <discovery>
+    <study target="$TARGET" include="callers,dependents,tests,conformances,protocols" />
+    <impact-analysis required="true" />
+    <characterization-tests required="true" note="add tests for current behavior before changing" />
+  </discovery>
+
+  <execution>
+    <order strategy="sequential-by-dependency" />
+    <implementation policy="minimal-safe-change" />
+    <testing policy="verify-behavior-preservation" />
+    <validation require="build,test,coverage-non-regression" cadence="per-step" />
+    <traceability require="step,change-reason,status,changeset" />
+    <rollback policy="revert-step-on-test-failure" />
+  </execution>
+
+  <linting>
+    <inputs>
+      <source-files required="true" pass-as-parameter="true">
+        <only-unstaged state="true" />
+        <only-staged state="true" />
+        <entire-codebase state="false" />
+        <exclude paths="**.build,**.swiftpm,**.xcodeproj,**/node_modules,**/.next,**/dist" />
+      </source-files>
+    </inputs>
+    <execution step="linting">
+      <gate id="approval" require="explicit-user-approval-before-writing" />
+    </execution>
+  </linting>
+
+  <report>
+    <destination path="./refactor.execution.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="changes,before-after,tests-updated,performance-comparison,risks,next-steps" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

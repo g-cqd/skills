@@ -1,0 +1,35 @@
+<request type="accessibility-audit">
+  <goal>Accessibility audit of $TARGET against $STANDARD</goal>
+
+  <scope>
+    <target>$TARGET</target>
+    <standard>$STANDARD</standard>
+    <platforms>$PLATFORMS</platforms>
+    <assistive-technologies include="voiceover,switch-control,voice-control,dynamic-type,reduce-motion" />
+  </scope>
+
+  <audit-areas>
+    <area name="semantic-structure" include="labels,hints,traits,headings,containers" />
+    <area name="navigation" include="focus-order,rotor-support,escape-gesture,tab-navigation" />
+    <area name="dynamic-type" include="text-scaling,layout-adaptation,truncation,minimum-sizes" />
+    <area name="color-contrast" include="wcag-aa,wcag-aaa,dark-mode,high-contrast" />
+    <area name="touch-targets" include="minimum-44pt,spacing,hit-testing" />
+    <area name="motion" include="reduce-motion,auto-play,parallax,spring-animations" />
+    <area name="media" include="captions,audio-descriptions,transcripts" />
+  </audit-areas>
+
+  <execution>
+    <order strategy="automated-scan-first,manual-review-second,fix-third" />
+    <testing policy="voiceover-walkthrough-per-screen" />
+    <validation require="all-critical-fixed,voiceover-navigable" cadence="post-fix" />
+  </execution>
+
+  <report>
+    <destination path="./accessibility-audit.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="findings-by-wcag-criterion,severity,screen-by-screen,remediation-plan,compliance-summary" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

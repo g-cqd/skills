@@ -1,0 +1,25 @@
+{
+  "_comment": "Model tier -> per-vendor model. This is the cost-control dial. Re-audit every few months: the best-value model in each class drifts, and stale mappings quietly eat the savings. Change ids here, re-run build.py, no agent edits needed.",
+  "_principle": "cheap fan-out, expensive judgment. Default agents to economy; spend reasoning only on ambiguous, cross-cutting, high-risk, or adversarial work where a wrong answer is expensive to detect.",
+  "economy": {
+    "_use": "mechanical, high-volume, low-risk: scanning, extraction, mapping, boilerplate, doc synthesis. Failures are cheap to retry.",
+    "claude": "haiku",
+    "codex": "gpt-5.6-luna",
+    "copilot": "claude-haiku-4-5",
+    "effort": "low"
+  },
+  "standard": {
+    "_use": "clear-scope local reasoning where tests or review catch most mistakes: implementing a specified change, writing tests.",
+    "claude": "sonnet",
+    "codex": "gpt-5.6-terra",
+    "copilot": "claude-sonnet-4-5",
+    "effort": "medium"
+  },
+  "reasoning": {
+    "_use": "ambiguous, cross-cutting, high-risk, long-horizon, or expensive-to-fix: architecture, adversarial review, security audit, planning and synthesis.",
+    "claude": "opus",
+    "codex": "gpt-5.6-sol",
+    "copilot": "claude-opus-4-6",
+    "effort": "high"
+  }
+}

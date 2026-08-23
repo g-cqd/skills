@@ -1,0 +1,49 @@
+<request type="migration">
+  <goal>Migrate $TARGET from $FROM_VERSION to $TO_VERSION</goal>
+
+  <scope>
+    <subject>$TARGET</subject>
+    <from version="$FROM_VERSION" />
+    <to version="$TO_VERSION" />
+    <include targets="$AFFECTED_MODULES" />
+  </scope>
+
+  <research>
+    <changelog from="$FROM_VERSION" to="$TO_VERSION" />
+    <breaking-changes required="true" />
+    <deprecations required="true" />
+    <new-apis scope="relevant-to-codebase" />
+    <behavioral-changes required="true" />
+    <verify policy="official-sources-only" />
+  </research>
+
+  <discovery>
+    <study target="codebase" include="usage-of-changed-apis,deprecated-calls,build-config,ci-config" />
+    <impact-analysis required="true" />
+    <dependency-graph required="true" note="map module migration order" />
+  </discovery>
+
+  <planning>
+    <phases strategy="leaf-modules-first,core-modules-last" />
+    <compatibility policy="maintain-backward-compat-during-migration" />
+    <feature-flags when="gradual-rollout-needed" />
+  </planning>
+
+  <execution>
+    <order strategy="sequential-by-dependency" />
+    <implementation policy="minimal-safe-change" />
+    <testing policy="verify-behavior-preservation" />
+    <validation require="build,test,coverage-non-regression" cadence="per-step" />
+    <traceability require="step,api-change,status,changeset" />
+    <rollback policy="revert-module-on-failure" />
+  </execution>
+
+  <report>
+    <destination path="./migration.execution.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="breaking-changes-resolved,deprecations-fixed,new-apis-adopted,behavioral-changes,risks,next-steps" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

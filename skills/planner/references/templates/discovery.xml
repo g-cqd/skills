@@ -1,0 +1,138 @@
+<project-plan context="discovery" tailoring="highest-uncertainty,learning-focused">
+  <initiative-brief fill="required">
+    <name>$PROJECT_NAME</name>
+    <discovery-type>$TYPE</discovery-type><!-- spike | prototype | market-validation | technical-feasibility | user-research -->
+    <question-to-answer fill="required">$CORE_QUESTION</question-to-answer>
+    <target-users>$TARGET_USERS</target-users>
+    <desired-outcome>A decision: proceed, pivot, or kill — backed by evidence.</desired-outcome>
+    <success-metrics>
+      <metric id="SM-01" type="learning">$LEARNING_METRIC</metric>
+      <metric id="SM-02" type="decision-quality">Clear go/no-go decision with supporting data</metric>
+    </success-metrics>
+    <constraints>
+      <item id="C-01">Timebox: $TOTAL_TIMEBOX (hard stop — discovery must produce a decision within this window)</item>
+      <item id="C-02">$CONSTRAINT</item>
+    </constraints>
+    <non-goals>
+      <item id="NG-01">Production-grade implementation (this is discovery, not delivery)</item>
+      <item id="NG-02">$NON_GOAL</item>
+    </non-goals>
+    <kill-criteria>
+      <item id="KC-01">$CONDITION_TO_KILL_INITIATIVE</item>
+    </kill-criteria>
+    <initial-hypothesis>$HYPOTHESIS</initial-hypothesis>
+    <decision-owner>$DECISION_OWNER</decision-owner>
+  </initiative-brief>
+
+  <context-assessment>
+    <uncertainty level="high" evidence="[E-07][E-16]">Discovery exists because uncertainty is too high for confident delivery planning. The goal is to reduce uncertainty to actionable levels.</uncertainty>
+    <dependency-density level="low" evidence="[E-18]">Discovery work should be decoupled from production systems. Use stubs, prototypes, and sandboxes.</dependency-density>
+    <regulatory-burden level="$REGULATORY_LEVEL" />
+    <work-arrival mode="batched" evidence="[E-24]">Discovery is timeboxed by design. Each experiment is a small batch.</work-arrival>
+  </context-assessment>
+
+  <methodology-selection evidence="[E-23]">
+    <primary approach="lean-startup-plus-spikes" rationale="Highest uncertainty demands build-measure-learn loops and timeboxed research.">
+      <discovery mode="assumption-testing" evidence="[E-16]">Test assumptions, not whole ideas. Most assumption tests run in 1-2 days, not weeks.</discovery>
+      <structure mode="opportunity-solution-tree">Desired outcome -> customer opportunities -> candidate solutions -> assumption tests.</structure>
+      <cadence mode="weekly-touchpoints">Weekly customer touchpoints by the team building the product.</cadence>
+    </primary>
+    <anti-patterns warn="[AP-03][AP-08][AP-09]">
+      <item ref="AP-03">Feature factory: discovery is about validated learning, not building. Kill ideas that don't validate.</item>
+      <item ref="AP-08">Estimate-as-promise: discovery timebox is a budget, not a delivery commitment.</item>
+      <item ref="AP-09">Framework orthodoxy: discovery is inherently messy. Don't over-process it.</item>
+    </anti-patterns>
+  </methodology-selection>
+
+  <decomposition evidence="[E-16][E-14]">
+    <assumptions-map>
+      <assumption id="A-01" type="desirability|feasibility|viability" risk="high|medium|low" fill="required">
+        <statement>$ASSUMPTION_STATEMENT</statement>
+        <test-method>$HOW_TO_TEST</test-method>
+        <success-criteria>$WHAT_CONSTITUTES_VALIDATION</success-criteria>
+        <timebox>$TIMEBOX_HOURS</timebox>
+      </assumption>
+    </assumptions-map>
+
+    <experiments strategy="riskiest-assumption-first">
+      <experiment id="EX-01" assumption-ref="A-01" timebox="$TIMEBOX">
+        <name>$EXPERIMENT_NAME</name>
+        <type>prototype|a-b-test|benchmark|usability-test|technical-spike|smoke-test</type>
+        <question>$SPECIFIC_QUESTION</question>
+        <method>$METHOD</method>
+        <output-format>$EXPECTED_DELIVERABLE</output-format>
+        <decision-criteria>
+          <proceed-if>$PROCEED_CONDITION</proceed-if>
+          <pivot-if>$PIVOT_CONDITION</pivot-if>
+          <kill-if>$KILL_CONDITION</kill-if>
+        </decision-criteria>
+      </experiment>
+    </experiments>
+
+    <spikes evidence="[E-16]">
+      <spike id="SP-01" timebox="$TIMEBOX_HOURS" experiment-ref="EX-01">
+        <question>$TECHNICAL_QUESTION</question>
+        <output>Decision document with benchmark data / prototype / proof-of-concept</output>
+        <follow-on>If validated: create delivery slices. If invalidated: explore alternatives or kill.</follow-on>
+      </spike>
+    </spikes>
+
+    <decision-points>
+      <decision id="DP-01" after="EX-01" options="proceed|pivot|kill" owner="$DECISION_OWNER">
+        <proceed-triggers>$PROCEED_EVIDENCE</proceed-triggers>
+        <pivot-triggers>$PIVOT_EVIDENCE</pivot-triggers>
+        <kill-triggers>$KILL_EVIDENCE</kill-triggers>
+      </decision>
+    </decision-points>
+  </decomposition>
+
+  <team-structure evidence="[E-20][E-21]">
+    <recommended-size range="2-4" evidence="[E-20]">Discovery teams are small and fast. Product trio: PM + Designer + Engineer.</recommended-size>
+    <topology type="discovery-trio" evidence="[E-21]">Engineers must participate in discovery. PMs must stay hands-on. No handoffs.</topology>
+  </team-structure>
+
+  <estimation evidence="[E-09]">
+    <approach primary="timebox-budget" evidence="[E-09]">Discovery is budgeted, not estimated. Set a timebox and work within it. Outcome is a decision, not a deliverable.</approach>
+    <total-budget>$TOTAL_TIMEBOX</total-budget>
+    <warning ref="[E-09]">Do not estimate discovery work with story points or detailed breakdowns. It is inherently uncertain — that is the point.</warning>
+  </estimation>
+
+  <risk-management evidence="[E-28]">
+    <risk-register>
+      <risk id="RR-01" category="scope-expansion" likelihood="high" impact="medium" early-indicator="discovery-scope-growing-beyond-timebox" mitigation="hard-timebox,kill-criteria,decision-checkpoints" owner="$OWNER" review-cadence="per-experiment" />
+      <risk id="RR-02" category="confirmation-bias" likelihood="high" impact="high" early-indicator="only-seeking-confirming-evidence" mitigation="pre-commit-kill-criteria,counterexample-requirement" owner="$OWNER" review-cadence="per-experiment" />
+      <risk id="RR-03" category="mvp-that-never-ships" likelihood="medium" impact="high" early-indicator="discovery-extending-indefinitely" mitigation="hard-timebox,decision-forcing-function" owner="$OWNER" review-cadence="weekly" />
+    </risk-register>
+  </risk-management>
+
+  <metrics>
+    <discovery-specific>
+      <metric name="assumptions-tested" purpose="learning-velocity" />
+      <metric name="assumptions-validated-vs-invalidated" purpose="hypothesis-health" />
+      <metric name="time-to-decision" purpose="discovery-efficiency" />
+      <metric name="experiments-killed" purpose="intellectual-honesty" />
+    </discovery-specific>
+  </metrics>
+
+  <roadmap>
+    <phase id="P-00" name="frame" duration="$DURATION" gate="assumptions-mapped">
+      <goal>Map assumptions. Prioritize by risk. Design first experiments.</goal>
+    </phase>
+    <phase id="P-01" name="test" duration="$DURATION" gate="riskiest-assumptions-tested">
+      <goal>Run experiments on riskiest assumptions. Collect evidence.</goal>
+    </phase>
+    <phase id="P-02" name="decide" duration="$DURATION" gate="go-no-go-decision-made">
+      <goal>Synthesize evidence. Make proceed/pivot/kill decision. If proceed: hand off to delivery planning (greenfield or brownfield context).</goal>
+    </phase>
+    <handoff-to-delivery when="proceed-decision">
+      <output>Validated assumptions, delivery scope recommendation, initial epic breakdown, and risk profile for delivery planning.</output>
+      <next-context>greenfield or brownfield depending on whether building new or extending existing.</next-context>
+    </handoff-to-delivery>
+  </roadmap>
+
+  <report>
+    <destination path="./discovery-plan.$PROJECT_NAME.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="initiative-brief,assumptions-map,experiments,decision-points,risks,metrics,roadmap" />
+    <format>yaml</format>
+  </report>
+</project-plan>
