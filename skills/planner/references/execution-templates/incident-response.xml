@@ -1,0 +1,52 @@
+<request type="incident-response">
+  <goal>Respond to incident: $INCIDENT_DESCRIPTION</goal>
+
+  <incident fill="required">
+    <description>$INCIDENT_DESCRIPTION</description>
+    <severity level="$SEVERITY" />
+    <impact>$USER_IMPACT</impact>
+    <detected-via>$DETECTION_SOURCE</detected-via>
+    <started>$INCIDENT_START</started>
+  </incident>
+
+  <triage>
+    <classify type="outage|degradation|data-issue|security|regression" />
+    <blast-radius assess="affected-users,affected-features,affected-regions" />
+    <escalation policy="page-oncall-if-critical,notify-team-if-high" />
+  </triage>
+
+  <diagnosis>
+    <investigate include="logs,metrics,traces,recent-deploys,config-changes,dependency-status" />
+    <timeline required="true" note="reconstruct sequence of events" />
+    <root-cause-analysis required="true" />
+  </diagnosis>
+
+  <mitigation>
+    <immediate include="rollback,feature-flag,hotfix,traffic-shift,cache-clear" />
+    <validation require="metrics-recovery,error-rate-drop,user-reports-stop" />
+    <communication include="status-page,stakeholder-update,user-notification" />
+  </mitigation>
+
+  <resolution>
+    <permanent-fix required="true" />
+    <testing policy="regression-test-for-root-cause" />
+    <validation require="build,test,canary-deploy,monitoring-stable" />
+  </resolution>
+
+  <postmortem>
+    <timeline required="true" />
+    <root-cause required="true" />
+    <contributing-factors required="true" />
+    <action-items required="true" include="prevention,detection,response-improvement" />
+    <blameless policy="focus-on-systems-not-people" />
+  </postmortem>
+
+  <report>
+    <destination path="./incident-response.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="timeline,root-cause,mitigation-steps,resolution,action-items,lessons-learned" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

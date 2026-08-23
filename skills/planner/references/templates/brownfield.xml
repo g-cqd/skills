@@ -1,0 +1,172 @@
+<project-plan context="brownfield" tailoring="moderate-uncertainty,dependency-aware">
+  <initiative-brief fill="required">
+    <name>$PROJECT_NAME</name>
+    <existing-system>$SYSTEM_DESCRIPTION</existing-system>
+    <problem-statement>$PROBLEM_STATEMENT</problem-statement>
+    <target-users>$TARGET_USERS</target-users>
+    <desired-outcome>$DESIRED_OUTCOME</desired-outcome>
+    <success-metrics>
+      <metric id="SM-01" baseline="$BASELINE" target="$TARGET">$METRIC_DESCRIPTION</metric>
+    </success-metrics>
+    <constraints>
+      <item id="C-01">$CONSTRAINT</item>
+      <item id="C-02">Preserve existing behavior for unaffected paths</item>
+    </constraints>
+    <non-goals>
+      <item id="NG-01">$NON_GOAL</item>
+    </non-goals>
+    <primary-risks>
+      <risk id="R-01" category="regression" likelihood="medium" impact="high">Changes break existing behavior</risk>
+      <risk id="R-02" category="$CATEGORY" likelihood="$LIKELIHOOD" impact="$IMPACT">$RISK_DESCRIPTION</risk>
+    </primary-risks>
+    <decision-owner>$DECISION_OWNER</decision-owner>
+  </initiative-brief>
+
+  <context-assessment>
+    <uncertainty level="medium" evidence="[E-07]">Existing system reduces solution uncertainty but introduces coupling and regression risk.</uncertainty>
+    <dependency-density level="medium-high" evidence="[E-17]">Brownfield work inherits existing architectural dependencies. Conway's Law effects are already in play.</dependency-density>
+    <regulatory-burden level="$REGULATORY_LEVEL" evidence="[E-29]" />
+    <work-arrival mode="$ARRIVAL_MODE" evidence="[E-25]" />
+  </context-assessment>
+
+  <codebase-study fill="required">
+    <study target="codebase" include="touchpoints,architecture,data-flow,tests,build-ci,tech-debt" evidence="[E-35]" />
+    <impact-analysis required="true" evidence="[E-17]">Map all callers, dependents, and integration points before planning changes.</impact-analysis>
+    <tech-debt-assessment evidence="[E-35]">Identify existing debt in affected areas. Budget explicit debt payoff if debt ratio &gt;5%.</tech-debt-assessment>
+  </codebase-study>
+
+  <methodology-selection evidence="[E-23][E-26]">
+    <primary approach="hybrid-cadence-plus-flow" rationale="Existing system provides baseline; iterate with cadence for coordination, flow for execution.">
+      <cadence mode="2-week-iterations" evidence="[E-24]">Sprint planning for coordination and scope negotiation.</cadence>
+      <flow mode="kanban-within-sprint" evidence="[E-25]">WIP limits within iterations. Pull-based execution.</flow>
+    </primary>
+    <team-size band="$TEAM_SIZE" evidence="[E-20]" />
+    <anti-patterns warn="[AP-01][AP-05][AP-07]">
+      <item ref="AP-01">Cargo-cult: do not just add ceremonies. Ensure real DoD, WIP control, and feedback loops.</item>
+      <item ref="AP-05">Late integration: merge to trunk daily. No long-lived feature branches. CI must gate every merge.</item>
+      <item ref="AP-07">Scope creep: existing systems invite "while we're in there" expansion. Non-goals must be strict.</item>
+    </anti-patterns>
+  </methodology-selection>
+
+  <decomposition evidence="[E-13][E-14][E-15]">
+    <goals>
+      <goal id="G-01" timebox="$TIMEBOX">$GOAL_DESCRIPTION</goal>
+    </goals>
+
+    <outcomes>
+      <outcome id="O-01" goal-ref="G-01" metric-ref="SM-01">$OUTCOME_DESCRIPTION</outcome>
+    </outcomes>
+
+    <epics>
+      <epic id="EP-01" outcome-ref="O-01">
+        <name>$EPIC_NAME</name>
+        <impact-scope>$AFFECTED_MODULES</impact-scope>
+        <regression-surface>$REGRESSION_RISK_AREAS</regression-surface>
+      </epic>
+    </epics>
+
+    <features slicing="vertical" evidence="[E-13]">
+      <feature id="F-01" epic-ref="EP-01" slice-type="end-to-end">
+        <name>$FEATURE_NAME</name>
+        <backward-compatible required="true" />
+        <acceptance-criteria format="examples-first" evidence="[E-14]">
+          <scenario id="AC-01" given="$GIVEN" when="$WHEN" then="$THEN" />
+          <regression-scenario id="RS-01">$EXISTING_BEHAVIOR_PRESERVED</regression-scenario>
+        </acceptance-criteria>
+      </feature>
+    </features>
+
+    <stories>
+      <story id="S-01" feature-ref="F-01" size="$SIZE_DAYS">
+        <description>$STORY_DESCRIPTION</description>
+        <tasks>
+          <task id="T-01" effort="$EFFORT_DAYS">$TASK_DESCRIPTION</task>
+        </tasks>
+      </story>
+    </stories>
+  </decomposition>
+
+  <dependency-management evidence="[E-17][E-18]">
+    <strategy policy="map-existing-then-reduce" evidence="[E-18]">Map all existing coupling points. Introduce interface boundaries where changes touch shared code.</strategy>
+    <dependencies>
+      <dependency id="D-01" type="$TYPE" owner="$OWNER" interface="$CONTRACT" needed-by="$MILESTONE" risk-if-late="$RISK" mitigation="$MITIGATION" />
+    </dependencies>
+    <integration evidence="[E-04]">
+      <pattern name="trunk-based" merge-frequency="daily" />
+      <feature-flags policy="use-for-risky-changes" evidence="[E-19]" />
+      <ci-gates pre-merge="lint,build,test,coverage-non-regression" />
+    </integration>
+  </dependency-management>
+
+  <team-structure evidence="[E-20][E-21][E-22]">
+    <recommended-size range="4-7" evidence="[E-20]" />
+    <topology type="stream-aligned" evidence="[E-22]" />
+    <decision-rights framework="RACI" evidence="[E-29]">
+      <role area="scope-changes" responsible="$R" accountable="$A" consulted="$C" informed="$I" />
+    </decision-rights>
+  </team-structure>
+
+  <estimation evidence="[E-09][E-11][E-12]">
+    <approach primary="flow-based" evidence="[E-11]">Use existing throughput data from the team. Monte Carlo for milestone forecasting.</approach>
+    <brownfield-adjustment>Add 20-30% buffer for unexpected coupling and regression work (Reference Class Forecasting principle [E-10]).</brownfield-adjustment>
+  </estimation>
+
+  <risk-management evidence="[E-28]">
+    <risk-register>
+      <risk id="RR-01" category="regression" likelihood="medium" impact="high" early-indicator="test-failures-in-adjacent-modules" mitigation="comprehensive-regression-suite,feature-flags" owner="$OWNER" review-cadence="per-sprint" />
+      <risk id="RR-02" category="scope-creep" likelihood="high" impact="medium" early-indicator="change-requests-per-week-rising" mitigation="reconfirm-non-goals,strict-change-control" owner="$OWNER" review-cadence="weekly" />
+    </risk-register>
+    <scope-guardrails evidence="[E-28]">
+      <non-goals ref="initiative-brief.non-goals" />
+      <change-control policy="explicit-decision-required" />
+      <wip-limits policy="per-developer-3" evidence="[E-01]" />
+    </scope-guardrails>
+  </risk-management>
+
+  <metrics evidence="[E-30][E-31][E-32]">
+    <flow-metrics evidence="[E-01]">
+      <metric name="cycle-time" /><metric name="throughput" /><metric name="wip" />
+    </flow-metrics>
+    <quality-metrics evidence="[E-05][E-30]">
+      <metric name="change-failure-rate" /><metric name="test-coverage-delta" /><metric name="tech-debt-ratio" />
+    </quality-metrics>
+    <outcome-metrics evidence="[E-08]">
+      <metric name="$SUCCESS_METRIC" />
+    </outcome-metrics>
+  </metrics>
+
+  <roadmap>
+    <phase id="P-00" name="study-and-plan" duration="$DURATION" gate="impact-analysis-complete">
+      <goal>Codebase study. Impact analysis. Dependency map. Plan validated.</goal>
+    </phase>
+    <phase id="P-01" name="foundation" duration="$DURATION" gate="interfaces-stabilized">
+      <goal>Introduce interface boundaries. Establish regression safety net. Feature flags in place.</goal>
+    </phase>
+    <phase id="P-02" name="incremental-delivery" duration="$DURATION" gate="features-complete">
+      <goal>Ship vertical slices behind flags. Validate each increment.</goal>
+    </phase>
+    <phase id="P-03" name="rollout-and-cleanup" duration="$DURATION" gate="production-stable">
+      <goal>Progressive rollout. Remove flags. Clean up temporary scaffolding. Tech debt addressed.</goal>
+    </phase>
+    <review-cadence evidence="[E-33][E-34]">
+      <review type="demo" frequency="per-iteration" duration="45-60min" />
+      <review type="retrospective" frequency="per-iteration" duration="45-60min" />
+    </review-cadence>
+  </roadmap>
+
+  <definition-of-done evidence="[E-05]">
+    <item>Code reviewed</item>
+    <item>Tests passing (unit + integration + regression)</item>
+    <item>Acceptance criteria verified</item>
+    <item>Backward compatibility confirmed</item>
+    <item>No regression in existing test suite</item>
+    <item>Coverage non-regression on changed files</item>
+    <item>Deployed to staging</item>
+  </definition-of-done>
+
+  <report>
+    <destination path="./project-plan.$PROJECT_NAME.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="initiative-brief,context-assessment,codebase-study,methodology,decomposition,dependencies,team-structure,estimation,risks,metrics,roadmap,definition-of-done" />
+    <format>yaml</format>
+  </report>
+</project-plan>

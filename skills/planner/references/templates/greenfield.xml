@@ -1,0 +1,187 @@
+<project-plan context="greenfield" tailoring="high-uncertainty,discovery-heavy">
+  <initiative-brief fill="required">
+    <name>$PROJECT_NAME</name>
+    <problem-statement>$PROBLEM_STATEMENT</problem-statement>
+    <target-users>$TARGET_USERS</target-users>
+    <desired-outcome>$DESIRED_OUTCOME</desired-outcome>
+    <success-metrics>
+      <metric id="SM-01" baseline="$BASELINE" target="$TARGET">$METRIC_DESCRIPTION</metric>
+    </success-metrics>
+    <constraints>
+      <item id="C-01">$CONSTRAINT</item>
+    </constraints>
+    <non-goals>
+      <item id="NG-01">$NON_GOAL</item>
+    </non-goals>
+    <primary-risks>
+      <risk id="R-01" category="$CATEGORY" likelihood="$LIKELIHOOD" impact="$IMPACT">$RISK_DESCRIPTION</risk>
+    </primary-risks>
+    <initial-hypothesis>$HYPOTHESIS</initial-hypothesis>
+    <decision-owner>$DECISION_OWNER</decision-owner>
+  </initiative-brief>
+
+  <context-assessment>
+    <uncertainty level="high" evidence="[E-07][E-16]">New product/feature; unknown market fit or technical feasibility. Discovery loops required before committing to delivery scope.</uncertainty>
+    <dependency-density level="$DEPENDENCY_LEVEL" evidence="[E-17]" />
+    <regulatory-burden level="$REGULATORY_LEVEL" evidence="[E-29]" />
+    <work-arrival mode="batched" evidence="[E-24]">Greenfield work typically arrives in planned batches with discovery feeding delivery.</work-arrival>
+  </context-assessment>
+
+  <methodology-selection evidence="[E-23][E-24][E-25]">
+    <primary approach="discovery-plus-delivery" rationale="High uncertainty demands dual-track: validate before building.">
+      <discovery mode="lean-startup-loops" evidence="[E-16]">Spikes, prototypes, assumption tests (1-2 days each). Kill ideas early.</discovery>
+      <delivery mode="scrum-lite-or-kanban" evidence="[E-24][E-25]">Short iterations (1-2 weeks) with real DoD. Choose cadence vs flow by team preference and interrupt load.</delivery>
+    </primary>
+    <team-size band="$TEAM_SIZE" evidence="[E-20]" />
+    <cadence recommended="1-2-week-iterations" evidence="[E-24]">Short enough for fast learning; long enough to ship increments.</cadence>
+    <anti-patterns warn="[AP-03][AP-04][AP-07]">
+      <item ref="AP-03">Feature Factory: do not prioritize output volume over validated impact. Each epic needs an explicit hypothesis and leading indicators.</item>
+      <item ref="AP-04">Over-commitment: protect focus. WIP limit per developer ~3 tasks. Finish before starting.</item>
+      <item ref="AP-07">Scope creep: non-goals list is mandatory. Use MoSCoW; Must-haves &lt;= 60% of effort.</item>
+    </anti-patterns>
+  </methodology-selection>
+
+  <decomposition evidence="[E-13][E-14][E-15]">
+    <walking-skeleton evidence="[E-04]">
+      <description>Thin end-to-end implementation linking all major architectural components. Validates architecture early, front-loads integration risk, establishes deployment pipeline from Day 1.</description>
+      <items>
+        <item id="WS-01">$SKELETON_COMPONENT</item>
+      </items>
+    </walking-skeleton>
+
+    <goals>
+      <goal id="G-01" timebox="$TIMEBOX">$GOAL_DESCRIPTION</goal>
+    </goals>
+
+    <outcomes>
+      <outcome id="O-01" goal-ref="G-01" metric-ref="SM-01">$OUTCOME_DESCRIPTION</outcome>
+    </outcomes>
+
+    <epics>
+      <epic id="EP-01" outcome-ref="O-01" hypothesis="$HYPOTHESIS" leading-indicators="$INDICATORS">
+        <name>$EPIC_NAME</name>
+        <discovery-needed level="$DISCOVERY_LEVEL">$DISCOVERY_QUESTION</discovery-needed>
+      </epic>
+    </epics>
+
+    <features slicing="vertical" evidence="[E-13]">
+      <feature id="F-01" epic-ref="EP-01" slice-type="end-to-end">
+        <name>$FEATURE_NAME</name>
+        <acceptance-criteria format="examples-first" evidence="[E-14]">
+          <scenario id="AC-01" given="$GIVEN" when="$WHEN" then="$THEN" />
+          <edge-case id="EC-01">$EDGE_CASE</edge-case>
+        </acceptance-criteria>
+        <invest-check independent="$I" negotiable="$N" valuable="$V" estimable="$E" small="$S" testable="$T" />
+      </feature>
+    </features>
+
+    <stories>
+      <story id="S-01" feature-ref="F-01" size="$SIZE_DAYS">
+        <description>$STORY_DESCRIPTION</description>
+        <tasks>
+          <task id="T-01" effort="$EFFORT_DAYS" type="engineering|discovery|design">$TASK_DESCRIPTION</task>
+        </tasks>
+      </story>
+    </stories>
+
+    <spikes evidence="[E-16]">
+      <spike id="SP-01" timebox="$TIMEBOX_HOURS" epic-ref="EP-01">
+        <question>$QUESTION_TO_ANSWER</question>
+        <output-format>$EXPECTED_OUTPUT</output-format>
+        <follow-on-plan>Converts learning into smaller delivery slices.</follow-on-plan>
+      </spike>
+    </spikes>
+  </decomposition>
+
+  <dependency-management evidence="[E-17][E-18]">
+    <strategy policy="reduce-before-track" evidence="[E-18]">Invest in modularity and stable boundaries first. Track only what cannot be eliminated.</strategy>
+    <dependencies>
+      <dependency id="D-01" type="structural|sequencing|knowledge|capacity|compliance" owner="$OWNER" interface="$CONTRACT" needed-by="$MILESTONE" risk-if-late="$RISK" mitigation="$MITIGATION" integration-cadence="$CADENCE" />
+    </dependencies>
+    <integration evidence="[E-04]">
+      <pattern name="trunk-based" branch-lifetime="&lt;1-day" merge-frequency="daily" />
+      <feature-flags policy="minimize-per-feature" evidence="[E-19]" review-for-delete="true" />
+    </integration>
+  </dependency-management>
+
+  <team-structure evidence="[E-20][E-21][E-22]">
+    <recommended-size range="4-7" evidence="[E-20]" />
+    <topology type="stream-aligned" evidence="[E-22]">Cross-functional team aligned to product value stream. Engineers participate in discovery.</topology>
+    <decision-rights framework="RACI" evidence="[E-29]">
+      <role area="product-direction" responsible="$R" accountable="$A" consulted="$C" informed="$I" />
+      <role area="technical-decisions" responsible="$R" accountable="$A" consulted="$C" informed="$I" />
+    </decision-rights>
+  </team-structure>
+
+  <estimation evidence="[E-09][E-10][E-11][E-12]">
+    <approach primary="relative-estimation" evidence="[E-12]">Planning Poker for team calibration on near-term work.</approach>
+    <forecasting method="throughput-based" evidence="[E-11]">After 3+ iterations, switch to Monte Carlo on historical throughput. Express as probability ranges, not point estimates.</forecasting>
+    <de-biasing method="reference-class" evidence="[E-10]">For milestone-level estimates, anchor to actual outcomes from comparable past projects.</de-biasing>
+    <warning ref="[E-09]">Estimation accuracy has not improved in 70 years. Use probabilistic forecasting and express uncertainty honestly.</warning>
+  </estimation>
+
+  <risk-management evidence="[E-28]">
+    <risk-register>
+      <risk id="RR-01" category="$CATEGORY" likelihood="$L" impact="$I" early-indicator="$INDICATOR" mitigation="$MITIGATION" owner="$OWNER" review-cadence="$CADENCE" />
+    </risk-register>
+    <scope-guardrails evidence="[E-28]">
+      <non-goals ref="initiative-brief.non-goals" />
+      <change-control policy="explicit-decision-required" />
+      <wip-limits policy="per-developer-3" evidence="[E-01]" />
+      <moscow must-have-ceiling="60%" evidence="[E-28]" />
+    </scope-guardrails>
+  </risk-management>
+
+  <metrics evidence="[E-30][E-31][E-32]">
+    <flow-metrics evidence="[E-01][E-25]">
+      <metric name="cycle-time" purpose="delivery-speed" />
+      <metric name="throughput" purpose="delivery-rate" />
+      <metric name="wip" purpose="overload-detection" />
+    </flow-metrics>
+    <quality-metrics evidence="[E-05][E-30]">
+      <metric name="definition-of-done-adherence" purpose="quality-bar" />
+      <metric name="change-failure-rate" purpose="stability" />
+    </quality-metrics>
+    <outcome-metrics evidence="[E-08]">
+      <metric name="$SUCCESS_METRIC" purpose="business-outcome" />
+    </outcome-metrics>
+  </metrics>
+
+  <roadmap>
+    <phase id="P-00" name="walking-skeleton" duration="$DURATION" gate="architecture-validated">
+      <goal>End-to-end thin implementation. Deployment pipeline operational.</goal>
+    </phase>
+    <phase id="P-01" name="discovery-and-mvp" duration="$DURATION" gate="hypothesis-validated">
+      <goal>Validate core hypothesis. Ship minimum lovable product.</goal>
+    </phase>
+    <phase id="P-02" name="iterate-and-learn" duration="$DURATION" gate="outcome-metrics-trending">
+      <goal>Iterate based on user feedback. Close coverage gaps.</goal>
+    </phase>
+    <phase id="P-03" name="harden-and-scale" duration="$DURATION" gate="production-ready">
+      <goal>Production hardening. Performance, security, observability complete.</goal>
+    </phase>
+    <milestones>
+      <milestone id="M-01" phase-ref="P-00" description="$DESCRIPTION" date="$DATE" />
+    </milestones>
+    <review-cadence evidence="[E-33][E-34]">
+      <review type="demo" frequency="per-iteration" duration="45-60min" />
+      <review type="retrospective" frequency="per-iteration" duration="45-60min" experiments="1-2-max" />
+    </review-cadence>
+  </roadmap>
+
+  <definition-of-done evidence="[E-05]">
+    <item>Code reviewed</item>
+    <item>Tests passing (unit + integration)</item>
+    <item>Acceptance criteria verified with examples</item>
+    <item>Security baseline met</item>
+    <item>Observability instrumented</item>
+    <item>Deployed to staging</item>
+    <item>No increase in tech debt ratio</item>
+  </definition-of-done>
+
+  <report>
+    <destination path="./project-plan.$PROJECT_NAME.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="initiative-brief,context-assessment,methodology,decomposition,dependencies,team-structure,estimation,risks,metrics,roadmap,definition-of-done" />
+    <format>yaml</format>
+  </report>
+</project-plan>

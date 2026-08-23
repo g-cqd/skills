@@ -1,0 +1,43 @@
+<request type="performance-audit">
+  <goal>Performance audit of $TARGET for $PERFORMANCE_CONCERN</goal>
+
+  <scope>
+    <target>$TARGET</target>
+    <concern>$PERFORMANCE_CONCERN</concern>
+    <platforms>$PLATFORMS</platforms>
+    <baseline metrics="$BASELINE_METRICS" when="available" />
+  </scope>
+
+  <profiling>
+    <areas>
+      <area name="cpu" include="hot-paths,algorithmic-complexity,unnecessary-computation" />
+      <area name="memory" include="allocations,leaks,retain-cycles,peak-usage,autoreleasepool" />
+      <area name="rendering" include="view-body-cost,invalidation-frequency,offscreen-rendering,list-identity" />
+      <area name="io" include="disk-reads,network-calls,serialization,database-queries" />
+      <area name="startup" include="launch-time,pre-main,post-main,first-frame" />
+      <area name="concurrency" include="thread-contention,lock-wait,actor-reentrancy,main-thread-blocking" />
+    </areas>
+    <tools suggest="instruments,os-signpost,time-profiler,allocations,system-trace" />
+  </profiling>
+
+  <analysis>
+    <identify type="bottlenecks" rank-by="impact" />
+    <identify type="regressions" compare-to="baseline" when="available" />
+    <identify type="quick-wins" criteria="high-impact,low-effort" />
+  </analysis>
+
+  <execution>
+    <order strategy="profile-first,analyze-second,optimize-third" />
+    <validation require="before-after-measurement" cadence="per-optimization" />
+    <constraint policy="no-behavior-change" />
+  </execution>
+
+  <report>
+    <destination path="./performance-audit.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="profiling-results,bottlenecks,optimizations-applied,before-after-metrics,remaining-opportunities" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

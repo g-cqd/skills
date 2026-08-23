@@ -1,0 +1,159 @@
+<project-plan context="platform" tailoring="continuous-flow,service-oriented">
+  <initiative-brief fill="required">
+    <name>$PROJECT_NAME</name>
+    <platform-scope>
+      <consumers>$CONSUMER_TEAMS</consumers>
+      <capabilities>$CAPABILITIES_PROVIDED</capabilities>
+    </platform-scope>
+    <problem-statement>$PROBLEM_STATEMENT</problem-statement>
+    <desired-outcome>$DESIRED_OUTCOME</desired-outcome>
+    <success-metrics>
+      <metric id="SM-01" type="adoption" baseline="$BASELINE" target="$TARGET">$ADOPTION_METRIC</metric>
+      <metric id="SM-02" type="reliability" baseline="$BASELINE" target="$TARGET">$SLO_METRIC</metric>
+      <metric id="SM-03" type="developer-experience" baseline="$BASELINE" target="$TARGET">$DEVEX_METRIC</metric>
+    </success-metrics>
+    <constraints>
+      <item id="C-01">Must not break existing consumer teams</item>
+      <item id="C-02">$CONSTRAINT</item>
+    </constraints>
+    <non-goals>
+      <item id="NG-01">$NON_GOAL</item>
+    </non-goals>
+    <primary-risks>
+      <risk id="R-01" category="adoption" likelihood="medium" impact="high">Platform built but consumers do not migrate to it</risk>
+    </primary-risks>
+    <decision-owner>$DECISION_OWNER</decision-owner>
+  </initiative-brief>
+
+  <context-assessment>
+    <uncertainty level="medium" evidence="[E-07]">Technical approach often clearer than adoption dynamics. Consumer needs discovery required.</uncertainty>
+    <dependency-density level="high" evidence="[E-17][E-18]">Platform work creates dependencies in both directions: platform on consumer needs, consumers on platform stability.</dependency-density>
+    <regulatory-burden level="$REGULATORY_LEVEL" />
+    <work-arrival mode="continuous" evidence="[E-25]">Platform teams handle continuous inflow: consumer requests, incidents, improvements, infrastructure changes.</work-arrival>
+  </context-assessment>
+
+  <methodology-selection evidence="[E-23][E-25]">
+    <primary approach="kanban-flow-with-slo-governance" rationale="Continuous inflow + service reliability requirements favor flow-based delivery with SLO-driven prioritization.">
+      <delivery mode="kanban" evidence="[E-25]">Explicit WIP limits. Pull-based. Flow metrics for forecasting. No forced sprints.</delivery>
+      <governance mode="slo-driven" evidence="[E-05]">SLOs define the quality contract. Error budgets balance reliability vs feature work.</governance>
+      <consumer-engagement mode="platform-as-product" evidence="[E-22]">Treat internal consumers as customers. Roadmap driven by consumer feedback and adoption metrics.</consumer-engagement>
+    </primary>
+    <anti-patterns warn="[AP-06][AP-01][AP-03]">
+      <item ref="AP-06">Meeting overload: platform teams get pulled into every consumer coordination meeting. Protect focus with X-as-a-Service interaction mode.</item>
+      <item ref="AP-01">Cargo-cult: platform teams especially vulnerable to ceremonies without engineering substance. Invest in automation, not process.</item>
+      <item ref="AP-03">Feature factory: measure adoption and reliability, not features shipped.</item>
+    </anti-patterns>
+  </methodology-selection>
+
+  <decomposition evidence="[E-13][E-14]">
+    <goals>
+      <goal id="G-01" timebox="$TIMEBOX">$GOAL_DESCRIPTION</goal>
+    </goals>
+
+    <outcomes>
+      <outcome id="O-01" goal-ref="G-01">$OUTCOME_DESCRIPTION</outcome>
+    </outcomes>
+
+    <capability-areas>
+      <capability id="CAP-01" outcome-ref="O-01">
+        <name>$CAPABILITY_NAME</name>
+        <consumer-value>$VALUE_TO_CONSUMERS</consumer-value>
+        <slo target="$SLO_TARGET" />
+      </capability>
+    </capability-areas>
+
+    <features slicing="vertical" evidence="[E-13]">
+      <feature id="F-01" capability-ref="CAP-01" slice-type="end-to-end-self-service">
+        <name>$FEATURE_NAME</name>
+        <consumer-interface type="api|sdk|cli|self-service-portal">$INTERFACE_SPEC</consumer-interface>
+        <acceptance-criteria format="examples-first">
+          <scenario id="AC-01" given="$GIVEN" when="$WHEN" then="$THEN" />
+        </acceptance-criteria>
+      </feature>
+    </features>
+
+    <work-types evidence="[E-35]">
+      <type name="feature" allocation="$PCT">New capabilities for consumers</type>
+      <type name="reliability" allocation="$PCT">SLO maintenance, incident response, performance</type>
+      <type name="debt" allocation="$PCT">Technical debt payoff (target: keep ratio &lt;5%)</type>
+      <type name="enablement" allocation="$PCT">Documentation, onboarding, consumer support</type>
+    </work-types>
+  </decomposition>
+
+  <dependency-management evidence="[E-17][E-18][E-22]">
+    <strategy policy="x-as-a-service" evidence="[E-22]">Platform provides self-service capabilities with clear API contracts. Minimize collaboration mode; maximize X-as-a-Service.</strategy>
+    <consumer-contracts>
+      <contract id="CC-01" consumer="$CONSUMER_TEAM" interface="$API_CONTRACT" sla="$SLA" />
+    </consumer-contracts>
+    <integration evidence="[E-04]">
+      <pattern name="contract-testing" purpose="prevent-breaking-consumers" />
+      <pattern name="trunk-based" merge-frequency="daily" />
+      <pattern name="canary-deployment" purpose="safe-rollout" />
+    </integration>
+  </dependency-management>
+
+  <team-structure evidence="[E-20][E-22]">
+    <topology type="platform-team" evidence="[E-22]">
+      <interaction-mode primary="x-as-a-service" secondary="facilitating-when-onboarding" />
+      <cognitive-load-management>Reduce cognitive load on consumer teams by abstracting infrastructure complexity behind self-service interfaces.</cognitive-load-management>
+    </topology>
+    <recommended-size range="4-7" evidence="[E-20]" />
+    <decision-rights framework="RACI">
+      <role area="platform-roadmap" responsible="$R" accountable="$A" consulted="$C" informed="$I" />
+      <role area="slo-violation-response" responsible="$R" accountable="$A" consulted="$C" informed="$I" />
+    </decision-rights>
+  </team-structure>
+
+  <estimation evidence="[E-11]">
+    <approach primary="throughput-based" evidence="[E-11]">Continuous flow: forecast from historical throughput and cycle time. Monte Carlo for roadmap milestones.</approach>
+  </estimation>
+
+  <risk-management evidence="[E-28]">
+    <risk-register>
+      <risk id="RR-01" category="adoption" likelihood="medium" impact="high" early-indicator="consumer-onboarding-stalls" mitigation="early-consumer-engagement,dogfooding,documentation-investment" owner="$OWNER" review-cadence="monthly" />
+      <risk id="RR-02" category="reliability" likelihood="medium" impact="critical" early-indicator="error-budget-burn-rate" mitigation="slo-monitoring,incident-response-runbooks" owner="$OWNER" review-cadence="weekly" />
+    </risk-register>
+  </risk-management>
+
+  <metrics evidence="[E-30][E-31][E-32]">
+    <platform-specific>
+      <metric name="consumer-adoption-rate" purpose="product-market-fit" />
+      <metric name="self-service-completion-rate" purpose="developer-experience" />
+      <metric name="slo-adherence" purpose="reliability" />
+      <metric name="error-budget-remaining" purpose="reliability-vs-velocity-balance" />
+      <metric name="time-to-onboard" purpose="platform-ux" />
+    </platform-specific>
+    <flow-metrics evidence="[E-01]">
+      <metric name="cycle-time" /><metric name="throughput" /><metric name="wip" />
+    </flow-metrics>
+    <devex-metrics evidence="[E-32]">
+      <metric name="feedback-loop-speed" /><metric name="cognitive-load-survey" /><metric name="flow-state-frequency" />
+    </devex-metrics>
+  </metrics>
+
+  <roadmap>
+    <phase id="P-00" name="consumer-discovery" duration="$DURATION" gate="consumer-needs-validated">
+      <goal>Understand consumer pain points. Define platform capabilities. Set SLOs.</goal>
+    </phase>
+    <phase id="P-01" name="foundation" duration="$DURATION" gate="core-api-stable">
+      <goal>Core platform capabilities. API contract. Self-service basics. First consumer onboarded.</goal>
+    </phase>
+    <phase id="P-02" name="adoption" duration="$DURATION" gate="adoption-target-met">
+      <goal>Expand capabilities. Onboard additional consumers. Documentation and enablement.</goal>
+    </phase>
+    <phase id="P-03" name="maturity" duration="ongoing" gate="continuous-improvement">
+      <goal>Reliability hardening. Advanced self-service. Continuous improvement from consumer feedback.</goal>
+    </phase>
+    <review-cadence evidence="[E-33][E-34]">
+      <review type="consumer-feedback" frequency="monthly" />
+      <review type="slo-review" frequency="weekly" />
+      <review type="retrospective" frequency="bi-weekly" />
+    </review-cadence>
+  </roadmap>
+
+  <report>
+    <destination path="./project-plan.$PROJECT_NAME.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="initiative-brief,context-assessment,methodology,decomposition,dependencies,team-structure,estimation,risks,metrics,roadmap" />
+    <format>yaml</format>
+  </report>
+</project-plan>

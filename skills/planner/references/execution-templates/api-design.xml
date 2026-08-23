@@ -1,0 +1,50 @@
+<request type="api-design">
+  <goal>Design API for $API_NAME: $API_OBJECTIVE</goal>
+
+  <requirements fill="required">
+    <name>$API_NAME</name>
+    <objective>$API_OBJECTIVE</objective>
+    <consumers>$CONSUMERS</consumers>
+    <constraints>
+      <item id="C-01">$CONSTRAINT</item>
+    </constraints>
+  </requirements>
+
+  <discovery>
+    <study target="existing-apis" include="patterns,conventions,naming,error-handling,versioning" />
+    <study target="consumers" include="usage-patterns,requirements,pain-points" />
+    <prior-art scan="true" include="similar-apis,industry-standards,platform-conventions" />
+  </discovery>
+
+  <design>
+    <principles include="consistency,discoverability,progressive-disclosure,type-safety,composability" />
+    <surface include="types,protocols,functions,errors,extensions" />
+    <error-handling strategy="typed-errors,result-types,throwing" />
+    <naming policy="follow-existing-conventions,api-design-guidelines" />
+    <versioning strategy="$VERSIONING_STRATEGY" when="applicable" />
+    <backward-compatibility policy="$COMPAT_POLICY" when="applicable" />
+  </design>
+
+  <validation>
+    <review criteria="naming,consistency,ergonomics,discoverability,testability" />
+    <usage-examples required="true" count="3+" />
+    <edge-cases required="true" />
+    <migration-path when="replacing-existing-api" />
+  </validation>
+
+  <execution>
+    <order strategy="design-first,review,implement,test" />
+    <implementation policy="protocol-first,concrete-second" />
+    <testing policy="test-public-api-contract" />
+    <validation require="build,test,documentation" cadence="post-implementation" />
+  </execution>
+
+  <report>
+    <destination path="./api-design.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="api-surface,design-decisions,usage-examples,trade-offs,migration-plan" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

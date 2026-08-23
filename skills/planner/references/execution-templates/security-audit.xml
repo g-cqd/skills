@@ -1,0 +1,43 @@
+<request type="security-audit">
+  <goal>Security audit of $TARGET for $THREAT_SURFACE</goal>
+
+  <scope>
+    <target>$TARGET</target>
+    <threat-surface include="$THREAT_SURFACE" />
+    <compliance standards="$STANDARDS" when="applicable" />
+    <depth level="$DEPTH" />
+  </scope>
+
+  <threat-modeling>
+    <methodology>STRIDE</methodology>
+    <assets identify="sensitive-data,credentials,tokens,user-input,api-keys,certificates" />
+    <entry-points identify="network,deep-links,url-schemes,ipc,file-import,clipboard" />
+    <trust-boundaries identify="app-sandbox,process,network,keychain,secure-enclave" />
+  </threat-modeling>
+
+  <audit-areas>
+    <area name="authentication" include="login-flows,token-management,session-handling,biometric" />
+    <area name="data-storage" include="keychain,user-defaults,file-system,core-data,cache" />
+    <area name="cryptography" include="key-generation,encryption,hashing,signing,nonce-management" />
+    <area name="network" include="tls-config,cert-pinning,ats,api-auth,request-validation" />
+    <area name="input-validation" include="deep-links,url-schemes,pasteboard,file-import,webview" />
+    <area name="access-control" include="authorization,entitlements,permissions,sandbox-escapes" />
+    <area name="logging" include="sensitive-data-exposure,pii,tokens-in-logs,crash-reports" />
+  </audit-areas>
+
+  <execution>
+    <order strategy="threat-model-first,audit-second,report-third" />
+    <verification policy="proof-of-concept-when-feasible" />
+    <false-positive-check required="true" />
+  </execution>
+
+  <report>
+    <destination path="./security-audit.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="threat-model,findings-by-severity,attack-vectors,remediation-plan,compliance-gaps" />
+    <severity-levels values="critical,high,medium,low,informational" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

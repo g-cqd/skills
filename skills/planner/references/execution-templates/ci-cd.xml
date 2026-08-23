@@ -1,0 +1,43 @@
+<request type="ci-cd">
+  <goal>$CI_CD_GOAL</goal>
+
+  <scope>
+    <platform>$CI_PLATFORM</platform>
+    <repository>$REPOSITORY</repository>
+    <targets>$BUILD_TARGETS</targets>
+    <environments>$ENVIRONMENTS</environments>
+  </scope>
+
+  <discovery>
+    <study target="existing-ci" include="workflows,pipelines,scripts,secrets,caches" />
+    <study target="build-system" include="build-steps,test-steps,signing,artifacts" />
+    <bottleneck-analysis required="true" include="build-time,flaky-tests,cache-misses" />
+  </discovery>
+
+  <pipeline>
+    <stages>
+      <stage name="lint" include="format-check,static-analysis,dependency-audit" />
+      <stage name="build" include="compile,archive,signing" depends-on="lint" />
+      <stage name="test" include="unit,integration,ui,snapshot" depends-on="build" />
+      <stage name="quality" include="coverage,sonar,license-check" depends-on="test" />
+      <stage name="deploy" include="staging,canary,production" depends-on="quality" />
+    </stages>
+    <optimization include="caching,parallelism,incremental-builds,selective-testing" />
+    <notifications include="failure,success,deployment" />
+  </pipeline>
+
+  <execution>
+    <order strategy="configure-first,test-pipeline,verify" />
+    <validation require="pipeline-runs-successfully,all-stages-pass" />
+    <traceability require="config-changes,secret-references,status" />
+  </execution>
+
+  <report>
+    <destination path="./ci-cd.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="pipeline-config,stages,optimizations,build-time-comparison,risks" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

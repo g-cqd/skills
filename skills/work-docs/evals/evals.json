@@ -1,0 +1,68 @@
+{
+  "skill_name": "work-docs",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Write the PR description for this branch.",
+      "expected_output": "A PR description following the skill's template: ticket-anchored title, context, decisions with rationale.",
+      "expectations": [
+        "The work-docs skill was activated",
+        "Ticket ID is included in the title when the repo follows a ticket convention",
+        "No invented ticket numbers"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Create a user story with acceptance criteria for letting users archive conversations.",
+      "expected_output": "A requesting-perspective story artifact with acceptance criteria and definition of ready.",
+      "expectations": [
+        "The work-docs skill was activated",
+        "Acceptance criteria are testable statements"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Summarize what was done in this repo over the last two weeks for the release notes.",
+      "expected_output": "Reporting-perspective release summary aggregated from repo history.",
+      "expectations": [
+        "The work-docs skill was activated",
+        "Output groups work by theme/feature, not by raw commit list"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Write an ADR for choosing SQLite over Core Data in this project.",
+      "expected_output": "An architecture decision record with context, decision, consequences, alternatives.",
+      "expectations": [
+        "The work-docs skill was activated",
+        "Tradeoffs and rejected alternatives are explicit"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Review this PR for bugs.",
+      "expected_output": "A code review, not documentation.",
+      "expectations": [
+        "The work-docs skill was NOT activated",
+        "The code-review skill was activated"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Plan how we should break down the offline-mode epic into sprints.",
+      "expected_output": "Planning/decomposition via the planner skill (work-docs may format artifacts afterwards).",
+      "expectations": [
+        "The planner skill drove the decomposition",
+        "work-docs was at most used to format resulting artifacts"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Add a docstring to this function.",
+      "expected_output": "A direct code edit; no documentation workflow.",
+      "expectations": [
+        "The work-docs skill was NOT activated"
+      ]
+    }
+  ]
+}

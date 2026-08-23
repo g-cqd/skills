@@ -1,0 +1,49 @@
+<request type="implementation">
+  <source path="$PLAN_SOURCE">
+    <section name="improvement_plan" />
+    <section name="findings" />
+    <section name="test_gaps" />
+  </source>
+
+  <goal>Execute all phases from the source plan.</goal>
+
+  <scope>
+    <include phases="all" />
+    <resolve-refs from="$PLAN_SOURCE" />
+    <strategy policy="combined-reviews" />
+  </scope>
+
+  <execution>
+    <order strategy="sequential-by-phase,item-safe-concurrency" />
+    <priority policy="respect-plan-priority" />
+    <implementation policy="minimal-safe-change" />
+    <testing policy="add-or-update-tests-for-each-fix" />
+    <validation require="linting,build,test,coverage-regression-check" cadence="per-phase" />
+    <traceability require="phase,item,ref-or-action,status,changeset" />
+    <rollback policy="revert-phase-on-validation-failure" />
+  </execution>
+
+  <linting>
+    <inputs>
+      <source-files required="true" pass-as-parameter="true">
+        <only-unstaged state="true" />
+        <only-staged state="true" />
+        <entire-codebase state="false" />
+        <exclude paths="**.build,**.swiftpm,**.xcodeproj,**/node_modules,**/.next,**/dist" />
+      </source-files>
+    </inputs>
+    <execution step="linting">
+      <order strategy="lint-first,approval,format,post-lint" />
+      <gate id="approval" require="explicit-user-approval-before-writing" />
+    </execution>
+  </linting>
+
+  <report>
+    <destination path="./implementation.execution.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="completed,deferred,blocked,risks,next-steps,phase-summary" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

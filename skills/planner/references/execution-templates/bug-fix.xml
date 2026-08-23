@@ -1,0 +1,45 @@
+<request type="bug-fix">
+  <goal>Diagnose and fix: $BUG_DESCRIPTION</goal>
+
+  <diagnosis>
+    <symptoms>$OBSERVED_BEHAVIOR</symptoms>
+    <expected>$EXPECTED_BEHAVIOR</expected>
+    <reproduce steps="$REPRO_STEPS" when="available" />
+    <environment os="$OS" version="$VERSION" device="$DEVICE" when="available" />
+    <investigate target="$SUSPECT_AREA" include="stack-trace,logs,state,recent-changes,git-blame" />
+    <root-cause-analysis required="true" />
+    <severity level="$SEVERITY" />
+  </diagnosis>
+
+  <execution>
+    <order strategy="diagnose-first,fix-second" />
+    <implementation policy="minimal-safe-change" />
+    <testing policy="add-regression-test-before-fix" />
+    <validation require="build,test,regression-test-passes" cadence="post-fix" />
+    <traceability require="root-cause,fix-description,status,changeset" />
+    <rollback policy="revert-if-regression-detected" />
+  </execution>
+
+  <linting>
+    <inputs>
+      <source-files required="true" pass-as-parameter="true">
+        <only-unstaged state="true" />
+        <only-staged state="true" />
+        <entire-codebase state="false" />
+        <exclude paths="**.build,**.swiftpm,**.xcodeproj,**/node_modules,**/.next,**/dist" />
+      </source-files>
+    </inputs>
+    <execution step="linting">
+      <gate id="approval" require="explicit-user-approval-before-writing" />
+    </execution>
+  </linting>
+
+  <report>
+    <destination path="./bugfix.execution.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="root-cause,fix-applied,regression-test,side-effects,risks,verification" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# install.sh backups of pre-existing files
+*.bak
+*.bak.*
+
+# local canonical root, if someone points AGENT_HARNESS_ROOT into the repo
+/.agent-harness/

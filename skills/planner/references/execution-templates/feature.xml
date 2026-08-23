@@ -1,0 +1,72 @@
+<request type="feature">
+  <feature-request fill="required">
+    <name>$FEATURE_NAME</name>
+    <objective context-refs="CTX-01">$OBJECTIVE</objective>
+    <platforms minimum="$MIN_PLATFORMS" />
+    <additional-context>
+      <context id="CTX-01"><![CDATA[$ADDITIONAL_CONTEXT]]></context>
+    </additional-context>
+    <acceptance-criteria>
+      <item id="AC-01" context-refs="CTX-01">$ACCEPTANCE_CRITERION</item>
+    </acceptance-criteria>
+    <constraints>
+      <item id="C-01">$CONSTRAINT</item>
+    </constraints>
+    <non-goals>
+      <item id="NG-01">$NON_GOAL</item>
+    </non-goals>
+  </feature-request>
+
+  <goal>Implement the feature request end-to-end with compatibility-safe API adoption and phased delivery.</goal>
+
+  <research>
+    <api baseline="project-minimum-platform" latest="as-of-run-date" scope="current-available-apis" />
+    <verify policy="official-sources-only" />
+    <output path="./feature.api-research.$AIPROVIDER-$AIPROVIDER_MODEL.yml" include="min-vs-latest,compatibility,gaps,candidates,risks,references" />
+  </research>
+
+  <discovery>
+    <study target="codebase" include="touchpoints,architecture,data-flow,tests,build-ci" />
+    <output path="./feature.codebase-study.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+  </discovery>
+
+  <planning>
+    <input from="feature-request,api-research,codebase-study" />
+    <output path="./feature.plan.$AIPROVIDER-$AIPROVIDER_MODEL.yml" include="phases,priority,effort,items,dependencies,traceability" />
+    <context policy="pre-context-compact,pre-phase-compact,post-phase-compact" />
+  </planning>
+
+  <execution>
+    <order strategy="sequential-by-phase,item-safe-concurrency" />
+    <implementation policy="minimal-safe-change" />
+    <testing policy="add-or-update-tests-for-each-change" />
+    <checks pre-phase="lint,quality,compile,test" post-phase="lint,quality,compile,test,coverage-regression,compatibility" />
+    <validation cadence="per-phase" require="lint,build,test,coverage-regression-check" />
+    <traceability require="phase,item,ref-or-action,status,changeset" />
+    <rollback policy="revert-phase-on-validation-failure" />
+  </execution>
+
+  <linting>
+    <inputs>
+      <source-files required="true" pass-as-parameter="true">
+        <only-unstaged state="true" />
+        <only-staged state="true" />
+        <entire-codebase state="false" />
+        <exclude paths="**.build,**.swiftpm,**.xcodeproj,**/node_modules,**/.next,**/dist" />
+      </source-files>
+    </inputs>
+    <execution step="linting">
+      <order strategy="lint-first,approval,format,post-lint" />
+      <gate id="approval" require="explicit-user-approval-before-writing" />
+    </execution>
+  </linting>
+
+  <report>
+    <destination path="./feature.execution.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="research,study,completed,deferred,blocked,risks,next-steps,phase-gates" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

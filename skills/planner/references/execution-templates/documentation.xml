@@ -1,0 +1,40 @@
+<request type="documentation">
+  <goal>$DOCUMENTATION_GOAL</goal>
+
+  <scope>
+    <target>$TARGET</target>
+    <type>$DOC_TYPE</type>
+    <audience>$AUDIENCE</audience>
+    <format>$FORMAT</format>
+  </scope>
+
+  <discovery>
+    <study target="$TARGET" include="public-api,architecture,data-flow,usage-patterns,examples" />
+    <existing-docs scan="true" include="inline-comments,docstrings,readme,wiki,guides" />
+    <gaps-analysis required="true" />
+  </discovery>
+
+  <generation>
+    <api-docs when="$DOC_TYPE=api" include="signatures,parameters,return-values,throws,examples,availability" />
+    <architecture-docs when="$DOC_TYPE=architecture" include="components,data-flow,dependencies,decisions,trade-offs" />
+    <usage-guide when="$DOC_TYPE=guide" include="getting-started,common-patterns,examples,troubleshooting" />
+    <migration-guide when="$DOC_TYPE=migration" include="breaking-changes,step-by-step,before-after,faq" />
+    <changelog when="$DOC_TYPE=changelog" include="version,date,added,changed,deprecated,removed,fixed,security" />
+  </generation>
+
+  <quality>
+    <require name="accuracy" note="verify all code references compile" />
+    <require name="completeness" note="all public API documented" />
+    <require name="examples" note="runnable code samples where applicable" />
+    <require name="consistency" note="uniform style and terminology" />
+  </quality>
+
+  <report>
+    <destination path="$OUTPUT_PATH" />
+    <content include="documents-created,documents-updated,coverage-before-after,gaps-remaining" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

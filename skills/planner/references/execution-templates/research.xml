@@ -1,0 +1,31 @@
+<request type="research">
+  <goal>$RESEARCH_GOAL</goal>
+
+  <scope>
+    <subject>$SUBJECT</subject>
+    <depth level="$DEPTH" />
+    <boundaries include="$INCLUDE_AREAS" exclude="$EXCLUDE_AREAS" />
+  </scope>
+
+  <discovery>
+    <study target="codebase" include="architecture,data-flow,dependencies,patterns,conventions" />
+    <study target="$SUBJECT" include="usage,callers,implementations,conformances,tests,history" />
+    <verify policy="read-code-not-assumptions" />
+  </discovery>
+
+  <analysis>
+    <evaluate criteria="correctness,completeness,patterns,risks,alternatives" />
+    <compare when="multiple-approaches-exist" include="trade-offs,complexity,maintainability,performance" />
+    <timeline when="history-relevant" include="git-log,blame,evolution" />
+  </analysis>
+
+  <report>
+    <destination format="markdown-in-chat" />
+    <content include="findings,architecture,data-flow,patterns,risks,recommendations,open-questions" />
+    <depth match="scope.depth" />
+  </report>
+
+  <skills>
+    <resolve strategy="dynamic" source="discover-skills.sh" max="10" />
+  </skills>
+</request>

@@ -1,0 +1,167 @@
+<project-plan context="operational" tailoring="continuous-flow,stability-focused">
+  <initiative-brief fill="required">
+    <name>$PROJECT_NAME</name>
+    <operational-scope>
+      <systems>$SYSTEMS_IN_SCOPE</systems>
+      <work-types>maintenance|incident-response|continuous-improvement|tech-debt|reliability</work-types>
+    </operational-scope>
+    <problem-statement>$PROBLEM_STATEMENT</problem-statement>
+    <desired-outcome>$DESIRED_OUTCOME</desired-outcome>
+    <success-metrics>
+      <metric id="SM-01" type="reliability" baseline="$BASELINE" target="$TARGET">$SLO_METRIC</metric>
+      <metric id="SM-02" type="flow" baseline="$BASELINE" target="$TARGET">$FLOW_METRIC</metric>
+      <metric id="SM-03" type="debt" baseline="$BASELINE" target="$TARGET">$DEBT_METRIC</metric>
+    </success-metrics>
+    <constraints>
+      <item id="C-01">$CONSTRAINT</item>
+    </constraints>
+    <non-goals>
+      <item id="NG-01">$NON_GOAL</item>
+    </non-goals>
+    <decision-owner>$DECISION_OWNER</decision-owner>
+  </initiative-brief>
+
+  <context-assessment>
+    <uncertainty level="low" evidence="[E-25]">Operational work is largely known. Uncertainty comes from incident arrival and hidden debt, not problem definition.</uncertainty>
+    <dependency-density level="$DEPENDENCY_LEVEL" evidence="[E-17]" />
+    <regulatory-burden level="$REGULATORY_LEVEL" />
+    <work-arrival mode="continuous-plus-interrupts" evidence="[E-25]">Mixed inflow: planned improvement work + unplanned incidents + maintenance requests. Timeboxed sprints feel forced.</work-arrival>
+  </context-assessment>
+
+  <methodology-selection evidence="[E-23][E-25]">
+    <primary approach="kanban-with-wip-limits" rationale="Continuous inflow with interrupts. Flow-based delivery with explicit WIP control is the natural fit.">
+      <delivery mode="kanban" evidence="[E-25]">Explicit WIP limits. Pull system. Flow metrics for forecasting. No forced sprints.</delivery>
+      <constraint-management mode="theory-of-constraints" evidence="[E-03]">Identify the bottleneck. Exploit it. Subordinate everything to it. Elevate it. Repeat.</constraint-management>
+      <work-allocation mode="flow-distribution" evidence="[E-35]">
+        <allocation type="feature" target="$PCT" />
+        <allocation type="defect" target="$PCT" />
+        <allocation type="risk" target="$PCT" />
+        <allocation type="debt" target="$PCT" />
+        <warning>Teams directing 70%+ to features while neglecting debt see short-term gains but long-term degradation.</warning>
+      </work-allocation>
+    </primary>
+    <anti-patterns warn="[AP-04][AP-06][AP-01]">
+      <item ref="AP-04">Over-commitment: operational teams face constant inflow. Without WIP limits, everything starts and nothing finishes. Little's Law: Lead Time = WIP / Throughput.</item>
+      <item ref="AP-06">Meeting overload: operational teams need fast coordination, not long ceremonies. Keep daily sync to &lt;15 minutes focused on flow and blockers.</item>
+      <item ref="AP-01">Cargo-cult: do not force Scrum ceremonies on ops work. If standups are useless, replace with async board reviews.</item>
+    </anti-patterns>
+  </methodology-selection>
+
+  <decomposition evidence="[E-14][E-03]">
+    <goals>
+      <goal id="G-01">$GOAL_DESCRIPTION</goal>
+    </goals>
+
+    <work-streams>
+      <stream id="WS-01" name="reliability" allocation="$PCT">
+        <items>
+          <item id="REL-01" type="slo-improvement">$DESCRIPTION</item>
+          <item id="REL-02" type="incident-prevention">$DESCRIPTION</item>
+        </items>
+      </stream>
+      <stream id="WS-02" name="tech-debt" allocation="$PCT" evidence="[E-35]">
+        <items>
+          <item id="TD-01" impact="$BUSINESS_IMPACT" debt-ratio-impact="$RATIO_REDUCTION">$DESCRIPTION</item>
+        </items>
+      </stream>
+      <stream id="WS-03" name="continuous-improvement" allocation="$PCT">
+        <items>
+          <item id="CI-01" constraint-addressed="$BOTTLENECK">$DESCRIPTION</item>
+        </items>
+      </stream>
+      <stream id="WS-04" name="planned-maintenance" allocation="$PCT">
+        <items>
+          <item id="PM-01">$DESCRIPTION</item>
+        </items>
+      </stream>
+    </work-streams>
+
+    <bottleneck-analysis evidence="[E-03]">
+      <current-constraint>$IDENTIFIED_BOTTLENECK</current-constraint>
+      <exploit>$HOW_TO_MAXIMIZE_CONSTRAINT_OUTPUT</exploit>
+      <subordinate>$WHAT_OTHER_WORK_ADJUSTS</subordinate>
+      <elevate>$HOW_TO_INCREASE_CONSTRAINT_CAPACITY</elevate>
+    </bottleneck-analysis>
+
+    <tasks>
+      <task id="T-01" stream-ref="$STREAM" effort="$EFFORT_DAYS" priority="$PRIORITY">$TASK_DESCRIPTION</task>
+    </tasks>
+  </decomposition>
+
+  <dependency-management evidence="[E-17]">
+    <strategy policy="minimize-blocking">Operational work must flow. Minimize dependencies that create blocking queues.</strategy>
+    <integration evidence="[E-04]">
+      <pattern name="trunk-based" merge-frequency="daily" />
+      <pattern name="canary-deployment" purpose="safe-operational-changes" />
+    </integration>
+  </dependency-management>
+
+  <team-structure evidence="[E-20][E-22]">
+    <topology type="stream-aligned" evidence="[E-22]">Ops team owns their systems end-to-end. You build it, you run it.</topology>
+    <recommended-size range="4-7" evidence="[E-20]" />
+    <on-call-integration>On-call rotation feeds work items back into the Kanban board. Incidents generate improvement items.</on-call-integration>
+  </team-structure>
+
+  <estimation evidence="[E-11]">
+    <approach primary="throughput-based-forecasting" evidence="[E-11]">Forecast from historical throughput and cycle time. Monte Carlo for milestone dates. Express as probability ranges.</approach>
+    <wip-limits evidence="[E-01]">
+      <limit per-developer="3" rationale="Little's Law: reducing WIP directly reduces lead time." />
+      <limit interrupt-buffer="1-slot" rationale="Reserve capacity for unplanned incidents without displacing planned work." />
+    </wip-limits>
+  </estimation>
+
+  <risk-management evidence="[E-28]">
+    <risk-register>
+      <risk id="RR-01" category="debt-accumulation" likelihood="high" impact="medium" early-indicator="tech-debt-ratio-rising-above-5pct" mitigation="explicit-debt-allocation,debt-visibility-on-board" owner="$OWNER" review-cadence="monthly" />
+      <risk id="RR-02" category="burnout" likelihood="medium" impact="high" early-indicator="on-call-escalations-increasing,team-satisfaction-declining" mitigation="interrupt-buffer,toil-reduction,rotation-fairness" owner="$OWNER" review-cadence="bi-weekly" />
+      <risk id="RR-03" category="starvation" likelihood="medium" impact="medium" early-indicator="improvement-items-aging-on-board" mitigation="explicit-allocation-policy,wip-limits-on-unplanned" owner="$OWNER" review-cadence="weekly" />
+    </risk-register>
+  </risk-management>
+
+  <metrics evidence="[E-30][E-31][E-32]">
+    <flow-metrics evidence="[E-01][E-25]">
+      <metric name="cycle-time" purpose="speed" />
+      <metric name="throughput" purpose="rate" />
+      <metric name="wip" purpose="overload-detection" />
+      <metric name="flow-efficiency" purpose="queue-vs-active-time" target="improve-from-baseline" />
+      <metric name="wip-age" purpose="stale-work-detection" />
+    </flow-metrics>
+    <reliability-metrics>
+      <metric name="slo-adherence" purpose="reliability" />
+      <metric name="error-budget-remaining" purpose="velocity-vs-reliability-balance" />
+      <metric name="mttr" purpose="incident-response-effectiveness" />
+      <metric name="incident-recurrence-rate" purpose="root-cause-effectiveness" />
+    </reliability-metrics>
+    <health-metrics evidence="[E-31][E-32][E-35]">
+      <metric name="tech-debt-ratio" purpose="debt-health" target="below-5pct" />
+      <metric name="flow-distribution" purpose="balanced-investment" />
+      <metric name="team-satisfaction" purpose="burnout-prevention" />
+      <metric name="toil-percentage" purpose="automation-opportunity" />
+    </health-metrics>
+  </metrics>
+
+  <roadmap>
+    <continuous-improvement-cycles>
+      <cycle id="CY-01" name="identify-constraint" duration="ongoing">
+        <goal>Continuously identify and address the system's primary bottleneck. [E-03]</goal>
+      </cycle>
+    </continuous-improvement-cycles>
+    <improvement-horizons>
+      <horizon name="immediate" timeframe="1-2-weeks">Quick wins: toil reduction, incident prevention from recent incidents.</horizon>
+      <horizon name="short-term" timeframe="1-3-months">Targeted improvements: debt payoff, reliability hardening, automation.</horizon>
+      <horizon name="medium-term" timeframe="3-6-months">Structural improvements: architecture changes, capability additions.</horizon>
+    </improvement-horizons>
+    <review-cadence evidence="[E-33][E-34]">
+      <review type="daily-flow-check" frequency="daily" duration="10-15min" purpose="blockers-and-wip" />
+      <review type="weekly-metrics" frequency="weekly" duration="30min" purpose="flow-and-reliability-trends" />
+      <review type="retrospective" frequency="bi-weekly" duration="45min" experiments="1-2" />
+      <review type="quarterly-strategy" frequency="quarterly" purpose="allocation-rebalance,constraint-review" />
+    </review-cadence>
+  </roadmap>
+
+  <report>
+    <destination path="./project-plan.$PROJECT_NAME.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
+    <content include="initiative-brief,context-assessment,methodology,decomposition,bottleneck-analysis,dependencies,team-structure,estimation,risks,metrics,roadmap" />
+    <format>yaml</format>
+  </report>
+</project-plan>
