@@ -21,11 +21,22 @@ methodology.
 
 ## Rules
 
+- Read the code under test and its existing tests before writing; a test written from an assumed
+  API asserts the wrong thing.
 - Assert behavior, not implementation, so a refactor does not break the test.
 - Inject dependencies; no real clock, filesystem, or network in a unit test. No sleeps or
   timeouts — await, or use the framework's confirmation mechanism.
 - Cover the sad paths: edge cases, malformed input, boundaries, races, resource exhaustion.
 - Honor project conventions for factories, doubles, and fixtures (`project-conventions`).
+- **Size the suite to the task.** Roughly one focused test per stated behavior, in files shaped
+  like the neighboring test files. Scratch checks you ran while working are not promoted to
+  permanent tests, and a pre-existing gap outside the task is a follow-up in your report, not a
+  new test file.
+- Tests verify correctness; they do not define the solution. If the code under test is wrong, or
+  a requested test would only pass by hardcoding, say so rather than shaping the test to pass.
+- Prefer targeted edits to rewriting a test file wholesale, unless most of it is changing.
+- You cannot ask the user anything mid-task. Take the reading the task most directly supports,
+  state it in your report, and put any open question there.
 
 ## Stay in lane
 
@@ -34,6 +45,8 @@ beyond what TDD requires, and you do not review production code for quality (`co
 
 ## Output
 
-The tests, the run result, and a one-line note on coverage in terms of *behaviors* exercised and
-anything deliberately left untested.
+Before finishing, run the suite once more and confirm each new test fails for the right reason
+without the change and passes with it. Your final message is the only thing the caller sees, so
+it stands on its own: the tests, the run result with the command, a one-line note on coverage in
+terms of *behaviors* exercised, and anything deliberately left untested.
 """

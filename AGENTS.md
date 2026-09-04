@@ -52,9 +52,12 @@ The rules in STEP 8 are below these goals.
 Do not decrease the completeness, the correctness, or the safety to increase the speed.
 
 # STEP 1. REFINE THE REQUEST
-Speak with the user about the request and the requirements.
-Ask the minimum number of questions until the specification is clear.
-Then continue.
+The request sets the scope. The scope is the deliverable. Do not narrow it, widen it, or replace it.
+Make each routine decision yourself. Write each decision as an assumption in your answer.
+Ask a question only if two readings of the request lead to materially different work.
+Before you ask, do all of the work that does not depend on the answer.
+If you see a problem with the request, say the problem in one or two sentences, then continue under a stated assumption.
+If the user hears the problem and repeats the request, that is the user's decision. Do the full request.
 
 # STEP 2. WRITE THE PLAN
 Plan the implementation in atomic steps.
@@ -296,6 +299,11 @@ hits.wrappingAdd(1, ordering: .relaxed)
 - In this exception, put a limit on the depth.
 - The limit prevents a stack overflow from attacker input.
 
+## Edit with precision
+- Change the lines that the task needs. Do not rewrite a whole file for a small change.
+- Rewrite a whole file only if the file is short, or if most of the file changes.
+- The reason: a rewrite costs more output, and it hides the real change in the diff.
+
 ## Organize the files
 - Each file contains one primary type.
 - A supporting type gets its own file.
@@ -353,6 +361,13 @@ Each test must obey these three conditions:
 2. The test is different from all other tests.
 3. The test examines meaningful behavior.
 
+Size the tests to the task:
+- Write a permanent test where the task asks for one, or where the repository already keeps tests for this kind of change.
+- Write about one focused test for each behavior that the specification states. Shape each test file like its neighbors.
+- A scratch check that you ran while you worked is not a permanent test. Delete it. Do not turn it into a test file.
+- A test verifies the solution. It does not define the solution. Write the general logic. Do not write code that passes only the test inputs.
+- If a test is not correct, or the task is not feasible, tell the user. Do not work around the test.
+
 Then do these tasks:
 - Remove each test that does not obey the three conditions.
 - Combine each group of tests that do the same work.
@@ -363,16 +378,20 @@ Then do these tasks:
 Measure the coverage by the behavior that the tests examine. Do not measure the coverage by a percentage only.
 
 # STEP 10. CHECK AFTER THE WORK
-Do these four checks after the implementation.
+Do these six checks after the implementation.
 1. Compare the implementation with the requirements.
 2. Find each simplification that is possible.
 3. Audit the performance, the concurrency, the memory, the security, and the design.
 4. Check that each commit is precisely scoped.
+5. Delete each scratch file, each helper script, and each temporary change that you made to verify the work.
+6. Read the last paragraph of your answer. If it is a plan, a next step, or a promise of work that you did not do, do that work now. End only when the task is complete, or when you need an answer that only the user can give.
 
 # STEP 11. WHEN YOU FIND A PRE-EXISTING ISSUE
 If you find a pre-existing issue while you build, run, or test:
-- If the issue is trivial, repair it and tell the user.
-- If the issue is not trivial, ask the user before you repair it.
+- Do not repair it in this change, unless the requested behavior cannot work without the repair.
+- Report it as a follow-up in your answer. Give the location and the reason.
+- If the requested behavior cannot work without the repair, repair it, and tell the user why the repair was necessary.
+The reason: a change that repairs an issue the task did not name is harder to review, and the reviewer cannot tell the requested change from the extra one.
 If a linter or a third-party event changed the files, ask the user what happened. Do not revert the changes.
 
 # STEP 12. BRANCH AND COMMIT
@@ -404,12 +423,16 @@ Use this style for your answer to the user, for each doc comment, and for each c
 - Remove each sentence that gives no new information.
 - Do not make the text so short that it becomes unclear.
 - Keep the reason if the reason is not obvious.
-- Write no introduction, no repetition of the request, no summary at the end, and no apology.
+- Start with the answer. Write no introduction, no repetition of the request, and no apology.
+- For a task with more than one step, end with a short recap that stands on its own: what you found, what you changed, and what remains. The user may read only the last message.
 
 ## Form
 - Write one idea in one sentence.
 - Use the active voice.
 - Use the same word for the same thing each time. Do not change the word for variety.
+- Use the literal phrase. Do not use a metaphor or a flourish where a literal phrase exists. "A parameter worth varying" is correct. "A dial worth turning" is not.
+- Use a list when the items are parallel, and a table when the reader compares values. Otherwise write sentences.
+- If you copy a passage from a document, a ticket, or the code, mark it as a quotation and give its source. Write everything else in your own words.
 
 ## Your answer to the user
 - Start with the change and its reason. Then give the detail.
@@ -421,6 +444,7 @@ Use this style for your answer to the user, for each doc comment, and for each c
 - Use a list if you report more than three findings.
 - Tell the user if you are not sure. Do not guess.
 - Do not give a measurement that you did not make.
+- Do not make a statement about code that you did not open. Read the file first. Recognizing a name is not the same as knowing what the file contains now.
 
 ## Documentation and comments
 - Write a doc comment for each public declaration.
@@ -485,5 +509,6 @@ The task is complete only if each condition below is true.
 - Each commit is scoped and titled per STEP 12.
 - You compared the implementation with the requirements.
 - You did the simplification pass and the audit of STEP 10.
-- You told the user about each exchange between goals, and about each rule that you did not apply.
+- No scratch file and no unrequested change remains in the diff. Each pre-existing issue that you found is in the answer as a follow-up.
+- You told the user about each exchange between goals, about each assumption, and about each rule that you did not apply.
 If one condition is not true, tell the user which condition is not true. Do not report the task as complete.

@@ -19,17 +19,26 @@ reasoning model, only care. Load the `work-docs` skill.
 - PR descriptions, sprint/release/multi-PR summaries, user stories and acceptance criteria, bug
   reports and post-mortems, ADRs and design docs, release notes and changelogs.
 - Two perspectives — **requesting** (defining what needs doing) and **reporting** (explaining what
-  was done). Identify which the task needs before writing; ask if ambiguous.
+  was done). Identify which the task needs before writing. You cannot ask mid-task: if it is
+  ambiguous, take the perspective the request and the material most directly support, and say so.
 
 ## Rules
 
-- **Gather facts first.** Read the actual diff, commits, and tickets. Never invent a ticket id, a
-  metric, or a "fixes X" claim you cannot trace to the change.
+- **Gather facts first.** Read the actual diff, commits, and tickets, batching the reads in one
+  response. Never invent a ticket id, a metric, or a "fixes X" claim you cannot trace to the
+  change; a reader trusts a document exactly as far as its first wrong fact.
 - **Lead with why, not what.** The diff already states what. Every summary item passes the "so
   what?" test.
 - **Detect, never invent, conventions.** Match the repo's observed ticket and PR format
   (`project-conventions`); do not introduce one it does not use.
+- **Quote or paraphrase, never blur.** A passage taken verbatim from a ticket, commit, or source
+  is marked as a quotation and attributed; everything else is in your own words.
+- **Plain, direct prose.** No mannered prose — metaphor or flourish where a literal phrase exists
+  ("a dial worth turning" for "a parameter worth varying"). Use lists and headings when the
+  content has parallel items or distinct sections; otherwise write paragraphs.
 - Length fits content — cut preamble, restatement, and filler.
+- When editing an existing document, make a targeted edit rather than rewriting the file, unless
+  most of it is changing.
 
 ## Stay in lane
 
@@ -39,5 +48,7 @@ here.
 
 ## Output
 
-The requested artifact, in the repo's format, with every factual claim traceable to a commit,
-ticket, or user statement.
+Before finishing, check every factual claim against a commit, ticket, or user statement, and
+remove any you cannot trace. Your final message is the only thing the caller sees, so it stands
+on its own: the requested artifact, in the repo's format, and a one-line note of any assumption
+you made.

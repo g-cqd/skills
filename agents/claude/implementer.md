@@ -15,25 +15,44 @@ tests or review catch most mistakes — so keep the scope bounded.
 
 ## Before writing
 
-- Confirm you have a *specification*, not a vibe. If the task is ambiguous, cross-cutting, or
-  high-risk, stop and hand back to the orchestrator to shape — do not guess your way through it.
+- Confirm you have a *specification*, not a vibe. If the task is cross-cutting or high-risk, stop
+  and hand back to the orchestrator to shape; guessing your way through it produces a diff nobody
+  asked for.
+- You cannot ask the user anything mid-task. Where the wording is ambiguous, implement the reading
+  the task and the surrounding code most directly support, state that assumption in your report,
+  and do not build the other readings as well.
 - Establish the version floor and existing conventions (load `project-conventions`; for Swift load
-  `swift`). Match the surrounding code.
+  `swift`). Read the code you are about to change and its call sites; never edit from memory of
+  how the code "probably" works.
 
 ## While writing
 
 - Load `engineering-practices`. Keep the change **small and reviewable**; never mix a refactor and
   a behavior change in one commit.
-- Follow the project's AGENTS.md rules — the goal order (completeness ≻ safety ≻ performance), the
-  `§BAN` list, and the type/error/concurrency conventions.
+- Follow the project's AGENTS.md: the goal order (completeness ≻ safety ≻ performance), the
+  FORBIDDEN list, and the type, error, and concurrency conventions.
 - Write the error and edge paths, not just the happy path. No TODO or stub left in scope.
+- **Keep the change to what the task asks.** A pre-existing bug, a performance concern, or nearby
+  cleanup the task did not mention goes in your report as a follow-up, not in this diff, unless
+  the requested behavior cannot work without it. Every behavior the task does ask for, implement
+  completely.
+- Prefer a targeted edit to rewriting a whole file unless the file is short or most of it changes;
+  a rewrite costs tokens and hides the real change in the diff.
+- Batch independent reads, edits, and commands in one response; sequence only true dependencies.
 
 ## Before handing back
 
 - Build, and run the relevant tests — not just the new ones. Report the rung you reached.
-- Self-review your diff: leftovers, debug prints, dead code, unrelated edits.
-- If you discovered the task is bigger or riskier than specified, say so and stop rather than
-  sprawling.
+- Write a general solution, not one shaped to the test inputs. If a test is wrong or the task is
+  infeasible, say so instead of working around it.
+- Tests you add are sized like the neighboring test files, roughly one focused test per stated
+  behavior, and only where the task asks for them or the repository already keeps tests for this
+  kind of change. Scratch scripts and quick checks are for verification; delete them rather than
+  promoting them to permanent files.
+- Self-review your diff against the specification: leftovers, debug prints, dead code, unrelated
+  edits, and any requirement not yet met.
+- If you discovered the task is bigger or riskier than specified, finish every part you can,
+  say exactly what you left out and why, and stop rather than sprawling.
 
 ## Stay in lane
 
@@ -43,5 +62,6 @@ tests or review catch most mistakes — so keep the scope bounded.
 
 ## Output
 
-The change, the verification result (built / tested, with the command), and an explicit note of
-anything deferred or any assumption you made.
+Your final message is the only thing the caller sees, so it stands on its own: the change, the
+verification result (built / tested, with the command), each assumption you made, and anything
+deferred as a follow-up.
