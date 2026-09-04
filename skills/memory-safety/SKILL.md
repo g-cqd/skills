@@ -1,37 +1,11 @@
 ---
 name: memory-safety
-description: >
-  Language-agnostic memory safety, with an Apple-platform section covering the
-  Swift unsafe surface and the C -fbounds-safety extension in full. Generic core:
-  spatial and temporal violation classes (buffer overflow, out-of-bounds
-  read/write, use-after-free or UAF, double-free, dangling stack pointers,
-  uninitialized reads, type confusion), ownership and lifetime models (manual,
-  RAII, borrow checking, reference counting, tracing GC, exclusivity), sanitizers
-  (ASan, TSan, UBSan, MSan) and fuzzing, and hardware mitigations (ASLR, W^X,
-  DEP/NX, stack canaries, shadow stacks, PAC, MTE, CHERI). Use when reviewing
-  unsafe or low-level code in any language, auditing a raw-pointer surface,
-  diagnosing memory corruption (segfault, heap corruption, use-after-free, "works
-  in debug, crashes in release", nondeterministic values, vtable crash), choosing
-  an ownership strategy, deciding where weak or unowned breaks a cycle, or
-  selecting sanitizer coverage for CI. Also use when writing or reviewing a
-  parser of untrusted or attacker-reachable bytes — file formats, image or audio
-  media, network wire formats — where a buffer sized from one length field and
-  filled from another that can disagree is the classic out-of-bounds write and
-  the root of zero-click media-parser exploit chains (the iOS RawCamera
-  CVE-2025-43300 DNG/JPEG-Lossless shape). The Apple section additionally covers
-  Unsafe*Pointer, unsafeBitCast, unowned(unsafe), withUnsafe*, assumingMemoryBound,
-  Swift exclusivity traps, and all of -fbounds-safety: the bounds annotations
-  (__counted_by, __counted_by_or_null, __sized_by, __sized_by_or_null, __ended_by,
-  __single, __indexable, __bidi_indexable, __unsafe_indexable, __null_terminated,
-  __terminated_by), the forge and conversion intrinsics
-  (__unsafe_forge_bidi_indexable, __unsafe_forge_single,
-  __null_terminated_to_indexable, __unsafe_null_terminated_to_indexable,
-  __unsafe_null_terminated_from_indexable), __ptrcheck_abi_assume_single, any
-  include of ptrcheck.h, and the diagnostic "assignment to ... requires
-  corresponding assignment to ...". Not for Xcode build-setting hardening, which is
-  `xcode`; not for trust-boundary and vulnerability review, which is
-  `secure-coding`; not for cache layout and data-locality performance, which is
-  `performance-engineering`.
+description: >-
+  Language-agnostic memory safety, with Swift unsafe APIs and C -fbounds-safety. Use for
+  pointer or ownership review, untrusted binary parsers, buffer overflows, use-after-free,
+  retain cycles, sanitizer selection, and bounds annotations. For trust-boundary security,
+  use `secure-coding`; for build hardening, use `xcode`; for cache and data-layout
+  performance, use `performance-engineering`.
 allowed-tools:
   - Read
   - Glob
@@ -192,6 +166,9 @@ greppable**. Inventory it before reading anything.
 
 ## 6. Review workflow
 
+This is defensive review of code the user owns or is authorised to review: the goal is to find
+and fix the defect, and each finding states the concrete input or state that triggers it.
+
 1. **Inventory before reading.** Grep the unsafe surface for the language (§5). Know the size of
    the problem first.
 2. **State the invariant for each unsafe site**: owner, lifetime, bounds. If you cannot state it,
@@ -203,8 +180,10 @@ greppable**. Inventory it before reading anything.
 5. **For any parser of attacker-reachable bytes**, check that buffer sizes and fill counts derive
    from one validated length, and that cross-field size/offset/count invariants are verified
    before allocation. This is where zero-click chains start.
-6. **Report** with `file:line`, the violation class, and the root-cause fix. A mitigation is not a
-   fix.
+6. **Report** with `file:line`, the violation class, the triggering input or state, and the
+   root-cause fix. A mitigation is not a fix. Before finishing, check each finding: one without a
+   concrete triggering input or state is down-ranked to a concern, because the reader cannot
+   verify it.
 
 ---
 
@@ -230,8 +209,9 @@ Review each site for:
   the single most common Swift memory bug.
 - **Alignment respected** on rebinding.
 
-**Exclusivity violations trap at runtime and are genuine aliasing bugs.** Never disable the check
-to make a trap go away.
+**Exclusivity violations trap at runtime and are genuine aliasing bugs.** Fix the overlapping
+access rather than disabling the check; the trap is reporting a real bug, and silencing it only
+hides the corruption.
 
 Data races are compile-time errors under Swift 6 strict concurrency — that is `swift`, not this
 skill.

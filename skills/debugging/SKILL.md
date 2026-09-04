@@ -1,19 +1,10 @@
 ---
 name: debugging
-description: >
-  Language-agnostic systematic debugging: reproduce deterministically, observe
-  before theorizing, form falsifiable hypotheses one at a time, minimize the
-  reproduction, bisect by commit or data or code path, identify a root cause you
-  can state in one sentence, fix minimally, and lock it with a regression test.
-  Includes the flaky-failure playbook (shared mutable state, clock dependence,
-  async ordering and races, network and filesystem nondeterminism, test-order
-  dependence, unseeded randomness) and an escalation gate after repeated failed
-  fixes. Use when encountering ANY bug, failing test, crash, hang, flaky
-  behavior, unexplained output, or wrong result — BEFORE proposing a fix. Also
-  use when a previous fix did not work, when a bug keeps reappearing, or when
-  the same test passes in isolation and fails in the suite. Not for slowness,
-  which is `performance-engineering`; not for writing the regression test
-  itself, which is `testing`.
+description: >-
+  Language-agnostic: diagnose bugs, failing tests, crashes, hangs, flaky behavior, and
+  wrong output through reproduction, hypotheses, and isolation. Use before proposing a
+  fix, especially when earlier fixes failed or a test fails only in the suite. For
+  slowness, use `performance-engineering`; for writing regression tests, use `testing`.
 allowed-tools:
   - Read
   - Glob
@@ -23,10 +14,9 @@ allowed-tools:
 
 # Systematic Debugging
 
-```
-IRON LAW: NO FIX WITHOUT A ROOT CAUSE YOU CAN STATE IN ONE SENTENCE
-AND DEFEND WITH EVIDENCE. SYMPTOM-PATCHING IS FORBIDDEN.
-```
+**No fix without a root cause you can state in one sentence and defend with evidence.** A fix
+for a cause you have not identified cannot be verified, so you will not know whether it worked —
+it only moves the symptom.
 
 This skill owns **finding out why**. Slowness is a different question (`performance-engineering`);
 so is what the test should assert once you know (`testing`).
@@ -51,6 +41,9 @@ so is what the test should assert once you know (`testing`).
 
 Get a deterministic reproduction, or **measure the failure rate** if it is flaky — "3 in 50 runs"
 is data; "sometimes" is not. Capture the exact error, environment, inputs, and versions.
+
+Read the failing code path and the actual data before theorizing. Reasoning from memory of how
+the code "probably" works produces hypotheses about a program that does not exist.
 
 If you cannot reproduce, gather more facts — logs, state diffs, timing. **Do not guess-fix.** A
 fix for an unreproduced bug cannot be verified, so you will not know whether it worked.
@@ -86,6 +79,9 @@ diagnosing, whatever the code is doing now.
 
 Fix the cause, not the symptom. The fix must make the original reproduction pass, and you must be
 able to explain *why* it does.
+
+Fix only the root cause you found. A nearby pre-existing bug or improvement goes in the report as
+a follow-up, not in the same change — mixing it in makes the fix harder to verify and to review.
 
 ### 6. Lock it in
 

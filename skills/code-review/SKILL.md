@@ -1,21 +1,11 @@
 ---
 name: code-review
-description: >
-  Language-agnostic code-review methodology, with platform-calibrated rule sets
-  for iOS (Swift, SwiftUI) and Android (Kotlin, Compose). Generic core: the
-  review priority order (correctness and safety, architecture and scope, naming
-  and API design, idioms, access control and polish), a simplification-first
-  lens that strips noise comments, single-use wrappers, delegation-only methods,
-  dead code and over-defensive checks, priority signalling from blocking through
-  suggestion to nit, communication style and noise reduction, PR-level checks,
-  and a structured output format with a per-category issue count. Use when
-  reviewing code, a diff, PRs, a pull request, a branch, or a snippet — triggers on
-  "code review", "PR review", "review my PR", "strict review", "senior review",
-  and "thorough review". The platform section detects iOS versus Android from
-  file extensions and build files and applies the matching rules and
-  anti-patterns. Not for a pure refactoring request with no review framing; not
-  for security review, which is `secure-coding`; not for judging whether tests
-  are good, which is `testing`.
+description: >-
+  Language-agnostic code review, with iOS and Android rules. Use to review a diff, PR,
+  branch, or snippet for correctness, architecture, naming, idioms, and simplification,
+  and report prioritized findings with fixes. For security audits, use `secure-coding`;
+  for test quality, use `testing`; for refactoring without a review request, use
+  `engineering-practices`.
 allowed-tools:
   - Read
   - Glob
@@ -58,6 +48,9 @@ Review against the project as it is, not as you would have written it. Before th
   generic rule; a comment that fights the codebase's own convention needs to argue for itself.
 - **The state model** and DI approach in use.
 - **The scope** — what the change claims to do. Everything beyond it is a scope finding.
+
+Never speculate about code you have not opened. Read the surrounding code and the call sites
+before asserting a defect — a diff shows what changed, not whether the change is wrong.
 
 ## 2. Review philosophy
 
@@ -110,6 +103,11 @@ Flag on every review:
 - Specificity over brevity
 - Self-documenting code over an explanatory comment
 - Named arguments where the language supports them
+- Three questions per declaration: does the verb match the effect (`load` fetches, `update`
+  recomputes, `refresh` swaps in the truth, `resolve` decides, `remove` deletes)? Does a boolean
+  claim only what its type knows? Does the argument label carry the noun, once?
+- A side-effect-free argument-less method is a property; a `store`/`delete` twin is a settable
+  property
 
 ### P4 — Idioms (important)
 
@@ -140,6 +138,28 @@ Call out what was done well; a review with only negatives is not calibrated.
 but…"). Phrase requests as questions ("Can we rename this to…?"). Be transparent about
 uncertainty rather than asserting through it.
 
+<examples>
+<example>
+**Blocking** — `Sync.swift:42`: `try? store.save(item)` discards the error, so a failed save
+shows the success toast. Propagate it:
+```swift
+try store.save(item)
+```
+and let the caller's existing `catch` present the failure.
+<rationale>Names the concrete failing state, gives the fix as code, and the priority is unmistakable.</rationale>
+</example>
+<example>
+**Suggestion** — I wonder if `isEnabled: Bool` on `configure(_:)` is hiding two call sites with
+different intent. Two methods, `enable()` and `disable()`, would read at the call site without a
+trip to the signature. Happy to leave it if there is a third caller I am not seeing.
+<rationale>Hedged, offers the alternative concretely, and admits the limit of what the reviewer read.</rationale>
+</example>
+<example>
+Nit: `users` → `user` — it holds a single value. Same here at lines 17 and 31.
+<rationale>Literal "Nit:" prefix, one-line fix, repeats batched by location instead of three comments.</rationale>
+</example>
+</examples>
+
 ## 5. PR-level review
 
 Beyond the diff:
@@ -168,6 +188,10 @@ the fix as code.
 | Platform idioms | count |
 | Simplification | count |
 | Access control / polish | count |
+
+**Before finishing**, check every blocking finding: it names a concrete input or state that
+breaks, and it shows the fix as code. A finding that has neither is a suggestion — down-rank it
+rather than asserting a bug you cannot demonstrate.
 
 ---
 

@@ -1,26 +1,11 @@
 ---
 name: swift
-description: >
-  Swift language and concurrency, wherever Swift runs — Apple platforms, Linux,
-  server, embedded. Covers API design and the Swift API Design Guidelines,
-  naming, access control, the type system (struct and enum first, final classes,
-  generics, some versus any, existentials, copy-on-write, property wrappers,
-  making illegal states unrepresentable), typed throws and error handling, SOLID
-  and dependency injection, SPM package structure and Package.swift, doc-comment
-  contracts, and the whole concurrency model: async/await, structured
-  concurrency, Task and TaskGroup, cancellation, actors, @MainActor, actor
-  reentrancy, Sendable and region isolation, AsyncSequence and AsyncStream,
-  isolation boundaries, QoS and the cooperative pool, Mutex and Atomic from the
-  Synchronization framework, memory ordering, and Swift 6 strict-concurrency
-  migration. Use when writing, reviewing, or architecting Swift, designing an API
-  or module, fixing a data race, resolving errors like "type does not conform to
-  Sendable", "call to main-actor-isolated method in a synchronous nonisolated
-  context", or "reference to captured var in concurrently-executing code",
-  eliminating retain cycles in tasks and closures, or migrating a target to Swift
-  6. Not for SwiftUI views and view state, which is `swiftui`; not for
-  platform frameworks or Liquid Glass, which is `apple-platforms`; not for GPU
-  and shaders, which is `graphics`; not for Keychain, crypto, or threat modeling,
-  which is `secure-coding`; not for building and running, which is `xcode`.
+description: >-
+  Swift language and concurrency on Apple platforms, Linux, servers, and embedded systems.
+  Use for API design, naming, generics, typed throws, SPM, async/await, actors, Sendable,
+  Mutex, Atomic, cancellation, data races, and Swift 6 migration or isolation errors. For
+  views, use `swiftui`; for framework adoption, use `apple-platforms`; for Keychain and
+  crypto, use `secure-coding`; for builds, use `xcode`.
 allowed-tools:
   - Read
   - Glob
@@ -115,8 +100,22 @@ declaration.
   information.
 - Methods read as sentences at the call site. Mutating/non-mutating pairs follow the
   `sort()`/`sorted()`, `reverse()`/`reversed()` verb-noun rule.
+- **Verbs mean one thing each.** `load` fetches (network or disk) and stores or returns nothing;
+  `refresh` swaps a newer value into the owner of the truth, nowhere else; `update` recomputes
+  derived state; `resolve` decides a value from several sources; `remove` deletes; `store` only
+  where a settable property is impossible. No `sync`; no `get` prefix on a call that returns
+  nothing. One verb family per type — see `references/swift/naming-conventions.md`.
+- **Property, not method,** for a side-effect-free argument-less read (`authToken`, not
+  `authToken()`), and for a read/write pair where `nil` removes (`pushToken = nil`, not
+  `store`/`delete` twins). On a struct that owns shared storage, use `nonmutating set`.
+- **Booleans are interrogative** (`is`, `has`, `can`) and claim only what the type knows: a
+  keychain store has `hasAuthToken`; `isLoggedIn` belongs where the session is known.
+- **Argument labels carry the noun**, never the noun in both base name and label:
+  `start(with:)`, `refresh(user:)`, `store(accountKey:)` — not `storeAccountKey(_:)`.
 - **Protocol-first.** Define behavior as a protocol, then conform — it is what makes dependency
-  injection and testing possible.
+  injection and testing possible. The protocol is a plain noun (`TokenStore`,
+  `DirectoryProvider`); the implementation carries `Default…` or a descriptive prefix
+  (`DefaultOrderDetailsService`, `KeychainTokenStore`). Not `-ing` names.
 - **Composition over inheritance.** Inheritance couples lifetime, storage, and behavior at once.
 - **Dependency injection** for anything that touches the outside world. An injected closure is a
   perfectly good dependency.
@@ -192,6 +191,11 @@ Common diagnostics and what they actually mean:
 | *"call to main-actor-isolated … in a synchronous nonisolated context"* | The caller needs `await`, or should itself be `@MainActor` |
 | *"reference to captured var in concurrently-executing code"* | A `var` captured by a closure — capture a `let` copy, or isolate the state |
 
+The table names the usual cause, not the fix for this code. Read the declaration and its
+isolation context before proposing a change; the same diagnostic on a type that already carries a
+lock, or on a closure that outlives its caller, needs a different fix than the one the error
+string suggests.
+
 ### Synchronization ladder
 
 1. `@MainActor` already covers UI state.
@@ -244,7 +248,9 @@ Migrate per module, not all at once. Raise the language mode one target at a tim
 leaves of the dependency graph. Fix the diagnostics; do not silence them with `@unchecked
 Sendable` or `nonisolated(unsafe)` to reach a green build — those are debt with a compiler-shaped
 receipt. Data races that were runtime Heisenbugs become compile-time errors, which is the entire
-point.
+point. Migrate with surgical edits, file by file, rather than rewriting whole files: a rewrite
+hides the behavioural change in the diff, and the reviewer needs to see exactly which isolation
+each declaration gained.
 
 ---
 
@@ -255,6 +261,7 @@ point.
 - [ ] Illegal states unrepresentable; no `Any` or `[String: Any]`
 - [ ] Typed errors; no empty catch; no `try!`, `as!`, or force unwrap
 - [ ] Naming follows the API Design Guidelines
+- [ ] Verbs match their effect; booleans claim only what their type knows; labels carry the noun
 - [ ] Access control starts at `private`
 - [ ] `some` over `any` unless heterogeneous storage is required
 - [ ] Compiles clean under Swift 6 strict concurrency

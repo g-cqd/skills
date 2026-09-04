@@ -1,38 +1,11 @@
 ---
 name: secure-coding
-description: >
-  Language-agnostic secure coding and vulnerability review, with an
-  Apple-platform section covering Keychain, CryptoKit, and ATS. Generic core is
-  grounded in OWASP Top 10:2025, OWASP ASVS 5.0, and CWE Top 25 (2025): threat
-  framing and trust boundaries, input validation and canonicalization, injection
-  (SQL, shell, eval, XSS), broken access control and IDOR, SSRF, authentication
-  and session failures, CSRF, cryptographic failures and misuse, secrets
-  handling, supply-chain hygiene, insecure deserialization, logging and alerting
-  failures, and mishandled exceptional conditions. Use when writing or reviewing
-  code that crosses a trust boundary — user input, network, files, IPC,
-  environment, database content, third-party APIs, or LLM output — when handling
-  credentials or tokens, when adding a dependency, or when asked for a security
-  review in any language. The Apple section is a defensive reading of the iOS
-  pentest surface: STRIDE threat modeling and attacker profiles; Keychain
-  accessibility classes (kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
-  ThisDeviceOnly), SecAccessControl and biometryCurrentSet, Secure Enclave;
-  NSFileProtection classes and App Group shared containers; background-snapshot,
-  keyboard-cache, and UIPasteboard leakage; the LAContext evaluatePolicy
-  Boolean-bypass and binding auth to the Keychain instead; custom URL scheme
-  hijacking and deep-link validation, Universal Links and
-  apple-app-site-association (AASA) auditing, app extensions and
-  NSExtensionActivationRule, NSKeyedUnarchiver secure coding; WKWebView hardening
-  (javaScriptEnabled, hasOnlySecureContent, allowFileAccessFromFileURLs,
-  WKScriptMessageHandler and postMessage bridge origin checks, WKContentWorld,
-  WKAppBoundDomains, isInspectable); App Transport Security
-  (NSAppTransportSecurity, NSAllowsArbitraryLoads), TLS trust evaluation,
-  certificate pinning and hostname validation; CryptoKit, weak-algorithm and
-  hardcoded-key review; log
-  and unified-logging leakage; and jailbreak and integrity checks. Use it to
-  review or harden an iOS app against the mobile pentest checklist. Not for Xcode
-  build-setting hardening, Enhanced Security, or entitlements, which is `xcode`;
-  not for memory-corruption classes, sanitizers, or ownership review, which is
-  `memory-safety`.
+description: >-
+  Language-agnostic security review, with Apple Keychain, CryptoKit, ATS, and mobile
+  hardening. Use for trust boundaries, untrusted input, authentication, secrets,
+  injection, SSRF, dependencies, or iOS pentest review including deep links and WKWebView.
+  For build settings and entitlements, use `xcode`; for memory corruption and ownership,
+  use `memory-safety`.
 allowed-tools:
   - Read
   - Glob
@@ -74,6 +47,10 @@ Sections 1–7 are language-agnostic. Section 8 is Apple-specific.
    would.
 
 Reviewing without this frame finds typos, not vulnerabilities.
+
+This is a defensive review of code the user owns or is authorized to review: finding
+vulnerabilities in the source is the point, and each finding states a concrete exploitation
+scenario so the fix can be judged against a real attack rather than a pattern name.
 
 ---
 
@@ -130,11 +107,25 @@ Treat each of these as a stop sign in review, including when you are the one thi
 Report each finding as: **vulnerability class + CWE ID**, location, **exploitation scenario**,
 concrete fix, and severity (Critical / High / Medium / Low). Sort by severity.
 
-The exploitation scenario is what distinguishes a finding from a style note. If you cannot
-describe how it is exploited, say so and rank it accordingly.
+The exploitation scenario is what distinguishes a finding from a style note. Trace the actual
+data path from the trust boundary to the sink before asserting a vulnerability; a pattern name
+(`eval`, string concatenation, `NSAllowsArbitraryLoads`) is a reason to look, not a finding. If
+you cannot describe how it is exploited, report it as a hardening note, not a vulnerability.
 
-When the project declares an ASVS 5.0 level, map findings to it — L1 baseline, L2 standard,
-L3 high-assurance.
+<example>
+**High — CWE-89 SQL Injection** · `Repositories/UserStore.swift:42`
+`query = "SELECT * FROM users WHERE name = '" + name + "'"` — `name` arrives from the search
+field via `SearchViewModel.submit` with no validation. Scenario: `' OR 1=1 --` returns every row;
+`'; DROP TABLE users; --` is blocked only by the driver's multi-statement setting. Fix: bind the
+value with `sqlite3_bind_text` / a parameterized query; keep the allowlist on `name` as defense in
+depth.
+<rationale>The finding names the class and CWE, the exact sink, the traced source, a concrete
+payload with its effect, and a root-cause fix — a reader can verify each claim against the
+code.</rationale>
+</example>
+
+Before finishing, re-read each finding and confirm it has an exploitation path. When the project
+declares an ASVS 5.0 level, map findings to it — L1 baseline, L2 standard, L3 high-assurance.
 
 ---
 
@@ -255,7 +246,8 @@ callback to `true` regardless of the actual result.
   `WKScriptMessageHandler` / `postMessage`, `JSExport`, and `JSContext` all cross the boundary.
   Before a handler touches tokens, filesystem paths, deep-link targets, or app state, **validate
   `message.frameInfo.securityOrigin`** and reject unexpected subframes. Isolate bridges with
-  `WKContentWorld`. Never `evaluateJavaScript` a user-controlled string.
+  `WKContentWorld`. Pass user-controlled data to the page through the message bridge as data,
+  not by interpolating it into an `evaluateJavaScript` string — that is script injection.
 - **`WKAppBoundDomains`** + `limitsNavigationsToAppBoundDomains` for any privileged bridge.
 - **`isInspectable` must be false in production** (iOS 16.4+ defaults it off, but it can be set) —
   true exposes the WebView and `JSContext` to Safari's inspector on a paired Mac.
@@ -271,8 +263,8 @@ callback to `true` regardless of the actual result.
   not that its hostname matches the host is the classic MitM hole — a proxy cert for any hostname
   then works.
 - **Certificate pinning** where the threat model warrants it, with a rotation plan; design against
-  the SSL-Kill-Switch bypass. Never disable trust evaluation, including in a debug path that can
-  ship.
+  the SSL-Kill-Switch bypass. Keep trust evaluation on in every configuration; if a debug build
+  needs a relaxed policy, gate it behind a compile-time flag that release builds cannot carry.
 
 ### 8.7 Crypto
 

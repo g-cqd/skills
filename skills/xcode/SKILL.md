@@ -1,34 +1,11 @@
 ---
 name: xcode
-description: >
-  Apple platforms: drive the Xcode toolchain end to end — building, testing,
-  running, profiling, verifying on device, and hardening the build configuration.
-  Covers the CLI (xcodebuild, xcrun, simctl, devicectl, xctrace), scheme and
-  destination discovery, xcodebuild versus swift build/swift test, the
-  self-validation loop, agent integration via the MCP bridge (xcrun mcpbridge),
-  AGENTS.md project instructions, Device Hub, and simulator
-  resource exhaustion under concurrent sessions. Use when asked to build, run,
-  test, profile, launch, or screenshot an app, when a build or test fails from
-  the command line, or when tests abort in 0.000s with Mach error -308. Also
-  covers on-device and simulator verification — screenshots, UI hierarchy dumps,
-  taps, swipes, typing, hardware buttons, orientation — so use it when asked
-  whether a feature "works on device", to "check", "verify", or "test this" in
-  the running app, or to debug touch and interaction problems. Also covers
-  auditing and enabling security build settings: Enhanced Security
-  (ENABLE_ENHANCED_SECURITY, com.apple.security.hardened-process entitlements,
-  hardened-heap, dyld-ro, platform-restrictions), pointer authentication and
-  arm64e (ENABLE_POINTER_AUTHENTICATION), hardware memory tagging and checked
-  allocations, stack zero-initialization, typed allocators, C++ hardening,
-  security-focused compiler warnings and static analyzer checkers, and
-  ENABLE_C_BOUNDS_SAFETY — so use it to secure or harden an Xcode project, audit
-  its security posture, improve warning coverage, or catch more bugs at compile
-  time. Also covers reviewing the app's effective entitlements and Info.plist
-  attack surface (codesign entitlement extraction, get-task-allow / debuggable
-  release builds, Associated Domains, App Groups, keychain access groups,
-  CFBundleURLTypes, NSAppTransportSecurity). Not for TLS, ATS, certificate pinning, Keychain, or privacy APIs, which
-  are `secure-coding`; not for code signing or provisioning; not for writing the
-  tests themselves, which is `testing`; not for the C bounds annotations
-  themselves, which are `memory-safety`.
+description: >-
+  Apple platforms: build, test, run, profile, and verify apps on devices or simulators
+  using xcodebuild, simctl, devicectl, and Xcode MCP. Use for screenshots, UI interaction,
+  build failures, Mach error -308, security build settings, entitlements, and Info.plist
+  audits. For writing tests, use `testing`; for Keychain and TLS, use `secure-coding`; for
+  C bounds annotations, use `memory-safety`. Excludes signing and provisioning.
 allowed-tools:
   - Read
   - Glob
@@ -85,7 +62,8 @@ xcrun simctl list devices available       # available simulators
 xcrun devicectl list devices              # physical + Device Hub devices
 ```
 
-Never guess a scheme or destination name.
+Use the names these commands return. A guessed scheme or destination fails late, with an error
+that looks like a build problem.
 
 ### Build and test
 
@@ -171,7 +149,8 @@ bugs but are infrastructure exhaustion**. The failures are not in the code.
 - Discover names before building (§2).
 - One failing gate at a time: fix the first error, rebuild, repeat. Do not batch speculative fixes.
 - Do not touch signing, provisioning, or CI lanes unless the task requires it.
-- Long builds run in the background while you do useful work — never poll in a sleep loop.
+- Long builds run in the background while you do useful work; wait on the task's completion
+  rather than polling in a sleep loop.
 
 ---
 
@@ -211,8 +190,9 @@ UIView {{100, 200}, {50, 30}}, center: {125.0, 215.0}
 ```
 
 `{100, 200}` is the origin, `{50, 30}` the size, `center:` the tap point.
-**Always tap the center coordinate. Never estimate a position from a screenshot.** If the
-thumbnail is too coarse to judge a visual issue, open the full-size screenshot.
+**Tap the center coordinate from the hierarchy.** A position estimated from a screenshot is off by
+the scale factor and misses the control. If the thumbnail is too coarse to judge a visual issue,
+open the full-size screenshot.
 
 Capture before interacting and again after, every time. For compound controls, inspect nested
 elements — a `Switch` or `Slider` child is usually the real control.
@@ -254,9 +234,13 @@ Special characters use `\u{XXXX}`: `\u{000A}` return, `\u{0009}` tab.
   UI before interacting; a launch screen or empty tree means capture again.
 - **After an interaction that did nothing**, recapture and retry **once** — the element may have
   moved mid-animation. If it fails again, report it rather than looping.
-- **Never interact with a loading element.** Wait for the spinner to clear.
+- **Wait for a loading element to settle before interacting.** A tap on a spinner lands on
+  whatever replaces it.
 - Runtime logs help; if a timing bug is suspected, suggest to the main agent that temporary `print`
   statements would isolate it.
+
+When reporting, state only what the run, the hierarchy, the screenshot, or the log showed, and
+say what was not exercised. "Works on device" is a claim about the flows you actually drove.
 
 ---
 
@@ -269,7 +253,7 @@ through Enhanced Security hardening.
 
 ### 7.1 Use the Xcode tools, not shell equivalents
 
-When `XcodeGlob`, `XcodeGrep`, `XcodeRead`, and `XcodeLS` are available, **always** use them —
+When `XcodeGlob`, `XcodeGrep`, `XcodeRead`, and `XcodeLS` are available, use them —
 `find`, `grep`, `cat`, and `ls` trigger extra permission prompts and bypass project scoping. The
 project root, name, and active scheme are already in system-prompt context: do not `ls` to
 "verify" the layout.
@@ -298,10 +282,15 @@ How to write a setting:
 
 - **Project uses `.xcconfig`** → edit the xcconfig.
 - **`.pbxproj` only** → `UpdateTargetBuildSetting` / `UpdateProjectBuildSetting`.
-- **Mixed** → xcconfig where the target has one, tools otherwise. **Never introduce a new
-  configuration method.**
+- **Mixed** → xcconfig where the target has one, tools otherwise. Match the method the project
+  already uses rather than introducing a new one; two sources of truth for one setting is how
+  settings drift.
 
-Prefer project level. `ENABLE_ENHANCED_SECURITY` **must** be project level.
+Change the one setting, not the file: a targeted edit to a build setting or an `.xcconfig` line
+leaves the rest of the project or config file byte-identical and the diff reviewable.
+
+Prefer project level. `ENABLE_ENHANCED_SECURITY` is set at project level, since it cascades to
+every target (§7.3).
 
 **Phase 3 — inquire.** Grep for catalog settings explicitly set to `NO`. Exclude
 `ENABLE_POINTER_AUTHENTICATION = NO` on non-arm64e platforms (this skill sets that itself), but
@@ -400,8 +389,8 @@ In `Info.plist`, review `CFBundleURLTypes` (registered custom schemes), `LSAppli
 
 Keep replies lean and questions minimal. Only two questions are scheduled — the Enhanced Security
 confirmation and the memory-tagging offer. Everything else is situational. Describe a protection
-by **what it protects against**, not by how it is switched on. Emit build settings as bullet
-lists, never comma-separated.
+by **what it protects against**, not by how it is switched on. Emit build settings as a bullet
+list, one setting per line, so each is scannable and can be copied on its own.
 
 ---
 

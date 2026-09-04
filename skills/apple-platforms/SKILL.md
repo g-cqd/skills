@@ -1,25 +1,11 @@
 ---
 name: apple-platforms
-description: >
-  Apple platforms: adopting platform frameworks and modernizing UIKit apps for
-  multi-window. Framework adoption for the iOS 26 / macOS 26 SDK generation —
-  Liquid Glass across SwiftUI, UIKit, AppKit and WidgetKit, Swift 6.2 features
-  (InlineArray, Span, concurrency updates), Foundation Models and the on-device
-  LLM, Visual Intelligence, AppIntents, StoreKit, SwiftData class inheritance,
-  AlarmKit, 3D Swift Charts, MapKit GeoToolbox place descriptors,
-  AttributedString, WebKit integration, styled text editing, visionOS widgets,
-  and accessibility updates. Also covers UIKit modernization in Swift and
-  Objective-C: replacing UIScreen.main and UIScreen.mainScreen with
-  traitCollection.displayScale and window-derived values, replacing
-  interfaceOrientation and userInterfaceOrientation checks with size classes or
-  window bounds, migrating AppDelegate to SceneDelegate and the scene lifecycle,
-  and handling asymmetric safeAreaInsets and safeAreaLayoutGuide. Use when
-  adopting or migrating to any of these APIs, when an app must support resizable
-  or multi-window presentation, or when preparing for the iOS 27 SDK where the
-  UIScene lifecycle becomes mandatory and an app without a scene manifest will
-  not launch. Not for SwiftUI view construction or SDK 27 SwiftUI APIs, which is
-  `swiftui`; not for the Swift language itself, which is `swift`; not for
-  building or running, which is `xcode`.
+description: >-
+  Apple platforms: adopt iOS 26 / macOS 26 frameworks, including Liquid Glass, Foundation
+  Models, AppIntents, StoreKit, SwiftData, and AlarmKit. Use for framework migration,
+  UIKit multi-window support, UIScreen.main replacements, safe areas, and UIScene
+  lifecycle adoption for iOS 27. For SwiftUI views and SDK 27 view APIs, use `swiftui`;
+  for language features, use `swift`; for builds, use `xcode`.
 allowed-tools:
   - Read
   - Glob
@@ -55,8 +41,11 @@ UIScene lifecycle, which is an adoption task *and* a hard iOS 27 gate.
 These APIs move fast and training memory ages badly.
 
 1. **Check the deployment target before recommending an API.** Most of §2 requires iOS 26+.
+   Confirm the target and the symbol's `@available` from the project and the docs, not from
+   memory; recognizing an API name is not knowing which OS introduced it.
 2. **Verify against the documentation corpus** through `apple-docs` before trusting a curated
-   summary here or anything remembered.
+   summary here or anything remembered. Where verification was not possible, say so in the
+   answer rather than presenting the claim with the same confidence as a verified one.
 3. When a reference disagrees with observed compiler behavior, **the primary source wins** — Apple
    docs and SDK headers.
 4. **State the version context in the answer**: "available iOS 26+, back-deploys to …".

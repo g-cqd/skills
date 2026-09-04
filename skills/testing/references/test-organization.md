@@ -25,8 +25,8 @@ Tests/
 | Test File | `[Type]Tests.swift` | `UserServiceTests.swift` |
 | Test Suite | `@Suite("[Type] Tests")` | `@Suite("UserService Tests")` |
 | Test Method | Descriptive sentence | `"fetches user successfully"` |
-| Mock | `Mock[Protocol]` | `MockHTTPClient` |
-| Stub | `Stub[Type]` | `StubUserRepository` |
+| Mock | `[Protocol]Mock` (suffix by default; prefix if `project-conventions` says so) | `HTTPClientMock` |
+| Stub / Spy / Fake | Same shape, kind in the name | `UserRepositoryStub`, `TokenVaultFake` |
 | Fixture | `[Type]Fixtures.[case]` | `UserFixtures.validUser` |
 
 ## Test Strategy Matrix

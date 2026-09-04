@@ -1,17 +1,10 @@
 ---
 name: skill-creator
-description: >
-  Language-agnostic authoring and management of agent skills for any platform
-  (Codex, Cursor, OpenCode, Gemini CLI, and 30+ others). Create a
-  new skill from scratch or from a conversation, update or optimize an existing
-  one, run evaluations to test it, benchmark its performance, optimize a
-  description for better triggering, install skills from GitHub or curated
-  lists, review or audit a skill, or learn the Agent Skills open standard. Use
-  when someone says "turn this into a skill", "make a skill for X", "install
-  skill Y", or "improve this skill", and when a skill fails to trigger, triggers
-  on the wrong requests, or overlaps another skill's concern. Not for routing a
-  request to an existing skill, which is `planner`; not for writing project
-  documentation, which is `work-docs`.
+description: >-
+  Language-agnostic: create, update, install, review, and evaluate agent skills across
+  tools. Use to turn a workflow into a skill, improve descriptions, fix missed or
+  excessive triggering, or resolve overlapping skills. For routing requests to existing
+  skills, use `planner`; for project documentation, use `work-docs`.
 ---
 
 # Skill Creator
@@ -77,20 +70,37 @@ skill-name/
 ```
 
 **Frontmatter** — the triggering mechanism (see `references/specification.md` for all fields):
+<example>
 ```yaml
 ---
 name: my-skill
 description: What it does. Use when user says X, mentions Y, or needs Z.
 ---
 ```
+The description leads with the concern, then names the situations that should load it, because it is the only text the harness reads when deciding whether to load the skill.
+</example>
+
+Keep the parsed description at 1–1,024 characters, targeting at most 500 for this set.
+Use `>-` for wrapped YAML without a trailing newline. Preserve the main triggers and a useful
+negative boundary; keep detailed API lists and procedures in the body. Avoid angle brackets,
+which the bundled validator rejects. Validate the description after each edit.
 
 **Writing guidelines:**
 - Use imperative form in instructions
-- Explain **why** things are important — today's LLMs are smart and respond to reasoning better than rigid MUSTs
+- Explain **why** things are important — today's LLMs are smart and respond to reasoning better than rigid commands
 - Keep SKILL.md under 500 lines; move detailed docs to `references/`
 - Include examples to show expected formats
 - Be specific and actionable (not "validate the data" but "run `python scripts/validate.py --input {filename}`")
 - Reference bundled resources clearly with when-to-read guidance
+
+**Prompting rules for the body** — a SKILL.md is system-prompt text, so it follows the same rules as one:
+- Write emphasis in sentence case. Current models follow instructions closely and overtrigger on shouted words (`MUST`, `NEVER`, `CRITICAL`); "use X when …" carries the same weight.
+- State each rule with its reason when the reason is not obvious; the model generalises from the motivation, and a bare rule gets applied literally in the wrong places.
+- Say what to do, not only what to avoid; a prohibition without an alternative leaves the model to guess it.
+- Wrap examples of the model's own output (a sample answer, comment, or artifact) in `<example>` tags, several in `<examples>`, each with a one-line rationale. Code that demonstrates an API stays in a fenced block.
+- Formatting rules say when a format is appropriate, not which formats are banned; blanket anti-markdown language suppresses structure the content needs.
+- Prefer general instructions ("verify against the spec before finishing") over hand-written reasoning scripts; numbered steps are for procedures whose order matters.
+- Where the skill ends in a deliverable, ask for a self-check against a named criterion before finishing.
 
 **Naming:**
 - Kebab-case only: `notion-project-setup` not `NotionProjectSetup`
@@ -181,7 +191,7 @@ Launch both in the same turn for each test case.
 
 1. **Generalize from feedback** — don't overfit to test examples. If a fix only works for one test case, it's not a good fix. Try different metaphors, patterns of working.
 2. **Keep the prompt lean** — remove instructions that aren't pulling their weight. Read transcripts to spot unproductive work.
-3. **Explain the why** — reasoning > rigid MUSTs. Help the model understand why something matters.
+3. **Explain the why** — reasoning beats rigid commands. Help the model understand why something matters.
 4. **Look for repeated work** — if all test runs independently wrote similar helper scripts, bundle that script in `scripts/`.
 
 ### Iteration Signals
@@ -192,14 +202,14 @@ Launch both in the same turn for each test case.
 - Add file type mentions
 
 **Overtriggering** (skill loads for unrelated queries):
-- Add negative triggers ("Do NOT use for X")
+- Add negative triggers in sentence case, naming the owner ("Not for X, which is `other-skill`"), so the request has somewhere to go
 - Be more specific about scope
 - Clarify boundaries with related skills
 
 **Instructions not followed**:
-- Keep instructions concise — use bullet points
-- Put critical instructions at the top
-- Replace ambiguous language with specific checks
+- Keep instructions concise — use bullet points where the items are discrete
+- Put the instructions that matter most at the top
+- Replace ambiguous language with specific checks, and add the reason where the rule is not self-evident; shouting a rule in caps makes it fire in the wrong places, not more reliably
 - Bundle validation scripts for deterministic checks
 
 ---
@@ -264,7 +274,8 @@ After installing: restart the agent to pick up new skills.
 - [ ] SKILL.md under 500 lines
 - [ ] Instructions are imperative and specific
 - [ ] References linked with when-to-read guidance
-- [ ] Examples included for expected formats
+- [ ] Examples included for expected formats, output examples in `<example>` tags with a rationale
+- [ ] Emphasis in sentence case; rules carry their reason; prohibitions name the alternative
 - [ ] Error handling for common failure cases
 - [ ] No information duplicated between SKILL.md and references
 

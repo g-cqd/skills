@@ -82,6 +82,11 @@ Review rules for iOS/Swift/SwiftUI codebases.
 - Self-documenting code: extract well-named functions instead of comments
 - Argument labels mandatory; closures go last
 - Argument order matches property declaration order
+- Verb matches effect: `load` fetches, `update` recomputes, `refresh` swaps in the truth, `resolve`
+  decides, `remove` deletes; no `sync`, no `get` on a call that returns nothing
+- Booleans claim only what the type knows (`hasAuthToken` on a keychain store, not `isLoggedIn`)
+- Argument-less pure reads and nil-removes pairs are properties, not method twins
+- Protocol is a noun, implementation `Default…` or a descriptive prefix; no `-ing` protocol names
 
 ## Dependencies and Modules
 
