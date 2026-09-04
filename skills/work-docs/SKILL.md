@@ -1,20 +1,10 @@
 ---
 name: work-docs
-description: >
-  Language-agnostic work documentation for software projects: PR descriptions,
-  work summaries (sprint, release, multi-PR), ticket-system artifacts (user
-  stories, epics, bugs, tasks, spikes), planning-increment artifacts, ADRs,
-  design docs, release notes, and changelogs. Two perspectives: requesting
-  (defining work as a stakeholder) and reporting (explaining finished work as a
-  developer). Use when writing PR documentation, summarizing work in a repo,
-  creating tickets or user stories, defining epics or acceptance criteria,
-  writing bug reports or post-mortems, documenting iteration goals, creating
-  ADRs or design docs, generating release notes, or bridging product
-  requirements and technical implementation. Triggers on "write a ticket",
-  "summarize this work", "create a story", "document this epic", "write release
-  notes", "what was done", "acceptance criteria", and "bug report". Not for
-  deciding what work to do, which is `planner`; not for API doc comments in
-  source, which belongs to the language skill.
+description: >-
+  Language-agnostic: write PR descriptions, work summaries, tickets, user stories, epics,
+  acceptance criteria, bug reports, post-mortems, ADRs, design docs, and release notes.
+  Use to define requested work or explain completed work. For deciding and scheduling
+  work, use `planner`; for source API documentation, use the language skill.
 allowed-tools:
   - Read
   - Glob
@@ -113,6 +103,26 @@ Before writing, examine:
 - Ticket: [PROJ-XXX]
 - Related PRs: [#123, #124]
 ```
+
+<example>
+A filled-in "Why" and "How" for a change that replaces a polling loop with a push subscription:
+
+```markdown
+## Why
+Sync status lagged by up to 30 s because the client polled every 30 s (ticket link). Support
+tickets about "stale status" doubled after the team-sync feature launched.
+
+## How
+Subscribe to the server's status stream and drop the poll timer. Kept the poll as a fallback
+behind `useStatusStream` for one release so a stream outage degrades to the old behavior
+rather than to no updates. Rejected long-polling: it would have kept the per-request overhead
+that motivated the change.
+```
+
+Correct because every sentence answers "why this, why now", the diff already shows the timer
+removal so it is not restated, and the ticket and the feature flag are the ones in the change,
+not invented.
+</example>
 
 ---
 
@@ -514,6 +524,12 @@ Trigger: [event that should cause prioritization, e.g., "when we add a 4th payme
 - **Tables for comparisons**: Use tables for approach comparisons, problem/consequence lists
 - **Diagrams for architecture**: ASCII art for stack diagrams and data flow
 - **The "So What?" test**: Every summary item answers why it matters
+- **Plain statement over mannered prose**: mannered prose substitutes metaphor and flourish for
+  direct statement ("a dial worth turning" for "a parameter worth varying"). It makes the reader
+  work harder so the writer can perform; when a literal phrase exists, use it
+- **Mark quotations**: a passage taken verbatim from a ticket, a commit message, a diff, or a
+  source document is marked as a quotation and attributed; everything else is in your own words,
+  so the reader can tell the source's claim from your summary of it
 
 ---
 

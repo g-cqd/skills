@@ -37,6 +37,22 @@ description: <see below>
 
 ## Writing the description
 
+Keep the parsed description at 1–1,024 characters; target at most 500 for this set.
+The repository validator enforces the 1,024-character ceiling and rejects angle brackets.
+Use YAML `>-` for a wrapped description without a trailing newline. Keep the main triggers
+and a useful boundary; put API catalogs, examples, and detailed procedures in the body.
+Do not shorten by cutting off a sentence or removing the skill's distinguishing concern.
+Front-load the main use case: [Codex may shorten descriptions](https://learn.chatgpt.com/docs/build-skills)
+to fit the initial skill-list context budget, even when each description passes validation.
+
+Validate every skill before delivery (and use the same check in CI):
+
+```sh
+for skill in skills/*; do
+  python3 skills/skill-creator/scripts/quick_validate.py "$skill" || exit 1
+done
+```
+
 Answer: *given a user message, should this skill load?* In order:
 
 1. **Concern** — what it governs, in concrete nouns.
@@ -48,6 +64,73 @@ Answer: *given a user message, should this skill load?* In order:
 Name concrete API and concept terms, not categories: `@Observable`, `Sendable`, `NSFileProtection`
 match; "modern patterns" does not. Never write a description that could equally describe a
 neighbour — if two overlap, merge the skills or redraw the boundary.
+
+## Prompting rules — how the body is written
+
+A skill body and an agent prompt are system-prompt text. They follow Anthropic's
+[prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)
+and the [Claude Fable 5.1 guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1).
+The rules below are the ones that matter for this set; apply them when adding or editing text.
+
+**Tone and emphasis**
+
+- Write in normal sentence case. Current models follow the system prompt closely and overtrigger
+  on shouted instructions, so `MUST`, `NEVER`, `CRITICAL`, `ALWAYS`, and "IRON LAW" style headers
+  make a rule fire too often, not more reliably. "Use X when …" carries the same weight.
+- The compact `§` Contract block is house notation, not shouting — keep it, and keep it short.
+- State the rule and, where the reason is not obvious, the reason in the same breath. Claude
+  generalises from the motivation; a bare rule gets applied literally and in the wrong places.
+
+**Positive form**
+
+- Say what to do, not only what to avoid. "Do not nest `if let`" becomes "use `guard let` for an
+  early exit; nesting hides the logic". A prohibition without an alternative leaves the model to
+  guess the alternative.
+- Formatting rules say when a format is appropriate, not which formats are banned. Blanket
+  anti-markdown language suppresses structure the content needs.
+
+**Examples**
+
+- Wrap an example of the model's own output — a review comment, a commit message, a ticket, an
+  answer shape — in `<example>` tags, several in `<examples>`, each with a one-line rationale so the
+  model learns the *why* rather than the surface form. Code that demonstrates an API pattern stays
+  in a fenced block; it is reference material, not an output example.
+- Three to five diverse examples steer format better than more rules.
+
+**Reasoning**
+
+- Prefer general instructions ("think this through", "verify against the spec before finishing")
+  over hand-written step-by-step reasoning scripts; the model's own reasoning usually exceeds a
+  prescribed one. Numbered steps are for procedures whose *order* matters, not for thinking.
+- Where a skill ends in a deliverable, ask for a self-check against a named criterion before
+  finishing. This catches errors reliably at almost no cost.
+
+**Agentic behaviour** (matters most in agent prompts)
+
+- Ground claims in what was read: never speculate about code that was not opened. Search or read
+  before answering; recognising a name is not knowing its current state, and this matters most on
+  cheap tiers, which reach for tools less.
+- Keep changes and tests to what the task asks. A pre-existing bug or nearby improvement is a
+  follow-up in the summary, not a change in this diff, unless the requested behaviour cannot work
+  without it. Tests are sized like the neighbouring test files, roughly one focused test per
+  stated behaviour; scratch checks are not promoted to permanent tests.
+- Prefer a targeted edit to a whole-file rewrite unless the file is short or mostly changing.
+- Remove scratch files and helper scripts created during the task.
+- Batch independent tool calls in one response; sequence only true dependencies.
+- Finish the whole task. A subagent cannot ask the user anything mid-task: do everything that does
+  not depend on the open question, state the assumption, and put the question in the final report.
+  Describing the next step and stopping leaves it undone.
+- The final message must stand on its own. The caller sees only that message, not the tool calls,
+  so it states what was found, what was done, and what is left.
+- Pause only for destructive or outward-facing actions (deleting, force-pushing, publishing) and
+  for genuine scope changes; local, reversible edits proceed.
+
+**Prose**
+
+- No mannered prose: metaphor and flourish in place of direct statement ("a dial worth turning"
+  for "a parameter worth varying"). When a literal phrase exists, use it.
+- When summarising a document or source, mark verbatim passages as quotations; put everything
+  else in the model's own words.
 
 ## Tiering — generic, Apple, mixed
 

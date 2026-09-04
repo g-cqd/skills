@@ -1,23 +1,10 @@
 ---
 name: algorithms
-description: >
-  Language-agnostic algorithmic engineering: complexity analysis (time and
-  space, worst case, average case, and amortized), data-structure selection
-  (dynamic array, hash map and set, balanced BST and B-tree, queue, stack, ring
-  buffer, binary heap, trie, graph adjacency list, rope, gap buffer), the
-  algorithm families and how to recognize which one applies (divide and conquer
-  with the Master theorem, dynamic programming, greedy with exchange-argument
-  proof, graph algorithms including BFS, Dijkstra, topological sort and
-  union-find, two pointers and sliding window, binary search over any monotonic
-  predicate), correctness reasoning with loop invariants, off-by-one and
-  boundary auditing, recursion depth bounds, and the trade-off levers of space
-  against time, exact against approximate (Bloom filter, HyperLogLog, sampling),
-  and worst case against typical case. Use when choosing a data structure,
-  analyzing or reducing complexity, solving an algorithmic problem, reviewing
-  code with non-trivial loops or recursion, deciding whether an approach will
-  scale, or judging whether a clever solution is worth its complexity. Not for
-  proving a change is actually faster on real hardware, which is
-  `performance-engineering`.
+description: >-
+  Language-agnostic: choose data structures, analyze time and space complexity, and reason
+  about algorithm correctness. Use for nontrivial loops, recursion, graph algorithms,
+  dynamic programming, boundary errors, and scaling tradeoffs. For measured speed and
+  hardware profiling, use `performance-engineering`.
 allowed-tools:
   - Read
   - Glob
@@ -26,10 +13,9 @@ allowed-tools:
 
 # Algorithms & Complexity
 
-```
-IRON LAW: STATE THE COMPLEXITY (TIME AND SPACE, WITH n DEFINED) BEFORE
-ACCEPTING ANY NON-TRIVIAL LOOP, RECURSION, OR DATA-STRUCTURE CHOICE.
-```
+**State the complexity, time and space with n defined, before accepting any non-trivial loop,
+recursion, or data-structure choice.** A choice made without that number is a guess about how the
+code scales, and the guess is usually discovered at production size.
 
 This skill owns **design-time cost**: what an approach will cost as input grows. It does not own
 what it costs on a particular machine today — that is measured, not derived
@@ -59,6 +45,10 @@ what it costs on a particular machine today — that is measured, not derived
    Justify against actual scale, not asymptotics alone.
 4. **Constant factors and locality matter at small n.** An array beats a linked structure in
    practice for most small collections, whatever the table says.
+5. **Self-check before finishing.** Re-derive the stated complexity from the actual loop nesting
+   and recursion structure of the code as written, not from the intended design, and walk the
+   boundaries of §4 once more. A complexity claim that drifted from the code is the commonest
+   error in this domain.
 
 ## 2. Data-structure selection
 

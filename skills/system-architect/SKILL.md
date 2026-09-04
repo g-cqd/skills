@@ -1,20 +1,11 @@
 ---
 name: system-architect
-description: >
-  Language-agnostic system architecture and DevOps: infrastructure design,
-  CI/CD pipeline design (GitHub Actions, matrix builds, caching, OIDC, reusable
-  workflows, composite actions, Xcode Cloud), infrastructure as code (Terraform,
-  CloudFormation, module structure), containerization and Kubernetes,
-  progressive delivery and GitOps, observability (golden signals, logs, metrics,
-  traces, alert quality), shift-left security scanning, cost optimization, and
-  disaster recovery (RTO and RPO, failover, DR drills, chaos engineering,
-  multi-region). Use when planning system architecture, designing or debugging a
-  deployment pipeline, choosing cloud infrastructure, defining reliability or
-  scalability strategy, setting availability and recovery targets, designing
-  alerting that is actually actionable, or reviewing an operational posture. Not
-  for application-level performance profiling, which is
-  `performance-engineering`; not for application code security, which is
-  `secure-coding`; not for decomposing the work, which is `planner`.
+description: >-
+  Language-agnostic: design infrastructure, CI/CD, Terraform, containers, Kubernetes,
+  observability, progressive delivery, and disaster recovery. Use for deployment
+  pipelines, cloud architecture, reliability, scalability, alerting, or recovery targets.
+  For application profiling, use `performance-engineering`; for code security, use
+  `secure-coding`; for work planning, use `planner`.
 allowed-tools:
   - Read
   - Glob
@@ -87,6 +78,11 @@ Emit before proposing anything:
 minutes, RPO 5 minutes" is. Topology, cost, and on-call load all follow from those numbers, so
 extracting them is the first real work.
 
+Before finishing, check the proposed design against those same numbers: does the topology
+actually meet the availability target, and does the backup and failover path meet RTO and RPO?
+A design that never gets compared back to its targets is where the priority hierarchy quietly
+inverts.
+
 ## 3. Architecture patterns
 
 | Do this | Avoid this |
@@ -137,15 +133,15 @@ trustworthy signal.
 | **Errors** | Rate of failed requests — 5xx, timeouts |
 | **Saturation** | Resource utilization — CPU, memory, I/O |
 
-**Alert quality** — every alert must be:
+**Alert quality** — every alert:
 
-- **Actionable** — someone can take a specific action
-- **Relevant** — indicates actual user impact
-- **Timely** — fires early enough to prevent impact
-- **Clear** — carries context and a runbook link
+- **Names the action** the responder takes, in the alert text or the linked runbook
+- **Indicates user impact** — a symptom users feel, not an internal metric drifting
+- **Fires early enough** to act before the impact lands
+- **Carries context** — what fired, where, and the runbook link
 
 An alert failing any of these trains people to ignore alerts, which is worse than not having it.
-Delete it or fix it.
+Rewrite it so a responder knows what to do, or delete it.
 
 ## 7. Security, shift-left
 

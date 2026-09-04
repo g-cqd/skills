@@ -1,19 +1,10 @@
 ---
 name: apple-docs
-description: >
-  Apple platforms: primary-source lookup of Apple developer documentation
-  through the apple-docs CLI and MCP server — DocC framework reference, Human
-  Interface Guidelines, App Store Review Guidelines, Swift Evolution proposals,
-  the Swift Book, WWDC session transcripts, sample code, SF Symbols, and Apple
-  fonts. Use whenever an answer depends on exact API behavior, an @available
-  attribute, platform support, HIG or App Store Review wording, or WWDC content
-  — before trusting training memory, which ages badly on Apple APIs. Use it to
-  resolve a disagreement between a curated summary and the real documentation,
-  to check whether a symbol exists at a given OS version, to find an SF Symbol
-  name, or to quote a review guideline exactly. Also use to set up the tooling:
-  detect whether the MCP server or CLI is present and propose installation.
-  Not for build or run workflows, which is `xcode`; not for curated
-  SDK-generation adoption guides, which is `apple-platforms`.
+description: >-
+  Apple platforms: look up API behavior, availability, platform support, HIG, App Store
+  Review Guidelines, Swift Evolution, WWDC, and SF Symbols using apple-docs MCP or CLI.
+  Use for exact documentation and tooling setup. For SDK adoption, use `apple-platforms`;
+  for builds and device workflows, use `xcode`.
 allowed-tools:
   - Read
   - Glob
@@ -58,6 +49,11 @@ Queries are **keyword-based, not natural language**. Search the exact symbol, AP
 name — `NavigationStack`, `swipeActions`, `ENABLE_ENHANCED_SECURITY` — not a question like "how do
 I make a list swipe". Refine with `--framework` and `--source` filters rather than longer prose.
 
+**Recognising a symbol is not knowing its current availability or behaviour.** Apple APIs move
+every SDK, and partial familiarity is exactly what makes a stale answer sound authoritative. When
+a question centres on an API name, look it up before answering, even one you feel sure about, and
+include the symbol exactly as the user wrote it in at least one query alongside any reformulation.
+
 ### MCP, when available
 
 - `search_docs` first (tiered search), then `read_doc` on the best hit.
@@ -84,8 +80,9 @@ apple-docs --help            # exhaustive reference
 
 1. Search the exact symbol or feature name.
 2. Read the matched document; prefer `--section` or `maxChars` to limit output.
-3. **Quote** availability and behavior from the document, and cite the doc key —
-   e.g. `swiftui/view`.
+3. **Quote** availability and behavior from the document, marked as a quotation, and cite the doc
+   key — e.g. `swiftui/view`. Everything else in the answer is your own words, so the reader can
+   tell what the documentation says from what you concluded.
 4. If the documentation and observed compiler or runtime behavior **conflict, say so explicitly**
    rather than picking one silently.
 5. **Last resort** — inspect the SDK directly. `.swiftinterface` and header files under

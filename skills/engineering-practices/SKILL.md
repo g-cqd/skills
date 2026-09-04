@@ -1,21 +1,11 @@
 ---
 name: engineering-practices
-description: >
-  Language-agnostic development practice — how work is produced and delivered,
-  as distinct from how it is judged. Covers disciplined catalog-based
-  refactoring (extract, inline, rename, move, replace conditional with
-  polymorphism) with the rule that structure and behavior never change in one
-  commit, the rule of three for duplication, in-scope-only boy-scouting, small
-  reviewable batches sliced by behavior, trunk-based delivery with short-lived
-  branches and feature flags, atomic commits whose message states why, the DORA
-  four keys (lead time, deploy frequency, change-failure rate, time to restore),
-  dependency hygiene for adding and upgrading, working safely in legacy code,
-  and a verification-before-completion gate. Use when refactoring, structuring a
-  change into commits or PRs (pull requests), deciding branching or release flow,
-  adding or upgrading a dependency, working in code with no tests, or closing
-  out a task and asking "is this actually done?". Not for review checklists,
-  which is `code-review`; not for test methodology, which is `testing`; not for
-  decomposing or scheduling the work, which is `planner`.
+description: >-
+  Language-agnostic: refactoring, small reviewable changes, dependency hygiene, delivery
+  flow, and verification before completion. Use when organizing commits or PRs, choosing
+  branch and release practices, upgrading dependencies, or changing legacy code. For code
+  review, use `code-review`; for test design, use `testing`; for task decomposition, use
+  `planner`.
 allowed-tools:
   - Read
   - Glob
@@ -25,10 +15,9 @@ allowed-tools:
 
 # Engineering Practices
 
-```
-IRON LAW: A TASK IS DONE WHEN THE EVIDENCE SAYS SO — BUILT, TESTED,
-VERIFIED AGAINST THE ORIGINAL REQUEST — NOT WHEN THE CODE IS WRITTEN.
-```
+**A task is done when the evidence says so — built, tested, verified against the original
+request — not when the code is written.** Written code is the point where the expensive mistakes
+are still invisible.
 
 This skill owns **producing and delivering the change**. Judging one is `code-review`; planning
 one is `planner`.
@@ -63,7 +52,9 @@ one is `planner`.
   the name conveys more than the code did. A premature abstraction costs more than the duplication
   it removed.
 - **Boy-scout in scope only.** Improve what the task touches; file follow-ups for the rest. Drive-by
-  churn is how a reviewable change becomes an unreviewable one.
+  churn is how a reviewable change becomes an unreviewable one. A pre-existing bug, a performance
+  concern, or behavior the task does not mention is reported as a follow-up in your summary, not
+  fixed in this change, unless the requested behavior cannot work without it.
 
 ## 2. Change and delivery flow
 
@@ -73,6 +64,8 @@ one is `planner`.
 - **Trunk-based mindset.** Short-lived branches, integrate continuously. Gate incomplete features
   behind flags — and file the flag-removal follow-up at the same time, because without a ticket
   "later" is never.
+- **Edit surgically.** Prefer a targeted edit to a whole-file rewrite unless the file is short or
+  most of it is changing; a rewrite costs more to produce and hides the actual change in the diff.
 - **Commits are atomic and buildable**, and the message states **why**. The diff already says
   what. Include the ticket identifier where the repository follows that convention — detect it,
   never invent it (`project-conventions`).
@@ -112,7 +105,8 @@ Before reporting **any** task as done:
 2. **Build and run the full test suite** — not just the new tests.
 3. **Exercise the change once like a user.** Run it. For UI, use the validation loop in `xcode`.
 4. **Review your own diff**: leftovers, debug prints, dead code, unrelated edits, commented-out
-   experiments.
+   experiments. Remove any scratch script or helper file you created for iteration; verifying
+   however you like is fine, but the scaffolding does not ship.
 5. **State residual risks and follow-ups explicitly.** Silence reads as "nothing left", which is
    almost never true.
 
@@ -123,6 +117,7 @@ Step 1 catches the most expensive class of failure: a correct implementation of 
 | If you think… | Reality |
 |---|---|
 | "I'll refactor while I'm in here anyway" | Scope creep kills reviewability. File a follow-up |
+| "I spotted a bug nearby, I'll just fix it" | Unrequested fixes cannot be reviewed against the request. Report it as a follow-up |
 | "The tests pass, ship it" | Tests prove what tests cover. Verify the actual request |
 | "One big PR is more efficient" | Review quality collapses; defects hide in bulk |
 | "We'll remove the feature flag later" | Without a ticket, later is never |

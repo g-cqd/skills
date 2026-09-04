@@ -1,27 +1,10 @@
 ---
 name: testing
-description: >
-  Language-agnostic testing methodology across the full lifecycle, with an
-  Apple-platform section covering Swift Testing and XCTest migration. Generic
-  core: test strategy and the testing pyramid, example mapping, ATDD, TDD and the
-  Red-Green-Refactor loop, property-based testing, contract testing,
-  characterization testing for legacy code, and the verification types — unit,
-  integration, regression, mutation, snapshot, performance and benchmark, fuzz,
-  and smoke testing — plus test doubles (dummy, stub, spy, mock, fake), FIRST
-  principles, coverage dimensions, and test-smell diagnosis (flaky, brittle, slow,
-  coupled, tautological, obscure, eager, giant). Use when designing a test
-  strategy, writing tests first, deciding what kind of test a change needs,
-  creating mocks stubs spies or fakes, putting legacy code under test, judging
-  whether a suite is actually good, or diagnosing flaky and brittle tests. The
-  Apple section additionally covers Swift Testing (@Test, @Suite, #expect,
-  #expect(throws:), #require, confirmation, parameterized tests via arguments,
-  tags, traits, withKnownIssue, Attachment) and migrating or modernizing a suite
-  from XCTest — use it when asked to modernize, migrate, convert, or supercharge
-  tests, when mapping XCTAssert / XCTUnwrap / XCTestExpectation / XCTSkip /
-  XCTExpectFailure to their Swift Testing equivalents, or when handling
-  setUp/tearDown, continueAfterFailure, or XCUI tests that cannot be migrated. Not
-  for concurrency testing patterns, which is `swift`; not for running tests or
-  reading results from the toolchain, which is `xcode`.
+description: >-
+  Language-agnostic testing, with Swift Testing and XCTest migration. Use for TDD, test
+  strategy, regression and property-based tests, test doubles, legacy characterization,
+  coverage, flaky suites, or migrating XCTest to @Test, #expect, and #require. For Swift
+  concurrency test patterns, use `swift`; for running Apple builds and tests, use `xcode`.
 allowed-tools:
   - Read
   - Glob
@@ -109,6 +92,10 @@ The laws:
 
 A test that passes the first time you run it has proven nothing. Confirm the red.
 
+"Minimum code to pass" means the minimum *general* code, not code special-cased to the test
+inputs. Tests verify correctness; they do not define the solution. If a test itself is wrong, say
+so rather than working around it.
+
 ---
 
 ## 3. Property-based and contract testing
@@ -158,6 +145,11 @@ the smallest one that works.
 
 **Every bug fix gets a regression test.** No exceptions — a fix without one is an invitation for
 the bug to return silently.
+
+**Size the tests to the task.** Commit tests where the task asks for them or the repository
+already keeps tests for this kind of change, sized like the neighbouring test files — roughly one
+focused test per stated behavior. Scratch checks used while working are not promoted to permanent
+test files; they were written to explore, not to specify.
 
 ---
 
@@ -333,7 +325,8 @@ state.
 
 - Promote `XCTFail` and `Issue.record` to `#expect` or `#require` — a `guard … else { Issue.record }`
   chain becomes `try #require(…)`. Do not use `Issue.record` as a lazy substitute.
-- **Never** convert `try #require` back to `#expect` — it changes behavior.
+- Leave `try #require` as it is; converting it to `#expect` changes behavior, since the test no
+  longer stops at that point.
 - Convert loops over inputs and near-duplicate tests into `@Test(arguments:)`.
 - Convert multi-word camelCase `@Test` names to sentence-case raw identifiers.
 - Do not use underscore-prefixed API such as `#_sourceLocation`; use the full

@@ -1,17 +1,11 @@
 ---
 name: project-conventions
-description: >
-  Language-agnostic detection of a repository's own conventions, plus a template
-  for encoding a team's: ticket and branch format, commit and PR etiquette,
-  module structure and layering, design tokens and required components, test
-  factory and mock conventions, localization rules, and off-limits areas. Use
-  when starting work in an unfamiliar repository, before applying any generic
-  guidance, when writing a branch name or commit message, when deciding where
-  new code belongs, or when a generic rule seems to conflict with what the
-  codebase already does. Every other skill defers to this one when it is
-  present: a detected project convention outranks generic guidance. Not for
-  authoring skills, which is `skill-creator`; not for delivery flow itself,
-  which is `engineering-practices`.
+description: >-
+  Language-agnostic: detect repository rules for branches, commits, PRs, modules, UI
+  tokens, localization, test doubles, and off-limits areas. Use when entering an
+  unfamiliar repository, locating new code, or resolving conflicts with generic guidance.
+  For skill authoring, use `skill-creator`; for delivery practices, use
+  `engineering-practices`.
 allowed-tools:
   - Read
   - Glob
@@ -43,7 +37,9 @@ keep the skill in your user/project scope.
 
 ## Part 1: Convention Detection (works in any repo)
 
-When starting work in a repository, detect conventions instead of assuming:
+When starting work in a repository, detect conventions instead of assuming. Report only what you
+observed in the tree; a convention you have not seen is "not detected", not a plausible guess,
+because a guessed convention gets applied with the same confidence as a real one.
 
 ### Ticket convention
 ```bash

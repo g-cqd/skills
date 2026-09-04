@@ -1,26 +1,11 @@
 ---
 name: performance-engineering
-description: >
-  Language-agnostic performance engineering: measurement-first methodology and
-  the hardware substrate it measures. Covers profiling methodology, USE and RED
-  triage, golden signals, latency percentiles and tail latency, coordinated
-  omission, benchmarking discipline, performance budgets and load tests, caching,
-  the optimization order of attack, and Amdahl's law. Also covers mechanical
-  sympathy — the cache hierarchy and data layout (cache lines, spatial locality,
-  false sharing, AoS versus SoA, alignment and padding, prefetching, TLB), CPU
-  microarchitecture (branch prediction, ILP and out-of-order execution, SIMD,
-  speculative execution and Spectre-class side channels), atomics and memory
-  ordering (relaxed, acquire/release, sequentially consistent, contention and
-  cache-line ping-pong, lock-free trade-offs), and OS scheduling and threading
-  (preemption, context switches, thread-pool sizing and thread explosion,
-  priorities and QoS, heterogeneous P and E cores, priority inversion, work
-  stealing, blocking hazards). Use when something is "slow", before or while
-  optimizing, when a parallel speedup falls far below the core count, when
-  latency spikes under load, when the UI hangs while the CPU is idle, when
-  writing performance-critical or lock-free code, when designing a performance
-  budget or load test, or when reviewing a change that claims to be faster. Not
-  for algorithm and data-structure selection, which is `algorithms`; not for
-  SwiftUI rendering or GPU work, which are `swiftui` and `graphics`.
+description: >-
+  Language-agnostic: profile and benchmark CPU, memory, latency, throughput, caching, data
+  layout, atomics, and scheduling. Use when code is slow, latency spikes, parallel speedup
+  disappoints, the UI hangs with idle CPU, or a change claims better performance. For
+  algorithm selection, use `algorithms`; for SwiftUI rendering, use `swiftui`; for GPU
+  work, use `graphics`.
 allowed-tools:
   - Read
   - Glob
@@ -30,10 +15,9 @@ allowed-tools:
 
 # Performance Engineering
 
-```
-IRON LAW: NO OPTIMIZATION WITHOUT A MEASUREMENT SHOWING THE BOTTLENECK,
-AND A SECOND MEASUREMENT PROVING THE FIX. GUESSING IS FORBIDDEN.
-```
+**No optimization without a measurement showing the bottleneck, and a second measurement proving
+the fix.** Intuition about where time goes is wrong more often than it is right, and an unmeasured
+change adds complexity for a gain nobody can demonstrate.
 
 This skill owns **making it fast, provably**. Sections 1–4 are the method; §5–8 are the machine
 the method measures. They are one concern: you cannot form a useful hypothesis about a profile
@@ -92,6 +76,9 @@ Highest leverage first. Most real wins come from the first two.
 ## 4. Verify and guard
 
 - Re-measure **the same metric under the same workload**. Report before and after, with units.
+  Before claiming a speedup, confirm that both numbers came from the same harness, the same
+  inputs, and the same build configuration; a before/after pair from different setups compares
+  setups, not the change.
 - Check for regressions elsewhere — memory-versus-CPU trades are the common surprise.
 - Add a benchmark to CI with a baseline, so the win cannot silently rot.
 

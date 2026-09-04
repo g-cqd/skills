@@ -1,27 +1,11 @@
 ---
 name: graphics
-description: >
-  Cross-platform graphics and rendering engineering, with an Apple-platform
-  section covering Metal. Generic core: shader math, optical physics, light
-  transport and the rendering equation, BRDF and BSDF models, Monte Carlo
-  sampling and estimators, physically based rendering (PBR), coordinate systems and
-  handedness, numerical stability and precision, color science (ACEScg, Oklab,
-  AgX, HDR, sRGB), neural rendering (3D Gaussian splatting, NeRF), real-time
-  global illumination (ReSTIR, DDGI), spectral and differentiable rendering
-  (Mitsuba 3), volumetric rendering, advanced sampling (blue noise, path
-  guiding), temporal upscaling (DLSS, FSR, XeSS), and modern GPU compute (mesh
-  shaders, work graphs, bindless). Use when writing or reviewing shader code in
-  any language — GLSL, HLSL, WGSL, Vulkan, WebGPU — validating physical
-  correctness, solving rendering math, debugging NaN or black-pixel output,
-  chasing energy loss or a failed white furnace test, or optimizing a GPU
-  workload. The Apple section additionally covers Metal shaders and compute
-  kernels, tile-based deferred rendering, threadgroup memory and thread-group
-  sizing, SIMD-group operations, function constants and uber-shader
-  specialization, Metal Performance Shaders, ray tracing, and profiling with
-  Metal System Trace and GPU counters in Instruments. Not for Swift-side
-  integration or concurrency, which is `swift`; not for SwiftUI drawable and
-  CADisplayLink interop, which is `swiftui`; not for general profiling
-  methodology, which is `performance-engineering`.
+description: >-
+  Cross-platform graphics, with an Apple Metal section. Use for shaders, rendering math,
+  PBR, ray tracing, sampling, color, neural rendering, GPU compute, visual artifacts, or
+  GPU optimization in Metal, GLSL, HLSL, WGSL, Vulkan, and WebGPU. For Swift integration,
+  use `swift`; for SwiftUI drawing, use `swiftui`; for general profiling, use
+  `performance-engineering`.
 allowed-tools:
   - Read
   - Glob
@@ -62,6 +46,7 @@ Sections 1–6 are API-agnostic. Section 7 is Metal.
 **Before generating any rendering code**, emit this analysis. It is not ceremony: each heading is
 a class of bug that is invisible once the code is written, because the output looks plausible.
 
+<example>
 ```xml
 <graphics_analysis>
   <mathematical_verification>
@@ -95,6 +80,8 @@ a class of bug that is invisible once the code is written, because the output lo
   </numerical_precision>
 </graphics_analysis>
 ```
+Each block is filled with the specific derivation, invariant, or access pattern for the code at hand, not the headings restated; the block exists so the physics is checked before the code hides it.
+</example>
 
 ---
 
@@ -155,24 +142,28 @@ same shader can be bandwidth-bound on one architecture and ALU-bound on another.
 The white furnace test is the fastest way to catch a BRDF that quietly loses or creates energy.
 Run it before trusting any material model.
 
+When diagnosing NaN, Inf, or black-pixel output, verify with an actual GPU capture, a value probe
+at the suspect stage, or a furnace test before asserting the cause; several of the patterns in §6
+produce identical symptoms, and a fix for the wrong one leaves the real defect in place.
+
 ---
 
-## 6. Forbidden patterns
+## 6. Patterns that produce silent wrong output
 
 Each of these produces **wrong output rather than a crash**, which is why they warrant a list.
 
-- **Never** assume sRGB without explicit colorspace handling.
-- **Never** normalize a zero-length vector — check first, return a documented fallback.
-- **Never** use `1.0 / x` without a zero check.
-- **Never** ignore the cosine term when integrating the rendering equation.
-- **Never** linearly interpolate rotations — use slerp for quaternions.
-- **Never** store directions unnormalized unless explicitly documented.
-- **Never** assume GPU memory is zero-initialized.
-- **Never** use `discard` in a fragment shader without understanding the performance impact.
-- **Never** call `pow()` with a negative base.
-- **Never** mix coordinate-system handedness without an explicit conversion.
-- **Never** use RGB for spectral phenomena — dispersion, thin-film, fluorescence.
-- **Never** ignore floating-point precision in ray-triangle intersection.
+- **Handle colorspace explicitly** at every input and output instead of assuming sRGB.
+- **Check a vector's length before normalizing** and return a documented fallback for zero length.
+- **Guard `1.0 / x` with a zero check**, or clamp the denominator to a documented epsilon.
+- **Keep the cosine term** when integrating the rendering equation.
+- **Interpolate rotations with slerp** on quaternions; linear interpolation drifts off the unit sphere.
+- **Store directions normalized**, or document at the declaration that they are not.
+- **Initialize GPU memory explicitly**; drivers do not zero it.
+- **Measure before using `discard`** in a fragment shader; on TBDR hardware it defeats hidden-surface removal.
+- **Clamp or `abs()` the base before `pow()`**; a negative base yields NaN.
+- **Convert handedness explicitly** at every coordinate-system boundary.
+- **Use spectral representation for spectral phenomena** — dispersion, thin-film, fluorescence — because RGB cannot express them.
+- **Account for floating-point precision in ray-triangle intersection** with a watertight algorithm or an epsilon offset.
 
 ---
 

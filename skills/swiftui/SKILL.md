@@ -1,43 +1,12 @@
 ---
 name: swiftui
-description: >
-  Apple platforms: SwiftUI view construction, idiom, and design engineering —
-  views and view
-  structure, state and data flow (@State, @Binding, @Observable over
-  ObservableObject, @Environment, EnvironmentKey, EnvironmentValues,
-  FocusedValue), ForEach and list identity, view modifiers, navigation and
-  sheets, ScrollView, Swift Charts, animations and custom Animatable types,
-  localization (LocalizedStringKey, LocalizedStringResource, bundle: #bundle,
-  RTL), macOS scenes and window styling, typography and Dynamic Type,
-  accessibility (WCAG, VoiceOver, @ScaledMetric), design tokens, responsive
-  layout, previews, soft-deprecated API migration, immediate-mode drawing and
-  GPU interop from the SwiftUI side (Canvas, TimelineView, CADisplayLink,
-  drawable hosting), and performance auditing (hitches, invalidation storms,
-  Instruments). Covers the SDK 27 SwiftUI changes
-  in full. Use when building, reviewing, or refactoring any SwiftUI interface.
-  ALSO USE, and read the @State section before answering, when a view fails to
-  compile after an SDK update with "variable used before being initialized",
-  "invalid redeclaration of synthesized property", or "extraneous argument
-  label" — @State became a macro in SDK 27 and the obvious fix of reordering
-  init assignments is WRONG and produces incorrect runtime behavior. Also use
-  for: ambiguous overloads in overlay/background or type-check performance
-  regressions from @ViewBuilder/@ContentBuilder; drag-to-reorder in any
-  container (List, LazyVStack, LazyVGrid, stacks, custom layouts) via
-  reorderable()/reorderContainer, dragContainer, dropDestination; AsyncImage
-  reloading or HTTP caching, AsyncImage(request:), URLRequest cache policy,
-  asyncImageURLSession; swipe-to-delete and
-  swipeActions()/swipeActionsContainer() in a ScrollView, LazyVStack, or
-  LazyVGrid and not just List;
-  toolbar overflow and visibilityPriority, ToolbarOverflowMenu,
-  topBarPinnedTrailing, toolbarMinimizeBehavior, statusBar placement;
-  confirmationDialog or alert from an item: Binding<T?>; document-based apps,
-  DocumentGroup, ReadableDocument, WritableDocument, direct document file-URL
-  access for AVFoundation, PDFKit, Core Image or a path-taking C library, and
-  migration from FileDocument or ReferenceFileDocument; and SDK 27 deprecations such as
-  statusBarHidden on visionOS. Not for UIKit scene and multi-window
-  modernization or Liquid Glass platform adoption, which is `apple-platforms`;
-  not for the Swift language or concurrency, which is `swift`; not for building,
-  running, or screenshotting the app, which is `xcode`.
+description: >-
+  Apple platforms: build, review, and refactor SwiftUI views, state, navigation, layout,
+  animation, accessibility, localization, and rendering performance. Use for SDK 27
+  migration, @State initialization errors, synthesized-property redeclarations, extraneous
+  argument labels, reordering, AsyncImage caching, swipe actions, toolbars, and document
+  APIs. For UIKit or Liquid Glass adoption, use `apple-platforms`; for concurrency, use
+  `swift`; for device verification, use `xcode`.
 allowed-tools:
   - Read
   - Glob
@@ -130,7 +99,24 @@ struct ContentView: View {
 
 **Correct fix: drop the initial value at the declaration and assign only in `init`.**
 
-**Do NOT reorder the assignments.** Reordering silences the compiler and leaves you with the
+<example>
+```swift
+struct ContentView: View {
+    var name: String
+    @State private var counter: Int          // no initial value here
+
+    init(name: String) {
+        self.counter = 42                    // the only assignment
+        self.name = name
+    }
+}
+```
+<rationale>Correct because the macro's backing storage now has exactly one source of its initial
+value, so `body` observes 42. Reordering the two assignments would also silence the compiler,
+but the declaration's `= 0` would still win at runtime.</rationale>
+</example>
+
+Do not reorder the assignments. Reordering silences the compiler and leaves you with the
 anti-pattern below, which does not do what it appears to:
 
 ```swift
@@ -238,8 +224,10 @@ Common causes, in the order they usually turn out to be true:
 4. Eager `AnyView` erasure defeating structural diffing.
 5. High-frequency environment updates (§2).
 
-Report a performance claim only with before/after numbers. See `performance-engineering` for
-methodology.
+Attribute a hitch or an invalidation storm only after an Instruments trace or a
+`Self._printChanges()` observation shows which view re-evaluated and why; reading the view
+source alone produces a plausible cause, not a confirmed one. Report a performance claim only
+with before/after numbers. See `performance-engineering` for methodology.
 
 ## 10. SDK 27 changes
 
