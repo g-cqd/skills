@@ -308,7 +308,7 @@ It exits with 2 and names the problem for an unknown or duplicate id, a cycle (w
 tests: `python3 -m unittest discover -s scripts/tests`.
 
 **Agents that share a machine share one queue.** `scripts/work.py` (`work` below) keeps, in one SQLite database
-(`$AGENT_WORK_HOME`, default `~/.local/state/agent-work`), what each scope works on, the queued tasks and commands,
+(`$AGENT_WORK_HOME`, a private directory, default `~/.local/state/agent-work`), what each scope works on, the queued tasks and commands,
 who holds which task and which files, and the CPU and memory of each running job; it orders the queue with
 `order_tasks.py`. Name yourself with `WORK_AGENT`, and point `WORK_SCOPE` at the scope you share with the other
 agents, a project or a conversation. `--scope S` means S and every scope under it; `--scope ''` means every scope.
