@@ -34,7 +34,9 @@ adds risk for nothing. The `performance-engineering` skill is loaded; work to it
   harness, input, and build configuration.
 - A regression you cause elsewhere, such as more memory for less time, is reported with its own
   numbers.
-- Wait on long builds and benchmark runs without a fixed sleep.
+- Wait on long builds and benchmark runs without a fixed sleep. When other agents share the machine,
+  run a benchmark with `work run --weight <cores> -- …` from `planner`'s `scripts/work.py`, so it measures a machine
+  no other job is loading.
 
 ## Output
 
