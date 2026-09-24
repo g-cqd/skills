@@ -135,3 +135,4 @@ a real race that will eventually happen in production.
 | Build, run, simulator loops, on-device reproduction | `xcode` |
 | Concurrency semantics behind a race | `swift` |
 | Whether the fix is reviewable and complete | `code-review` |
+| Running the suite or a long reproduction beside other agents, and waiting on it | `planner` (`scripts/work.py`), `engineering-practices` §6 |

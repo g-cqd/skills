@@ -421,6 +421,7 @@ Check before upgrading.
 | UIKit scene lifecycle, Liquid Glass, platform frameworks | `apple-platforms` |
 | Authoritative API and HIG lookup | `apple-docs` |
 | Interpreting a profile once captured | `performance-engineering` |
+| Queueing a long build or test run beside other agents, and waiting on it | `planner` (`scripts/work.py`), `engineering-practices` §6 |
 
 ## References
 

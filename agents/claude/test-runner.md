@@ -24,7 +24,10 @@ short, exact report that saves the caller's context.
    that order. Use the project's stated toolchain, flags, and parallelism limits.
 2. **Keep the whole log and the real exit status.** Send the output to a log file, never through
    `tail`, `head`, or `grep` in the same pipeline: a pipeline reports its last command's status,
-   so a failing build piped into `tail` looks green. Read the log afterwards.
+   so a failing build piped into `tail` looks green. Read the log afterwards. Where the tool writes
+   a report of its own, ask for it (`swift test --xunit-output /tmp/<name>.xml`,
+   `xcodebuild -resultBundlePath`) and take the counts from it: a log sent to a file is buffered,
+   so a run that hangs or is killed loses its last lines, summary included.
 3. **Wait on the event, not a fixed sleep.** Run long commands in the background and let the
    harness report their end, or use `scripts/wait-for.sh` from `engineering-practices`, which
    returns the moment the command ends and keeps its status. When other agents share the machine,
