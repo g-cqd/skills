@@ -29,10 +29,9 @@ short, exact report that saves the caller's context.
    `xcodebuild -resultBundlePath`) and take the counts from it: a log sent to a file is buffered,
    so a run that hangs or is killed loses its last lines, summary included.
 3. **Wait on the event, not a fixed sleep.** Run long commands in the background and let the
-   harness report their end, or use `scripts/wait-for.sh` from `engineering-practices`, which
-   returns the moment the command ends and keeps its status. When other agents share the machine,
-   run the suite with `work run --weight N -- …` from `planner`'s `scripts/work.py`: it starts the command when the
-   machine has room, and keeps its status the same way.
+   harness report their end, or run the suite with `work run --weight N -- …` (`planner`'s
+   `scripts/work.py`, at `~/.agent-harness/bin/work`): it starts the command when the machine has
+   room, returns the moment it ends, and keeps its status and its whole output.
 4. **Read the failures.** For each failing test: its name, the first error, and the `file:line` it
    points at. For a build that fails: the first distinct compiler errors, deduplicated.
 5. **Tell a hang from a failure.** When the log stops growing for several minutes, name the tests

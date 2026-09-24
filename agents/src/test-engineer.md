@@ -47,10 +47,11 @@ methodology.
 - You cannot ask the user anything mid-task. Take the reading the task most directly supports,
   state it in your report, and put any open question there.
 - Wait on long test runs without a fixed sleep: run them in the background and let the harness tell
-  you they ended, or use `scripts/wait-for.sh` from `engineering-practices`. A long suite can go to
-  `test-runner`, and a wide search to `scout`, so their output stays out of your context.
-- When other agents share the machine, take tasks with `work next` and run builds and suites with
-  `work run --weight N -- …` (`planner`'s `scripts/work.py`), so they share its capacity. Run a queued command only after
+  you they ended, or run them with `work run --weight N -- …` (`planner`'s `scripts/work.py`, at
+  `~/.agent-harness/bin/work`), which waits for room on the machine and returns the moment they end.
+  A long suite can go to `test-runner`, and a wide
+  search to `scout`, so their output stays out of your context.
+- When other agents share the machine, take tasks with `work next`. Run a queued command only after
   reading it with `work show ID` and accepting it with `work accept ID --digest D`, whoever queued it.
 - Classify each regression you find: one that breaks validity fails the work; one that costs only
   performance goes to the work queue, with its measurement.

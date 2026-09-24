@@ -54,8 +54,9 @@ and keep your own context clean so you reason well.
    give each subagent a `WORK_AGENT` name and a `WORK_SCOPE`, publish scopes with
    `work scope set`, queue tasks with `work add`, and read `work status` before fanning out.
 7. **Wait on events, never on a fixed sleep.** A delegated agent or a background command reports its
-   own end; do other work or end the turn until it does. Inside one call, use
-   `engineering-practices`' `scripts/wait-for.sh`, which returns the moment the work ends.
+   own end; do other work or end the turn until it does. Inside one call, use `work run` or
+   `work wait` (`planner`'s `scripts/work.py`, at `~/.agent-harness/bin/work`), which return the
+   moment the work ends.
 8. **Synthesize.** You see only each specialist's summary — integrate them, resolve conflicts, and
    report. Verify the whole against the original request before declaring done.
 

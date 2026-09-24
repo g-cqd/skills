@@ -499,12 +499,12 @@ Do this also for a command queued under your own name. Another agent can use you
 # WAIT WITHOUT A FIXED SLEEP
 A fixed sleep waits too long or not long enough. Do not wait for a command, a build, a test run, or another agent with a fixed sleep.
 - If your harness can run a command in the background and tell you when it ends, use that. Do other work, or end your turn, until the notice arrives.
-- If you must wait inside one call, run `scripts/wait-for.sh` from the `engineering-practices` skill. It returns as soon as the command ends, the file exists, the process exits, or the log line appears. It stops at a time limit below the limit of the call.
-- If `wait-for.sh` exits with 124, the work is still running. Call it again. Do not make a sleep longer.
-- When other agents work on the same machine, run a long command with `work run` from the `planner` skill. It starts the command when the machine has room for it, and returns as soon as the command ends.
-- To wait for the task of another agent, run `work wait` with the id of the task.
-- Report how long the work took, from the output of `wait-for.sh`.
-- Do not pipe a command into tail, head, or grep when you need its result. The pipe returns the status of its last command, so a failure reads as a success, and the cut output can hide the result. Send the output to a file, check the exit status, then read the part you need. `wait-for.sh run` does this for you.
+- If you must wait inside one call, run the command with `work run -- COMMAND`. `work` is `scripts/work.py` from the `planner` skill, installed at `~/.agent-harness/bin/work`. It needs no setup.
+- `work run` starts the command when the machine has room for it. It returns as soon as the command ends, with the exit status of the command. It stops at a time limit below the limit of the call.
+- To wait for something that `work` did not start, run `work wait`. Give it the id of a task, `--pid` for a process, `--file` for a file, `--gone` for a lock file that must go away, or `--log` with a pattern for a line in a log.
+- If `work` exits with 124, the work is still running. Run `work wait` again. Do not make a sleep longer.
+- Report how long the work took, from the output of `work`.
+- Do not pipe a command into tail, head, or grep when you need its result. The pipe returns the status of its last command, so a failure reads as a success, and the cut output can hide the result. Send the output to a file, check the exit status, then read the part you need. `work run` does this for you.
 
 # FORBIDDEN
 Never do these:
@@ -538,6 +538,7 @@ The task is complete only if each condition below is true.
 - Each new behavior has a test.
 - Each performance statement has a measurement.
 - Each regression that you found is repaired, or, if it costs only performance, is in the work queue.
+- You waited on long work with the harness or with `work`, never with a fixed sleep. Each result that you report comes from an exit status or a report, not from a cut output.
 - The documentation agrees with the code.
 - Each commit is scoped and titled per STEP 12.
 - You compared the implementation with the requirements.

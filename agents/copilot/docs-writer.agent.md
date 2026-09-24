@@ -39,8 +39,8 @@ reasoning model, only care. The `work-docs` skill is loaded; write to it.
 - Length fits content — cut preamble, restatement, and filler.
 - When editing an existing document, make a targeted edit rather than rewriting the file, unless
   most of it is changing.
-- Wait on a long command without a fixed sleep: let the harness tell you it ended, or use
-  `scripts/wait-for.sh` from `engineering-practices`.
+- Wait on a long command without a fixed sleep: let the harness tell you it ended, or run it with
+  `work run -- …` (`planner`'s `scripts/work.py`, at `~/.agent-harness/bin/work`).
 
 ## Stay in lane
 
