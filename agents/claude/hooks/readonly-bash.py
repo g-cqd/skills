@@ -108,7 +108,8 @@ GREP_OPTIONS = ("--filter", "--save-config")
 PAGER_OPTIONS = ("-o", "-O", "--log-file", "--LOG-FILE")
 FORBIDDEN_OPTIONS = {
     "sort": (("-o", "--output", "--compress-program"), "writes a file or runs a program"),
-    "rg": (("--pre", "--pre-glob"), "runs a program on each file"),
+    # rg runs --hostname-bin when a --hyperlink-format needs the host name.
+    "rg": (("--pre", "--pre-glob", "--hostname-bin", "--hyperlink-format"), "can run a program"),
     "grep": (GREP_OPTIONS, "runs a program or writes a file"),
     "egrep": (GREP_OPTIONS, "runs a program or writes a file"),
     "fgrep": (GREP_OPTIONS, "runs a program or writes a file"),
