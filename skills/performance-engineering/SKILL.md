@@ -91,7 +91,9 @@ While iterating, compare before and after by interleaving A and B runs in one jo
 equal to the CPU count, so no other agent's job loads the machine) for the final numbers a report
 states: one per task, not one per iteration, since each drains the machine.
 Compare like with like — same data, same build configuration,
-**release mode**. A microbenchmark whose access pattern differs from production is fiction that
+**release mode**. Build the release benchmark in its own `--scratch-path` (`.build-release`):
+alternating debug and release builds in one `.build` rebuilds the package at each switch, for up
+to 14 minutes. A microbenchmark whose access pattern differs from production is fiction that
 will confidently mislead you.
 
 ---
