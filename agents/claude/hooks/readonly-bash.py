@@ -24,7 +24,8 @@ How a command is checked:
   - The raw text holds no command substitution ($( or backticks), no process substitution (<( or >( ), and no
     $'...' or $"..." quoting, which could hide an option from the check.
   - shlex splits the text into simple commands on ; && || | |& & and newlines, outside quotes, and every simple
-    command must pass. A subshell or a group, ( ) { }, is refused. A heredoc body is input, not commands.
+    command must pass. A subshell or a group, ( ) { }, is refused. A heredoc body is input, not commands, and a
+    comment, from an unquoted # that starts a word to the end of its line, is dropped.
   - Redirections: input (<, <<, <<<) is fine; output (>, >>, >|, &>, N>) only to /dev/null; an fd duplication such as
     2>&1 is fine.
   - Leading NAME=value assignments are allowed only for the variables in ASSIGNMENTS.
@@ -269,6 +270,18 @@ def _skip_blanks(text: str, position: int) -> int:
     return position
 
 
+def _token_start(text: str, position: int) -> int:
+    """Where the next token starts: after blanks and line continuations, which the shell removes."""
+    while position < len(text):
+        if text[position] in " \t\r":
+            position += 1
+        elif text.startswith("\\\n", position):
+            position += 2
+        else:
+            break
+    return position
+
+
 def _continued(raw: str, word: str) -> str | None:
     """The word without the line continuations (backslash-newline) its raw text starts with, or None when the raw text
     is only a continuation. shlex keeps the newline, where the shell removes both characters."""
@@ -301,6 +314,17 @@ def _read_line(text: str, offset: int, tokens: list) -> int:
     previous_end, last_word = offset, None
     pending, expecting, dash = [], None, False
     while True:
+        # An unquoted # at the start of a token begins a comment: the shell ignores the rest of the line, operators and
+        # heredoc markers included, so it is dropped before shlex reads it. After <<-, the token starts past the -.
+        position = _token_start(text, previous_end + (1 if dash else 0))
+        if text.startswith("#", position):
+            if expecting:
+                raise Refusal(f"`{expecting}` has no delimiter")
+            newline = text.find("\n", position)
+            if newline < 0:
+                return len(text)
+            tokens.append(("op", "\n"))
+            return _skip_heredocs(text, newline + 1, pending) if pending else newline + 1
         try:
             token = lexer.get_token()
         except ValueError as error:
