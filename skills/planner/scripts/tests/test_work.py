@@ -422,6 +422,25 @@ class RunTests(WorkTestCase):
         self.assertEqual(waited.status, 5)
         self.assertIn("job slow finished with status 5", waited.out)
 
+    def test_json_tells_a_timeout_from_a_command_that_exits_with_124(self):
+        timed = self.work("run", "--json", "--id", "long", "--timeout", "0", "--", *self.gate("long"), agent="a")
+        self.assertEqual((timed.status, json.loads(timed.out)["timed_out"]), (124, True))
+        own = self.work("run", "--json", "--", "sh", "-c", "exit 124", agent="a")
+        self.assertEqual((own.status, json.loads(own.out)["timed_out"]), (124, False))
+        self.open_gate("long")
+
+    def test_a_missing_directory_is_its_own_error(self):
+        gone = os.path.join(self.root, "gone")
+        os.makedirs(gone)
+        self.work("add", "--id", "lost", "--cwd", gone, "--", "true", agent="a")
+        self.work("claim", "lost", agent="a")
+        self.accept("lost", "a")
+        os.rmdir(gone)
+        result = self.work("run", "lost", agent="a")
+        self.assertEqual(result.status, 1, "not 127: the command was never looked for")
+        task = self.task("lost")
+        self.assertEqual((task["state"], task["status"], task["note"]), ("failed", None, f"its directory {gone} is gone"))
+
     def test_an_ad_hoc_job_keeps_its_fields_and_refuses_held_files(self):
         self.work("scope", "set", "proj")
         result = self.work("run", "--id", "held", "--scope", "proj", "--weight", "2", "--files", "src",
@@ -570,6 +589,60 @@ class StatusTests(WorkTestCase):
         self.assertIn("swept: long failed: the job ended without a recorded status", swept.out)
         task = self.task("long")
         self.assertEqual((task["state"], task["status"]), ("failed", None))
+
+    def test_a_supervisor_goes_on_only_once_the_transaction_that_names_it_is_committed(self):
+        committed, rolled_back = os.path.join(self.root, "committed"), os.path.join(self.root, "rolled-back")
+        for task_id, marker in (("kept", committed), ("dropped", rolled_back)):
+            self.work("add", "--id", task_id, "--", "touch", marker, agent="a")
+            self.work("claim", task_id, agent="a")
+            self.accept(task_id, "a")
+        ctx = work.Context(self.env)
+        self.addCleanup(ctx.close)
+        with work.writing(ctx.conn):
+            row = work.get_task(ctx.conn, "kept")
+            kept = work.start_supervisor(ctx, "kept", os.path.join(self.home, "logs", "kept.log"))
+            work.reserve(ctx.conn, row, "a", kept.pid, os.path.join(self.home, "logs", "kept.log"))
+        time.sleep(0.5)  # Long enough for a supervisor that did not wait on its stdin to start the job.
+        self.assertEqual(self.state("kept"), "claimed", "it waits for its stdin to close")
+        kept.stdin.close()
+        self.assertEqual(kept.wait(timeout=30), 0)
+        self.assertTrue(os.path.exists(committed))
+        with self.assertRaises(RuntimeError), work.writing(ctx.conn):
+            row = work.get_task(ctx.conn, "dropped")
+            dropped = work.start_supervisor(ctx, "dropped", os.path.join(self.home, "logs", "dropped.log"))
+            work.reserve(ctx.conn, row, "a", dropped.pid, os.path.join(self.home, "logs", "dropped.log"))
+            raise RuntimeError("the reservation fails after its supervisor started")
+        dropped.stdin.close()
+        self.assertEqual(dropped.wait(timeout=30), 1, "it does not own the job, so it leaves")
+        task = self.task("dropped")
+        self.assertEqual((task["state"], task["requested"], task["supervisor"]), ("claimed", None, None))
+        self.assertFalse(os.path.exists(rolled_back))
+
+    def test_a_supervisor_started_by_hand_leaves_a_job_it_does_not_own(self):
+        self.work("run", "--id", "owned", "--timeout", "0", "--", *self.gate("owned"), agent="a")
+        self.until(lambda: self.state("owned") == "running", "the job to start")
+        before = self.task("owned")
+        stray = subprocess.run([sys.executable, SCRIPT, "_supervise", "owned"], env=self.env, cwd=self.project,
+                               stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
+        self.assertEqual(stray.returncode, 1)
+        self.assertIn("not waiting for this supervisor", stray.stderr)
+        after = self.task("owned")
+        self.assertEqual((after["state"], after["supervisor"], after["pid"]),
+                         (before["state"], before["supervisor"], before["pid"]))
+        self.open_gate("owned")
+        self.assertEqual(self.work("wait", "owned").status, 0)
+
+    def test_a_signal_is_recorded_and_forwarded_but_never_raised_nor_sent_after_the_reap(self):
+        supervisor = work.Supervisor(work.Context(self.env), "none")
+        supervisor.on_signal(signal.SIGHUP, None)
+        self.assertEqual(supervisor.stop, signal.SIGHUP, "recorded for the next safe point, not raised")
+        child = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        supervisor.child = child
+        supervisor.on_signal(signal.SIGTERM, None)
+        raw, _ = supervisor.reap(child.pid)
+        child.returncode = os.waitstatus_to_exitcode(raw)
+        self.assertEqual(child.returncode, -signal.SIGTERM)
+        self.assertIsNone(supervisor.child, "no later signal reaches the reaped pid")
 
     def test_a_stopped_supervisor_stops_its_job_and_records_the_status(self):
         self.work("run", "--id", "job", "--timeout", "0", "--", *self.gate("job"), agent="alice")
