@@ -346,7 +346,9 @@ changes with each new shell, so set `WORK_AGENT` to claim a task in one call and
   with backfill: when the head of the line lacks cores, a later job may start first if it fits now and in the cores
   the head leaves free, or if it is small (`--small-weight`, 1 core) while no validity job is ahead of it. Once the
   head has waited `--backfill-wait` (5 min), nothing starts before it, so no job starves.
-  A job heavier than the capacity runs alone; a job that the machine's pressure alone holds back longer than the
+  A job as heavy as the CPU count, or heavier than the capacity, runs alone: nothing starts beside it, even when the
+  capacity is set above the CPU count so that lighter jobs, which use less than they weigh, can overlap. A job that
+  the machine's pressure alone holds back longer than the
   load wait (30 min) fails. These values live in the database, so every agent's jobs share them: `work settings`.
   `work status` shows the signals and the thresholds, and each waiting job's reason names what holds it.
 - **Limits.** A job whose log passes the log limit (256 MiB) is stopped. `status` and `run` delete events, and the
