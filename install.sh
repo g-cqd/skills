@@ -11,6 +11,7 @@
 #     CLAUDE.md            -> AGENTS.md                 (alias for agents that read it)
 #     skills/<name>        -> <repo>/skills/<name>       (one link per skill)
 #     agents/<fmt>         -> <repo>/agents/<fmt>       (per-harness rendered agents)
+#     bin/work             -> <repo>/skills/planner/scripts/work.py   (one path every agent can call)
 #
 #   ~/.claude/  ~/.codex/  ~/.copilot/   (whichever exist)
 #     skills               -> ~/.agent-harness/skills
@@ -111,6 +112,11 @@ if [[ -d "$SRC/skills" ]]; then
   done
 fi
 say "  ${skill_count} skills"
+
+# The work tool at a path that never moves, so an agent calls ~/.agent-harness/bin/work without touching PATH.
+if [[ -f "$SRC/skills/planner/scripts/work.py" ]]; then
+  link "$SRC/skills/planner/scripts/work.py" "$ROOT/bin/work"
+fi
 
 # Optional agents/ — each harness reads a different format, so the root holds
 # one link per rendered format subdir (agents/claude, agents/codex, agents/copilot).
