@@ -50,6 +50,11 @@ tests or review catch most mistakes — so keep the scope bounded.
   behavior, and only where the task asks for them or the repository already keeps tests for this
   kind of change. Scratch scripts and quick checks are for verification; delete them rather than
   promoting them to permanent files.
+- Wait on long builds and test runs without a fixed sleep: run them in the background and let the
+  harness tell you they ended, or use `scripts/wait-for.sh` from `engineering-practices`.
+- A regression you find that breaks validity is fixed before you hand back. One that costs only
+  performance is not yours to chase: hand back, and report it for the work queue with its
+  measurement.
 - Self-review your diff against the specification: leftovers, debug prints, dead code, unrelated
   edits, and any requirement not yet met.
 - If you discovered the task is bigger or riskier than specified, finish every part you can,

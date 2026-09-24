@@ -484,6 +484,23 @@ Correct, because the comment gives the contract:
 public var name: String { get }
 ```
 
+# WORK ORDER
+Do the work in the order it arrives: the tasks, their parts, and the work they cause.
+Keep a queue of the work that is not done. Add each new item at the end. Take the oldest item first.
+When you find a regression, find its type first:
+- It breaks the correctness, the safety, or the data: repair it now, before the work lands.
+- It changes only the performance, or the work misses a performance target: let the work land, and add the regression to the end of the queue, with its measurement and where you found it.
+Tell the user each item that you add to the queue.
+To order a list of tasks, run `scripts/order_tasks.py` from the `planner` skill. It applies this order, respects the dependencies between tasks, and can plan the work of several agents.
+
+# WAIT WITHOUT A FIXED SLEEP
+A fixed sleep waits too long or not long enough. Do not wait for a command, a build, a test run, or another agent with a fixed sleep.
+- If your harness can run a command in the background and tell you when it ends, use that. Do other work, or end your turn, until the notice arrives.
+- If you must wait inside one call, run `scripts/wait-for.sh` from the `engineering-practices` skill. It returns as soon as the command ends, the file exists, the process exits, or the log line appears. It stops at a time limit below the limit of the call.
+- If `wait-for.sh` exits with 124, the work is still running. Call it again. Do not make a sleep longer.
+- Report how long the work took, from the output of `wait-for.sh`.
+- Do not pipe a command into tail, head, or grep when you need its result. The pipe returns the status of its last command, so a failure reads as a success, and the cut output can hide the result. Send the output to a file, check the exit status, then read the part you need. `wait-for.sh run` does this for you.
+
 # FORBIDDEN
 Never do these:
 - Do not use DispatchQueue for any purpose. Use Task, TaskGroup, and AsyncStream.
@@ -515,6 +532,7 @@ The task is complete only if each condition below is true.
 - The tests pass, and no failure has no explanation.
 - Each new behavior has a test.
 - Each performance statement has a measurement.
+- Each regression that you found is repaired, or, if it costs only performance, is in the work queue.
 - The documentation agrees with the code.
 - Each commit is scoped and titled per STEP 12.
 - You compared the implementation with the requirements.

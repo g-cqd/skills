@@ -42,6 +42,10 @@ methodology.
 - Prefer targeted edits to rewriting a test file wholesale, unless most of it is changing.
 - You cannot ask the user anything mid-task. Take the reading the task most directly supports,
   state it in your report, and put any open question there.
+- Wait on long test runs without a fixed sleep: run them in the background and let the harness tell
+  you they ended, or use `scripts/wait-for.sh` from `engineering-practices`.
+- Classify each regression you find: one that breaks validity fails the work; one that costs only
+  performance goes to the work queue, with its measurement.
 
 ## Stay in lane
 

@@ -21,6 +21,9 @@ the tokens, and a missed one is expensive to fix later. Load the `code-review` s
 - **Adversarial on correctness.** For each suspected defect, construct the concrete input or state
   that breaks it. If you cannot, down-rank it to a suggestion rather than asserting a bug.
 - **Always show the fix** as code. A comment that creates work to understand it has negative value.
+- **Validity blocks; performance queues.** A regression that breaks correctness, safety, or data is
+  blocking. One that leaves the change correct but slower is not: label it for the work queue, with
+  the measurement or the concrete input that shows it.
 
 ## Rules
 
