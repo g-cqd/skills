@@ -31,16 +31,22 @@ Rules:
     tree every 2 s with ps, and records its true exit status: 127 when the command is missing, 126 when it cannot
     run, 128 plus the signal that killed it. `run` and `wait` return the moment the work ends, or 124 at --timeout
     (default 570 s) while it goes on.
+  - Waiting: `wait` also waits on what `work` did not start: --pid until processes exit (a zombie has), --file until
+    paths exist and are not empty (one file holding a number exits with that number, as a status file), --gone
+    until paths are removed, --log until a line matches an extended regular expression (grep -E). These need no
+    state and no name. Every wait checks with a pause that grows to --interval (0.5 s), and exits 124 at --timeout.
   - Sweep: `status`, `wait`, `next` and `claim` mark failed a job whose supervisor and command are gone with no
     recorded status. `status` and `run` delete events, and the logs of ended tasks, older than 14 days.
 
 State: $AGENT_WORK_HOME/work.db (default ~/.local/state/agent-work), with job logs in logs/. The path is resolved
 once; the directory must be yours and private (mode 700), and no directory above it may be a link, belong to another
 user than you or root, or be writable by others. Titles, notes and paths refuse control and invisible characters,
-and every text view escapes them in commands and job output. Agent names come from --agent or $WORK_AGENT.
+and every text view escapes them in commands and job output. Agent names come from --agent or $WORK_AGENT, else
+agent-<parent pid>: the shell that runs `work`, which changes with each new shell. No scope is needed.
 
 Exit status: 0 on success; 1 when work refuses (a task in the wrong state, nothing to claim, a command not
-accepted yet); 2 for an input error; for `run` and `wait`, the job's own status, or 124 when the timeout passed first.
+accepted yet); 2 for an input error; for `run` and `wait`, the job's own status (or a status file's number), or 124
+when the timeout passed first.
 With --json, `timed_out` tells that timeout from a command that exits with 124 itself.
 """
 
@@ -364,10 +370,14 @@ class Context:
             self._conn = None
 
     def agent(self, given: str | None) -> str:
-        name = self.optional_agent(given)
-        if name is None:
-            raise WorkError("name yourself with --agent or $WORK_AGENT")
-        return name
+        """--agent, else $WORK_AGENT, else agent-<parent pid>: the shell that runs `work`, so that an agent that set
+        nothing can still run and wait. That default changes with each new shell; an agent that claims a task in one
+        call and runs it in another sets $WORK_AGENT."""
+        return self.optional_agent(given) or self.default_agent
+
+    @property
+    def default_agent(self) -> str:
+        return f"agent-{os.getppid()}"
 
     def optional_agent(self, given: str | None) -> str | None:
         name = given if given is not None else self.env.get("WORK_AGENT", "")
@@ -637,6 +647,14 @@ def take(conn: sqlite3.Connection, row: sqlite3.Row, agent: str) -> None:
     conn.execute("UPDATE tasks SET state = 'claimed', agent = ?, claimed = ? WHERE id = ? AND state = 'queued'",
                  (agent, time.time(), row["id"]))
     record(conn, "claimed", task=row["id"], scope=row["scope"], agent=agent)
+
+
+def default_name_note(ctx: Context, args: argparse.Namespace, agent: str) -> list[str]:
+    """A note for an agent that holds a task under the default name, which the next shell will not share."""
+    if args.agent is not None or ctx.env.get("WORK_AGENT"):
+        return []
+    return [f"you are {agent}, the default name, which lasts as long as this shell; to run or close the task from "
+            f"another call, set WORK_AGENT={agent}"]
 
 
 def next_steps(row: sqlite3.Row) -> list[str]:
@@ -1210,10 +1228,10 @@ def report(rows: list[sqlite3.Row], ended: list[sqlite3.Row], lines: int, as_jso
 
 
 def wait_for(ctx: Context, ids: list[str], any_: bool, timeout: float, lines: int, as_json: bool,
-             supervisor: subprocess.Popen | None = None) -> int:
+             supervisor: subprocess.Popen | None = None, interval: float = 0.5) -> int:
     """Returns as soon as every task (or, with `any_`, one) is done, failed or cancelled, polling the database with a
-    pause that grows from 0.05 s to 0.5 s; sweeps dead jobs every 2 s so that it never waits on one. `run` passes the
-    supervisor it started: its end is reaped and swept at once, and the job's start or wait is announced."""
+    pause that grows from 0.05 s to `interval`; sweeps dead jobs every 2 s so that it never waits on one. `run` passes
+    the supervisor it started: its end is reaped and swept at once, and the job's start or wait is announced."""
     conn = ctx.conn
     begun = time.monotonic()
     deadline, next_sweep, pause = begun + timeout, begun, 0.05
@@ -1234,7 +1252,7 @@ def wait_for(ctx: Context, ids: list[str], any_: bool, timeout: float, lines: in
         if now >= deadline:
             return report(rows, ended, lines, as_json, timed_out=True)
         time.sleep(max(0.01, min(pause, deadline - now)))
-        pause = min(pause * 1.5, 0.5)
+        pause = min(pause * 1.5, interval)
 
 
 def announce(row: sqlite3.Row, announced: set[str]) -> None:
@@ -1246,6 +1264,154 @@ def announce(row: sqlite3.Row, announced: set[str]) -> None:
     elif row["state"] == "claimed" and row["requested"] is not None and row["note"] and "waiting" not in announced:
         say(f"job {row['id']} waits for capacity: {printable(row['note'])}")
         announced.add("waiting")
+
+
+# MARK: - Conditions
+
+
+LOG_READ = 16 * 1024 * 1024  # The most of a log read at one check; the rest is read at the next.
+LOG_LINE = 1024 * 1024  # The most of one unfinished line kept between checks.
+
+
+def check_pids(pids: list[str]) -> list[int]:
+    numbers = []
+    for text in pids:
+        if not text.isdigit() or int(text) <= 0:
+            raise WorkError(f"--pid {text!r} is not a process id")
+        numbers.append(int(text))
+    return unique(numbers)
+
+
+def running_pids(pids: list[int]) -> list[int]:
+    """The processes in `pids` that have not exited. A zombie has exited: it answers to its pid only until its parent
+    reaps it."""
+    present = [pid for pid in pids if exists(pid)]
+    table = processes(present) if present else {}
+    return [pid for pid in present if not (table and pid in table and table[pid].stat.startswith("Z"))]
+
+
+def not_ready(paths: list[str]) -> list[str]:
+    """The paths that do not exist yet or are empty."""
+    pending = []
+    for path in paths:
+        try:
+            if os.stat(path).st_size > 0:
+                continue
+        except OSError:
+            pass
+        pending.append(path)
+    return pending
+
+
+def status_in(path: str) -> int | None:
+    """The number a status file holds, spaces and newlines aside, as a shell's `echo $? > FILE` writes it; None for
+    any other text."""
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read(4096)
+    except OSError:
+        return None
+    digits = data.replace(b" ", b"").replace(b"\n", b"")
+    return int(digits) if digits and digits.isdigit() and len(digits) < 12 else None
+
+
+class LogWatch:
+    """Watches a log for a line that matches an extended regular expression, with grep -E itself, so the pattern
+    means what it means to grep. Each check reads only what the log gained since the last one, plus the unfinished
+    line at its end; a log that shrank was replaced, and is read again from its start."""
+
+    def __init__(self, path: str, pattern: str):
+        self.path, self.pattern = path, pattern
+        self.offset, self.carry = 0, b""
+        if self.grep(b"") == 2:
+            raise WorkError(f"{pattern!r} is not an extended regular expression that grep -E accepts")
+
+    def grep(self, data: bytes) -> int:
+        try:
+            return subprocess.run(["grep", "-E", "-q", "-e", self.pattern], input=data, stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL, timeout=60).returncode
+        except (OSError, subprocess.SubprocessError) as error:
+            raise refusal(f"cannot run grep: {error}") from None
+
+    def matched(self) -> bool:
+        try:
+            with open(self.path, "rb") as handle:
+                size = os.fstat(handle.fileno()).st_size
+                if size < self.offset:
+                    self.offset, self.carry = 0, b""
+                while self.offset < size:
+                    handle.seek(self.offset)
+                    new = handle.read(min(LOG_READ, size - self.offset))
+                    if not new:
+                        break
+                    self.offset += len(new)
+                    data = self.carry + new
+                    if self.grep(data) == 0:
+                        return True
+                    self.carry = data[data.rfind(b"\n") + 1:][-LOG_LINE:]
+        except OSError:
+            return False  # No log yet: nothing matches.
+        return False
+
+
+def wait_condition(args: argparse.Namespace) -> int:
+    """`work wait --pid`, `--file`, `--gone` or `--log`: returns as soon as the condition holds, checking it with a
+    pause that grows from 0.05 s to --interval, or with 124 at --timeout. It needs no state, so it works anywhere."""
+    if args.pid:
+        kind, targets, pids = "pid", unique(args.pid), check_pids(args.pid)
+    elif args.file:
+        kind, targets = "file", unique(args.file)
+    elif args.gone:
+        kind, targets = "gone", unique(args.gone)
+    else:
+        kind, targets = "log", args.log[:1]
+        watch = LogWatch(*args.log)
+    if kind == "pid":
+        pending_of = lambda: [str(pid) for pid in running_pids(pids)]  # noqa: E731
+    elif kind == "file":
+        pending_of = lambda: not_ready(targets)  # noqa: E731
+    elif kind == "gone":
+        pending_of = lambda: [path for path in targets if os.path.exists(path)]  # noqa: E731
+    else:
+        pending_of = lambda: [] if watch.matched() else targets  # noqa: E731
+    if not args.json:
+        say(f"waiting for {WAITING[kind]} " + " ".join(printable(target) for target in targets))
+    begun = time.monotonic()
+    deadline, pause = begun + args.timeout, 0.05
+    while True:
+        pending = pending_of()
+        now = time.monotonic()
+        if not pending or now >= deadline:
+            break
+        time.sleep(max(0.01, min(pause, deadline - now)))
+        pause = min(pause * 1.5, args.interval)
+    seconds, timed_out = time.monotonic() - begun, bool(pending)
+    status = 124 if timed_out else 0
+    number = status_in(targets[0]) if kind == "file" and not timed_out and len(targets) == 1 else None
+    if number is not None:
+        status = number
+    log = targets[0] if kind == "log" else None
+    if args.json:
+        emit({"status": status, "timed_out": timed_out, "condition": kind, "targets": targets, "pending": pending,
+              "seconds": round(seconds, 3), "tail": tail(log, args.tail)})
+        return status
+    for line in tail(log, args.tail):
+        print(printable(line))
+    if timed_out:
+        again = f"work wait --{kind} " + " ".join(shlex.quote(target) for target in args.log or targets)
+        say(f"{STILL[kind]} after {span(seconds)}: {' '.join(printable(item) for item in pending)}; "
+            f"call `{printable(again)}` to keep waiting")
+    elif number is not None:
+        say(f"finished with status {number} after {span(seconds)}, from {printable(targets[0])}")
+    else:
+        say(f"{DONE[kind]} after {span(seconds)}")
+    return status
+
+
+WAITING = {"pid": "process", "file": "file", "gone": "the removal of", "log": "a match in"}
+STILL = {"pid": "still running", "file": "not ready", "gone": "still present", "log": "no match"}
+DONE = {"pid": "every process exited", "file": "every file is ready", "gone": "every path is gone",
+        "log": "the log matched"}
 
 
 # MARK: - Commands
@@ -1516,7 +1682,7 @@ def cmd_next(ctx: Context, args: argparse.Namespace, command: list[str] | None) 
     else:
         title = f": {printable(row['title'])}" if row["title"] else ""
         say(f"claimed task {row['id']}{title}")
-        for line in next_steps(row):
+        for line in next_steps(row) + default_name_note(ctx, args, agent):
             say(line)
     return 0
 
@@ -1544,7 +1710,7 @@ def cmd_claim(ctx: Context, args: argparse.Namespace, command: list[str] | None)
         emit(task_json(row))
     else:
         say(f"claimed task {task_id}")
-        for line in next_steps(row):
+        for line in next_steps(row) + default_name_note(ctx, args, agent):
             say(line)
     return 0
 
@@ -1679,10 +1845,21 @@ def cmd_run(ctx: Context, args: argparse.Namespace, command: list[str] | None) -
     finally:
         if supervisor is not None:
             supervisor.stdin.close()  # The supervisor goes on only if it finds itself the owner.
-    return wait_for(ctx, [task_id], False, args.timeout, args.tail, args.json, supervisor)
+    return wait_for(ctx, [task_id], False, args.timeout, args.tail, args.json, supervisor, args.interval)
 
 
 def cmd_wait(ctx: Context, args: argparse.Namespace, command: list[str] | None) -> int:
+    modes = [name for name, given in (("task IDs", args.ids), ("--all", args.all), ("--pid", args.pid),
+                                      ("--file", args.file), ("--gone", args.gone), ("--log", args.log)) if given]
+    if len(modes) != 1:
+        raise WorkError("wait for one thing: task IDs, --all, --pid, --file, --gone or --log"
+                        + (f", not {' and '.join(modes)}" if modes else ""))
+    if args.any and not args.ids:
+        raise WorkError("--any goes with task IDs")
+    if args.scope is not None and not args.all:
+        raise WorkError("--scope goes with --all")
+    if not (args.ids or args.all):
+        return wait_condition(args)
     conn = ctx.conn
     if args.all:
         if args.ids:
@@ -1698,16 +1875,12 @@ def cmd_wait(ctx: Context, args: argparse.Namespace, command: list[str] | None) 
                 say("no job runs" + (f" in scope {scope}" if scope else ""))
             return 0
     else:
-        if not args.ids:
-            raise WorkError("name the tasks to wait for, or use --all")
-        if args.scope is not None:
-            raise WorkError("--scope goes with --all")
         ids = unique([check_name(task_id, "task") for task_id in args.ids])
         for task_id in ids:
             get_task(conn, task_id)
     if not args.json:
         say(f"waiting for {' '.join(ids)}" + (" (the first to end)" if args.any and len(ids) > 1 else ""))
-    return wait_for(ctx, ids, args.any, args.timeout, args.tail, args.json)
+    return wait_for(ctx, ids, args.any, args.timeout, args.tail, args.json, interval=args.interval)
 
 
 def cmd_close(ctx: Context, args: argparse.Namespace, command: list[str] | None) -> int:
@@ -1918,14 +2091,25 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_argument("--timeout", type=duration, default=DEFAULT_TIMEOUT,
                      help="stop waiting after this long, with 124; the job runs on (default 570)")
     sub.add_argument("--tail", type=counting(0), default=5, help="log lines to print at the end (default 5)")
+    sub.add_argument("--interval", type=positive, default=0.5, metavar="SECONDS",
+                     help="the longest pause between two checks (default 0.5)")
 
-    sub = command("wait", cmd_wait, "wait until tasks end, or with --all until a scope's jobs end")
-    sub.add_argument("ids", nargs="*", metavar="ID")
-    sub.add_argument("--any", action="store_true", help="return when the first one ends")
+    sub = command("wait", cmd_wait, "wait until tasks end, or processes exit, files appear or go, a log matches")
+    sub.add_argument("ids", nargs="*", metavar="ID", help="tasks, until they are done, failed or cancelled")
+    sub.add_argument("--any", action="store_true", help="with task IDs: return when the first one ends")
     sub.add_argument("--all", action="store_true", help="every job that runs or waits in the scope")
     sub.add_argument("--scope", help="with --all: this scope and those under it (default $WORK_SCOPE)")
+    sub.add_argument("--pid", nargs="+", metavar="PID", help="until every process has exited; a zombie has")
+    sub.add_argument("--file", nargs="+", metavar="PATH",
+                     help="until every path exists and is not empty; one file holding a number exits with it")
+    sub.add_argument("--gone", nargs="+", metavar="PATH", help="until no path exists, as for a lock file")
+    sub.add_argument("--log", nargs=2, metavar=("PATH", "PATTERN"),
+                     help="until a line of PATH matches the extended regular expression PATTERN (grep -E)")
     sub.add_argument("--timeout", type=duration, default=DEFAULT_TIMEOUT, help="default 570 s; then exit 124")
-    sub.add_argument("--tail", type=counting(0), default=5, help="log lines to print for each job (default 5)")
+    sub.add_argument("--interval", type=positive, default=0.5, metavar="SECONDS",
+                     help="the longest pause between two checks (default 0.5)")
+    sub.add_argument("--tail", type=counting(0), default=5,
+                     help="log lines to print for each job, or of --log's file (default 5)")
 
     mine = "one you claimed, or queued and nobody claimed"
     for name, help_text in (("done", f"close a task without a command as done: {mine}"),

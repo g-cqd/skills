@@ -312,6 +312,8 @@ tests: `python3 -m unittest discover -s scripts/tests`.
 tasks and commands, who holds which task and which files, and the CPU and memory of each running job; it orders the
 queue with `order_tasks.py`. Name yourself with `WORK_AGENT`, and point `WORK_SCOPE` at the scope you share with the other
 agents, a project or a conversation. `--scope S` means S and every scope under it; `--scope ''` means every scope.
+Neither is needed: without `WORK_AGENT` your name is `agent-<parent pid>`, the shell that runs `work`, which
+changes with each new shell, so set `WORK_AGENT` to claim a task in one call and run or close it in another.
 
 | Need | Command |
 |---|---|
@@ -322,6 +324,7 @@ agents, a project or a conversation. `--scope S` means S and every scope under i
 | Run the command of a task you claimed | `work show build`, then `work accept build --digest D` with the digest it prints, then `work run build` |
 | Run a command of your own as a tracked job | `work run --weight 4 -- swift test --parallel` |
 | Wait for tasks, or for a scope's jobs | `work wait build test`, `work wait --all` |
+| Wait for a process, a file, a removal, a log line | `work wait --pid 4242`, `--file tests.status`, `--gone P2.lock`, `--log build.log 'Build complete'` |
 | Close a task you claimed, or queued and nobody claimed | `work done ID`, `work fail ID` (no command), `work cancel ID` |
 | See the scopes, jobs, CPU, memory, load, history | `work status`, `work log` |
 | See or set the capacity and limits all jobs share | `work settings`, `work settings --capacity 6` |
