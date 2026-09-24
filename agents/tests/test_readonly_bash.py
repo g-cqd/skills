@@ -95,6 +95,10 @@ ALLOWED = [
     "ls  # it's done; rm x",
     "# show the state\ngit status",
     "cat <<EOF # the body starts on the next line\nrm x\nEOF",
+    # A $ in single quotes or after a backslash is literal.
+    "grep -n '$' f",
+    "grep -n \\$HOME f",
+    'grep -n "a\\$" f',
 ]
 
 BLOCKED = [
@@ -201,6 +205,11 @@ BLOCKED = [
     "ls;# <<EOF\nrm x\nEOF",
     "ls \\\n# <<EOF\nrm x\nEOF",
     "cat <<EOF # comment\nx\nEOF\nrm x",
+    # Parameter expansion builds words the checks cannot see, inside double quotes too.
+    "find . ${X:--exec} rm {} \\;",
+    "git log -p ${X:---output=/tmp/pwn}",
+    "find . ${IFS}-delete",
+    'git log "${X:---output=/tmp/pwn}"',
 ]
 
 # (command, text the refusal must name)
@@ -214,6 +223,7 @@ REFUSAL_NAMES = [
     ("{ ls; }", "group syntax `{`"),
     ("sed -i 's/a/b/' f", "-i"),
     ("PATH=/tmp ls", "PATH"),
+    ("find . ${IFS}-delete", "${IFS}-delete"),
 ]
 
 
