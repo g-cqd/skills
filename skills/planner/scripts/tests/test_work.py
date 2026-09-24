@@ -409,6 +409,19 @@ class RunTests(WorkTestCase):
         self.assertIn("out-16383", lines)
         self.assertIn("err-16383", lines)
 
+    def test_tail_limits_the_log_lines_printed(self):
+        result = self.work("run", "--tail", "2", "--", "sh", "-c", "for i in 1 2 3 4 5; do echo line$i; done",
+                           agent="a")
+        self.assertEqual(result.status, 0)
+        self.assertNotIn("line3", result.out)
+        self.assertIn("line4", result.out)
+        self.assertIn("line5", result.out)
+
+    def test_a_pipeline_reports_its_last_command_unless_pipefail_is_set(self):
+        # Why the docs say never to pipe a command into tail: the failure disappears.
+        self.assertEqual(self.work("run", "--", "sh", "-c", "false | cat", agent="a").status, 0)
+        self.assertEqual(self.work("run", "--", "bash", "-c", "set -o pipefail; false | cat", agent="a").status, 1)
+
     def test_run_returns_as_soon_as_the_job_ends(self):
         result = self.work("run", "--", "sh", "-c", "echo working; sleep 1; exit 4", agent="alice")
         self.assertEqual(result.status, 4)
@@ -854,6 +867,191 @@ class StatusTests(WorkTestCase):
         self.assertEqual(len(self.json("log", "--limit", "2")[1]["events"]), 2)
 
 
+class ConditionTests(WorkTestCase):
+    """`work wait --pid/--file/--gone/--log`: each returns as soon as its condition holds, keeps a status file's
+    number, and times out with 124 without stopping the work."""
+
+    def path(self, name):
+        return os.path.join(self.project, name)
+
+    def promptly(self, arguments, satisfy):
+        """Starts a wait, checks that it is still waiting, satisfies its condition, and returns (status, output,
+        seconds from the condition holding to the wait returning)."""
+        waiting = self.start("wait", "--interval", "0.2", *arguments, agent="a")
+        self.assertIn("waiting for", waiting.stdout.readline())
+        self.assertIsNone(waiting.poll(), "it returned before its condition held")
+        satisfy()
+        held = time.monotonic()
+        output, _ = waiting.communicate(timeout=60)
+        return waiting.returncode, output, time.monotonic() - held
+
+    def test_file_waits_for_every_path_and_returns_when_they_are_there(self):
+        with open(self.path("a"), "w") as handle:
+            handle.write("a\n")
+        self.assertEqual(self.work("wait", "--timeout", "0.3", "--file", "a", "b").status, 124, "b is missing")
+
+        def write_b():
+            with open(self.path("b"), "w") as handle:
+                handle.write("b\n")
+        status, output, seconds = self.promptly(("--file", "a", "b"), write_b)
+        self.assertEqual(status, 0)
+        self.assertIn("every file is ready", output)
+        self.assertLess(seconds, 5)
+
+    def test_one_file_holding_a_number_exits_with_that_number(self):
+        with open(self.path("tests.status"), "w") as handle:
+            handle.write("3\n")
+        result = self.work("wait", "--file", "tests.status")
+        self.assertEqual(result.status, 3)
+        self.assertIn("finished with status 3", result.out)
+
+    def test_file_with_text_that_is_not_a_status_succeeds(self):
+        with open(self.path("note"), "w") as handle:
+            handle.write("ready\n")
+        result = self.work("wait", "--file", "note")
+        self.assertEqual(result.status, 0)
+        self.assertIn("every file is ready", result.out)
+
+    def test_an_empty_file_is_not_ready(self):
+        open(self.path("empty"), "w").close()
+        result = self.work("wait", "--timeout", "0.5", "--file", "empty")
+        self.assertEqual(result.status, 124)
+        self.assertIn("not ready", result.out)
+        self.assertIn("work wait --file empty", result.out)
+
+    def test_gone_returns_when_every_path_is_removed(self):
+        for name in ("P1.lock", "P2.lock"):
+            open(self.path(name), "w").close()
+        os.remove(self.path("P1.lock"))
+        self.assertEqual(self.work("wait", "--timeout", "0.3", "--gone", "P1.lock", "P2.lock").status, 124)
+        status, output, seconds = self.promptly(("--gone", "P1.lock", "P2.lock"),
+                                                lambda: os.remove(self.path("P2.lock")))
+        self.assertEqual(status, 0)
+        self.assertIn("every path is gone", output)
+        self.assertLess(seconds, 5)
+
+    def test_gone_times_out_while_a_path_remains(self):
+        open(self.path("P1.lock"), "w").close()
+        result = self.work("wait", "--timeout", "0.5", "--gone", "P1.lock")
+        self.assertEqual(result.status, 124)
+        self.assertIn("still present", result.out)
+
+    def test_pid_returns_when_every_process_exits_and_a_zombie_counts_as_exited(self):
+        first, second = subprocess.Popen(["sleep", "30"]), subprocess.Popen(["sleep", "30"])
+        self.addCleanup(second.wait)
+        self.addCleanup(second.kill)
+        first.kill()  # Not reaped: a zombie, which has exited.
+        self.until(lambda: work.processes([first.pid]).get(first.pid).stat.startswith("Z"), "a zombie")
+        pids = (str(first.pid), str(second.pid))
+        self.assertEqual(self.work("wait", "--timeout", "0.3", "--pid", *pids).status, 124, "the second runs")
+        status, output, seconds = self.promptly(("--pid", *pids), second.kill)
+        first.wait()
+        self.assertEqual(status, 0)
+        self.assertIn("every process exited", output)
+        self.assertLess(seconds, 5)
+
+    def test_pid_times_out_while_a_process_runs(self):
+        process = subprocess.Popen(["sleep", "30"])
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        result = self.work("wait", "--timeout", "0.5", "--pid", str(process.pid))
+        self.assertEqual(result.status, 124)
+        self.assertIn("still running", result.out)
+
+    def test_pid_of_a_process_that_already_ended_returns_at_once(self):
+        process = subprocess.Popen(["true"])
+        process.wait()
+        result = self.work("wait", "--pid", str(process.pid))
+        self.assertEqual(result.status, 0)
+        self.assertIn("every process exited after 0.0 s", result.out)
+
+    def test_log_returns_on_the_first_matching_line_as_grep_E_reads_it(self):
+        log = self.path("build.log")
+        with open(log, "w") as handle:
+            handle.write("compiling\n")
+
+        def finish():
+            with open(log, "a") as handle:
+                handle.write("Executed 12 tests\nBuild complete!\n")
+        # [[:digit:]] is POSIX ERE, which Python's re does not read: the pattern means what it means to grep -E.
+        status, output, seconds = self.promptly(("--tail", "2", "--log", "build.log", "Executed [[:digit:]]+ tests"),
+                                                finish)
+        self.assertEqual(status, 0)
+        self.assertIn("Build complete!", output, "the tail of the log is printed")
+        self.assertNotIn("compiling", output, "--tail 2 prints two lines")
+        self.assertLess(seconds, 5)
+
+    def test_log_reads_a_line_written_in_two_parts_and_a_replaced_log(self):
+        log = self.path("run.log")
+        with open(log, "w") as handle:
+            handle.write("partial: Build com")
+        watch = work.LogWatch(log, "Build complete")
+        self.assertFalse(watch.matched())
+        with open(log, "a") as handle:
+            handle.write("plete\n")
+        self.assertTrue(watch.matched(), "the line is read whole across two checks")
+        other = work.LogWatch(log, "second run")
+        self.assertFalse(other.matched())
+        with open(log, "w") as handle:
+            handle.write("second run\n")  # Shorter than before: a new log, read from its start.
+        self.assertTrue(other.matched())
+
+    def test_log_times_out_without_a_match_and_waits_for_a_log_that_does_not_exist(self):
+        with open(self.path("build.log"), "w") as handle:
+            handle.write("compiling\n")
+        for path in ("build.log", "missing.log"):
+            with self.subTest(path=path):
+                result = self.work("wait", "--timeout", "0.5", "--log", path, "never there")
+                self.assertEqual(result.status, 124)
+                self.assertIn("no match", result.out)
+
+    def test_json_reports_the_condition(self):
+        open(self.path("lock"), "w").close()
+        status, report = self.json("wait", "--timeout", "0", "--gone", "lock", "free")
+        self.assertEqual(status, 124)
+        self.assertEqual((report["timed_out"], report["condition"], report["pending"]), (True, "gone", ["lock"]))
+
+    def test_conditions_need_no_state(self):
+        # A state directory that work refuses does not matter to a wait that uses no state.
+        refused = os.path.join(self.root, "loose")
+        os.makedirs(refused)
+        os.chmod(refused, 0o777)
+        open(self.path("done"), "w").write("0\n")
+        self.assertEqual(self.work("wait", "--file", "done", env={"AGENT_WORK_HOME": refused}).status, 0)
+
+
+class SetupTests(WorkTestCase):
+    def test_run_and_wait_work_for_an_agent_that_set_nothing(self):
+        home = os.path.join(self.root, "home")
+        os.makedirs(home)
+        bare = {key: value for key, value in self.env.items() if key != "AGENT_WORK_HOME"}
+        bare["HOME"] = home
+        # One shell runs work twice, so both calls share the default name agent-<that shell's pid>.
+        shell = subprocess.Popen(
+            ["sh", "-c", '"$0" "$1" settings --load-factor 1000 >/dev/null && '
+             '"$0" "$1" run --timeout 0 --id bare -- sh -c "$2"; echo $$',
+             sys.executable, SCRIPT, self.gate("bare")[2]],
+            cwd=self.project, env=bare, stdout=subprocess.PIPE, text=True)
+        output, _ = shell.communicate(timeout=60)
+        shell_pid = output.split()[-1]
+        state = os.path.join(home, ".local", "state", "agent-work")
+        self.home = state  # The teardown stops what runs there.
+        task = self.json("show", "bare", env={"AGENT_WORK_HOME": state})[1]
+        self.assertEqual((task["state"], task["author"], task["scope"]), ("running", f"agent-{shell_pid}", None))
+        self.open_gate("bare")
+        waited = subprocess.run([sys.executable, SCRIPT, "wait", "bare"], cwd=self.project, env=bare,
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(waited.returncode, 0, waited.stderr)
+        self.assertIn("job bare finished with status 0", waited.stdout)
+
+    def test_a_claim_under_the_default_name_says_how_to_keep_it(self):
+        self.call("add", "--id", "t", agent="author")
+        claimed = self.work("claim", "t")
+        self.assertEqual(claimed.status, 0)
+        self.assertRegex(claimed.out, r"you are agent-\d+, the default name.*set WORK_AGENT=agent-\d+")
+        self.assertNotIn("default name", self.work("claim", "t", agent="named").out)
+
+
 class ConcurrencyTests(WorkTestCase):
     def test_many_processes_adding_at_once_lose_none(self):
         agents = [f"adder{number}" for number in range(8)]
@@ -940,11 +1138,13 @@ class SafetyTests(WorkTestCase):
                  ("add", "--weight", "nan"), ("add", "--after", "ghost"), ("add", "--kind", "no spaces"),
                  ("wait",), ("status", "--", "true"), ("plan", "--agents", "0"), ("run",),
                  ("run", "real", "--", "true"),
-                 ("run", "real", "--weight", "2")]
+                 ("run", "real", "--weight", "2"), ("wait", "real", "--pid", "1"), ("wait", "--any", "--pid", "1"),
+                 ("wait", "--scope", "s", "--pid", "1"), ("wait", "--pid", "0"), ("wait", "--pid", "abc"),
+                 ("wait", "--log", "only-a-path"), ("wait", "--log", "x.log", "("), ("wait", "--file"),
+                 ("wait", "--gone"), ("wait", "--timeout"), ("wait", "--interval", "0", "--file", "x")]
         for arguments in cases:
             with self.subTest(arguments=arguments):
                 self.assertEqual(self.work(*arguments, agent="a").status, 2)
-        self.assertEqual(self.work("claim", "real").status, 2, "an agent must name itself")
 
     def test_the_script_runs_as_a_program_and_parses_ps_times(self):
         self.assertEqual(subprocess.run([SCRIPT, "--help"], capture_output=True, timeout=30).returncode, 0)
