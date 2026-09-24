@@ -125,10 +125,10 @@ OPERAND_LIMITS = {
     "uniq": frozenset({"-f", "-s", "-w"}),
     "xxd": frozenset({"-c", "-g", "-l", "-n", "-o", "-s", "-cols", "-groupsize", "-len", "-name", "-offset", "-seek"}),
 }
-# Programs allowed only with exactly these arguments.
+# Programs allowed only with exactly these arguments. swift package describe and dump-package are left out: SwiftPM
+# resolves the dependencies to answer them, which fetches over the network and writes .build/ and Package.resolved.
 EXACT_FORMS = {
-    "swift": {("--version",), ("-version",), ("package", "dump-package"), ("package", "describe"),
-              ("package", "describe", "--type", "json"), ("package", "describe", "--type=json")},
+    "swift": {("--version",), ("-version",)},
     "xcode-select": {("-p",), ("--print-path",), ("-v",), ("--version",)},
     "xcodebuild": {("-version",), ("-showsdks",)},
 }

@@ -218,6 +218,10 @@ BLOCKED = [
     "find . -name '*.md' -{,}delete",
     "git log -p --outp{,}ut=/tmp/pwn",
     "git log -p --outp{u..u}t=/tmp/pwn",
+    # SwiftPM resolves the dependencies to describe a package: it fetches, and writes .build/ and Package.resolved.
+    "swift package describe",
+    "swift package describe --type json",
+    "swift package dump-package",
 ]
 
 # (command, text the refusal must name)
