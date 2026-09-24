@@ -33,6 +33,8 @@ reasoning model, only care. Load the `work-docs` skill.
 - Length fits content — cut preamble, restatement, and filler.
 - When editing an existing document, make a targeted edit rather than rewriting the file, unless
   most of it is changing.
+- Wait on a long command without a fixed sleep: let the harness tell you it ended, or use
+  `scripts/wait-for.sh` from `engineering-practices`.
 
 ## Stay in lane
 
