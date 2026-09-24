@@ -64,9 +64,9 @@ Three tiers map to each vendor's models in **`agents/tiers.json`** — the singl
 tuned:
 
 ```
-economy    haiku   / gpt-5.6-luna    mechanical, high-volume, cheap to retry
-standard   sonnet  / gpt-5.6-terra   clear-scope reasoning, tests catch mistakes
-reasoning  opus    / gpt-5.6-sol     ambiguous, high-risk, expensive to fix
+economy    opus    / gpt-5.6-sol   mechanical, high-volume, cheap to retry
+standard   opus    / gpt-5.6-sol   clear-scope reasoning, tests catch mistakes
+reasoning  opus    / gpt-6-astra   ambiguous, high-risk, expensive to fix
 ```
 
 Re-audit that map every few months — the best-value model in each class drifts, and a stale

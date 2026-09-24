@@ -1,3 +1,13 @@
+# LOCAL CODEX MODEL PREFERENCE
+For general coding and text work in Codex, use only these default model choices:
+
+- `gpt-5.6-sol`: routine implementation, tests, exploration, and documentation.
+- `gpt-6-astra`: orchestration, difficult reasoning, code review, and security review.
+
+This user preference overrides generic model recommendations in skills, including managed skill references.
+Keep the existing reasoning effort for each role. Follow a different model choice if the user explicitly requests it for a task.
+Do not substitute these IDs into provider-specific configurations or specialized image, audio, or embedding tools.
+
 # PURPOSE
 This document tells you how to plan, write, review, test, and deliver Swift code.
 Obey each rule, unless the CONFLICT section tells you differently.

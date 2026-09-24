@@ -4,23 +4,23 @@
   "_effort_note": "Effort is the primary intelligence/latency/cost control on current Claude models, and effort names do not mean the same amount of thinking across models, so re-run the sweep per model against your own evals rather than carrying a setting over. Claude Fable 5.1 at low effort is often competitive on cost per task with a smaller model at higher effort while scoring higher, so include it in the comparison for the economy and standard tiers. Two effort side effects matter for this roster: at low effort a model reaches for search and read tools less (the scout and docs-writer prompts compensate by requiring a read before any claim), and at xhigh/max a model can draft a long deliverable in its thinking before writing it, so keep reasoning-tier agents at high unless an eval shows a gain.",
   "economy": {
     "_use": "mechanical, high-volume, low-risk: scanning, extraction, mapping, boilerplate, doc synthesis. Failures are cheap to retry.",
-    "claude": "haiku",
-    "codex": "gpt-5.6-luna",
-    "copilot": "claude-haiku-4-5",
+    "claude": "opus",
+    "codex": "gpt-5.6-sol",
+    "copilot": "claude-opus-5.5",
     "effort": "low"
   },
   "standard": {
     "_use": "clear-scope local reasoning where tests or review catch most mistakes: implementing a specified change, writing tests.",
-    "claude": "sonnet",
-    "codex": "gpt-5.6-terra",
-    "copilot": "claude-sonnet-4-5",
+    "claude": "opus",
+    "codex": "gpt-5.6-sol",
+    "copilot": "claude-opus-5.5",
     "effort": "medium"
   },
   "reasoning": {
     "_use": "ambiguous, cross-cutting, high-risk, long-horizon, or expensive-to-fix: architecture, adversarial review, security audit, planning and synthesis.",
     "claude": "opus",
-    "codex": "gpt-5.6-sol",
-    "copilot": "claude-opus-4-6",
+    "codex": "gpt-6-astra",
+    "copilot": "claude-opus-5.5",
     "effort": "high"
   }
 }

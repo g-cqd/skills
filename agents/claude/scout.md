@@ -5,7 +5,7 @@ description: >
   and used, extract facts, and answer "where / whether / how many" questions. Use PROACTIVELY
   to gather context before any change, and for high-volume fan-out searches. Reports findings;
   never edits.
-model: haiku
+model: opus
 tools: Read, Grep, Glob
 effort: low
 ---

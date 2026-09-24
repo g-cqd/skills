@@ -5,7 +5,7 @@ description: >
   and used, extract facts, and answer "where / whether / how many" questions. Use PROACTIVELY
   to gather context before any change, and for high-volume fan-out searches. Reports findings;
   never edits.
-model: claude-haiku-4-5
+model: claude-opus-5.5
 tools: ["readfile", "code_search", "find_references"]
 ---
 
