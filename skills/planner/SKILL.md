@@ -308,9 +308,9 @@ It exits with 2 and names the problem for an unknown or duplicate id, a cycle (w
 tests: `python3 -m unittest discover -s scripts/tests`.
 
 **Agents that share a machine share one queue.** `scripts/work.py` (`work` below) keeps, in one SQLite database
-(`$AGENT_WORK_HOME`, a private directory, default `~/.local/state/agent-work`), what each scope works on, the queued tasks and commands,
-who holds which task and which files, and the CPU and memory of each running job; it orders the queue with
-`order_tasks.py`. Name yourself with `WORK_AGENT`, and point `WORK_SCOPE` at the scope you share with the other
+(`$AGENT_WORK_HOME`, a private directory, default `~/.local/state/agent-work`), what each scope works on, the queued
+tasks and commands, who holds which task and which files, and the CPU and memory of each running job; it orders the
+queue with `order_tasks.py`. Name yourself with `WORK_AGENT`, and point `WORK_SCOPE` at the scope you share with the other
 agents, a project or a conversation. `--scope S` means S and every scope under it; `--scope ''` means every scope.
 
 | Need | Command |
@@ -324,6 +324,7 @@ agents, a project or a conversation. `--scope S` means S and every scope under i
 | Wait for tasks, or for a scope's jobs | `work wait build test`, `work wait --all` |
 | Close a task that has no command | `work done ID`, `work fail ID`, `work cancel ID` |
 | See the scopes, jobs, CPU, memory, load, history | `work status`, `work log` |
+| See or set the capacity and limits all jobs share | `work settings`, `work settings --capacity 6` |
 
 - **Claim, then accept.** Nothing runs on its own. A queued command runs only after the agent that claimed its
   task reads it with `work show` and accepts it with `work accept ID --digest D`, the digest that `show` prints,
@@ -331,10 +332,13 @@ agents, a project or a conversation. `--scope S` means S and every scope under i
   agent names are self-declared, and a subagent inherits its parent's. Accept only a command you would run
   yourself. A command typed inline with `work run -- ...` needs no acceptance. Commands are stored as argument
   lists and run without a shell, with stdin closed.
-- **Capacity.** A job weighs the cores it uses (`--weight`, default 1). It starts while the running jobs' weights
-  plus its own fit the capacity (`WORK_CAPACITY`, default the CPU count minus 2) and the one-minute load average is
-  below the CPU count times `WORK_LOAD_FACTOR` (default 1.5). Otherwise it waits, and waiting jobs start in work
-  order. A job heavier than the capacity runs alone.
+- **Capacity.** A job weighs the cores it uses (`--weight`, default 1, at most the CPU count). It starts while the
+  running jobs' weights plus its own fit the capacity (default the CPU count minus 2) and the one-minute load
+  average is below the CPU count times the load factor (default 1.5). Otherwise it waits, and waiting jobs start in
+  work order. A job heavier than the capacity runs alone; a job that the load alone holds back longer than the load
+  wait (30 min) fails. These values live in the database, so every agent's jobs share them: `work settings`.
+- **Limits.** A job whose log passes the log limit (256 MiB) is stopped. `status` and `run` delete events, and the
+  logs of ended tasks, older than 14 days.
 - **Waiting.** `work run` and `work wait` return the moment the job ends, with its own exit status (127 for a
   missing command, 128 plus the signal that killed it), and report the wait for capacity apart from the run time.
   At `--timeout` (570 s) they exit with 124 while the job goes on; call `work wait ID` again. With `--json`,

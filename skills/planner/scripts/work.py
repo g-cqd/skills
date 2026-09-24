@@ -19,16 +19,20 @@ Rules:
     has read it (`work show`, which prints its digest) and accepted it (`work accept ID --digest D`), whoever queued
     it: agent names are self-declared, so no name proves who wrote a command. Only a command typed inline with
     `work run -- ...` needs no acceptance. Commands are stored as argument lists and run without a shell.
-  - Capacity: a job weighs the cores it uses (default 1). It starts only while the running jobs' weights plus its
-    own fit the capacity ($WORK_CAPACITY, default the CPU count minus 2, at least 1), or when no job runs, and
-    while the one-minute load average is below the CPU count times $WORK_LOAD_FACTOR (default 1.5). Jobs that wait
-    for room start in work order: validity first, then the order in which they asked.
+  - Capacity: a job weighs the cores it uses (default 1, at most the CPU count). It starts only while the running
+    jobs' weights plus its own fit the capacity, or when no job runs, and while the one-minute load average is below
+    the CPU count times the load factor. Jobs that wait for room start in work order: validity first, then the order
+    in which they asked. A job that the load alone holds back past the load wait fails. `work settings` shows and
+    sets these values, kept in the database so that every agent's jobs are admitted alike: capacity (default the
+    CPU count minus 2, at least 1), load factor (1.5), load wait (1800 s), log limit, and how long events and logs
+    are kept.
   - Jobs: a detached supervisor starts the command in its own process group with stdin closed, writes its output
-    whole to a log, samples the CPU and memory of its process tree every 2 s with ps, and records its true exit
-    status: 127 when the command is missing, 126 when it cannot run, 128 plus the signal that killed it. `run` and
-    `wait` return the moment the work ends, or 124 at --timeout (default 570 s) while it goes on.
+    whole to a log, stops it if the log passes the log limit (256 MiB), samples the CPU and memory of its process
+    tree every 2 s with ps, and records its true exit status: 127 when the command is missing, 126 when it cannot
+    run, 128 plus the signal that killed it. `run` and `wait` return the moment the work ends, or 124 at --timeout
+    (default 570 s) while it goes on.
   - Sweep: `status`, `wait`, `next` and `claim` mark failed a job whose supervisor and command are gone with no
-    recorded status.
+    recorded status. `status` and `run` delete events, and the logs of ended tasks, older than 14 days.
 
 State: $AGENT_WORK_HOME/work.db (default ~/.local/state/agent-work), with job logs in logs/. The path is resolved
 once; the directory must be yours and private (mode 700), and no directory above it may be a link, belong to another
@@ -64,13 +68,11 @@ from datetime import datetime
 import order_tasks
 
 SCRIPT = os.path.abspath(__file__)
-SCHEMA_VERSION = 1
 FINAL = ("done", "failed", "cancelled")
 SCOPE_KINDS = ("project", "conversation", "agent")
 NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.:@-]{0,127}")
 KIND = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]{0,63}")
 DEFAULT_TIMEOUT = 570.0
-DEFAULT_LOAD_FACTOR = 1.5
 CAPACITY_POLL = 1.0
 SAMPLE_INTERVAL = 2.0
 SWEEP_INTERVAL = 5.0
@@ -78,7 +80,8 @@ MAX_TEXT = 4000
 MAX_ITEMS = 1000
 MAX_COMMAND_BYTES = 256 * 1024
 
-SCHEMA = (
+# Each entry takes the schema from one version to the next; a database records its version in PRAGMA user_version.
+MIGRATIONS = ((
     """CREATE TABLE scopes (
         id TEXT PRIMARY KEY,
         kind TEXT NOT NULL CHECK (kind IN ('project', 'conversation', 'agent')),
@@ -133,7 +136,21 @@ SCHEMA = (
         what TEXT NOT NULL,
         detail TEXT NOT NULL DEFAULT ''
     )""",
-)
+), (
+    # One row for the whole machine: every agent's jobs are admitted by the same capacity and limits.
+    """CREATE TABLE settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        capacity REAL CHECK (capacity IS NULL OR capacity > 0),
+        load_factor REAL NOT NULL DEFAULT 1.5 CHECK (load_factor > 0),
+        load_wait REAL NOT NULL DEFAULT 1800 CHECK (load_wait > 0),
+        log_limit INTEGER NOT NULL DEFAULT 268435456 CHECK (log_limit > 0),
+        keep_days REAL NOT NULL DEFAULT 14 CHECK (keep_days > 0),
+        pruned REAL
+    )""",
+    "INSERT INTO settings (id) VALUES (1)",
+    "CREATE INDEX events_by_time ON events (time)",
+))
+SCHEMA_VERSION = len(MIGRATIONS)
 
 
 class WorkError(Exception):
@@ -197,6 +214,10 @@ def duration(text: str) -> float:
     if not (math.isfinite(value) and value >= 0):
         raise argparse.ArgumentTypeError(f"{text!r} is not a finite number, zero or more")
     return value
+
+
+def capacity_setting(text: str) -> float | str:
+    return "auto" if text == "auto" else positive(text)
 
 
 def counting(minimum: int):
@@ -426,10 +447,10 @@ def migrate(conn: sqlite3.Connection) -> None:
         raise refusal(f"the database has schema version {version}, newer than this work.py's {SCHEMA_VERSION}")
     conn.execute("PRAGMA journal_mode = WAL")
     with writing(conn):
-        if conn.execute("PRAGMA user_version").fetchone()[0] == 0:
-            for statement in SCHEMA:
+        for statements in MIGRATIONS[conn.execute("PRAGMA user_version").fetchone()[0]:]:
+            for statement in statements:
                 conn.execute(statement)
-            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
 @contextmanager
@@ -774,6 +795,24 @@ def sweep(conn: sqlite3.Connection) -> list[dict]:
 
 
 @dataclass
+class Settings:
+    """The machine's one settings row: the same capacity and limits for every agent's jobs."""
+
+    capacity: float | None  # None: the CPU count minus 2, at least 1
+    load_factor: float
+    load_wait: float
+    log_limit: int
+    keep_days: float
+    pruned: float | None
+
+
+def settings_of(conn: sqlite3.Connection) -> Settings:
+    row = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
+    return Settings(row["capacity"], row["load_factor"], row["load_wait"], row["log_limit"], row["keep_days"],
+                    row["pruned"])
+
+
+@dataclass
 class Machine:
     cpus: int
     capacity: float
@@ -785,36 +824,64 @@ class Machine:
         return self.cpus * self.factor
 
 
-def setting(env: dict[str, str], name: str, default: float) -> float:
-    raw = env.get(name, "").strip()
-    if not raw:
-        return float(default)
+def load_average() -> float | None:
     try:
-        return positive(raw)
-    except argparse.ArgumentTypeError as error:
-        raise WorkError(f"${name}: {error}") from None
-
-
-def machine(env: dict[str, str]) -> Machine:
-    cpus = os.cpu_count() or 1
-    capacity = setting(env, "WORK_CAPACITY", max(1, cpus - 2))
-    factor = setting(env, "WORK_LOAD_FACTOR", DEFAULT_LOAD_FACTOR)
-    try:
-        load = os.getloadavg()[0]
+        return os.getloadavg()[0]
     except OSError:
-        load = None
-    return Machine(cpus, capacity, factor, load)
+        return None
 
 
-def admission(weight: float, used: float, capacity: float, load: float | None, load_limit: float) -> str | None:
-    """Why a job of `weight` cores cannot start now, or None when it can: its weight must fit the capacity beside the
-    running jobs' weights `used`, unless no job runs, so that a job heavier than the capacity runs alone rather than
-    never; and the load average must be below `load_limit`."""
+def machine(settings: Settings, load=load_average) -> Machine:
+    cpus = os.cpu_count() or 1
+    return Machine(cpus, settings.capacity or max(1, cpus - 2), settings.load_factor, load())
+
+
+def check_weight(weight: float) -> float:
+    cpus = os.cpu_count() or 1
+    if weight > cpus:
+        raise WorkError(f"--weight {weight:g} is more than the {cpus} CPUs of this machine")
+    return weight
+
+
+def admission(weight: float, used: float, capacity: float, load: float | None,
+              load_limit: float) -> tuple[str, str] | None:
+    """Why a job of `weight` cores cannot start now, as (cause, reason), or None when it can: its weight must fit the
+    capacity beside the running jobs' weights `used`, unless no job runs, so that a job heavier than the capacity runs
+    alone rather than never; and the load average must be below `load_limit`."""
     if used > 0 and used + weight > capacity + 1e-9:
-        return f"{used:g} of {capacity:g} cores are taken and this job needs {weight:g}"
+        return "capacity", f"{used:g} of {capacity:g} cores are taken and this job needs {weight:g}"
     if load is not None and load >= load_limit:
-        return f"the load average {load:.2f} is at or above {load_limit:.2f}"
+        return "load", f"the load average {load:.2f} is at or above {load_limit:.2f}"
     return None
+
+
+def waiting_order(row: sqlite3.Row) -> tuple:
+    """A waiting job's place in line, in order_tasks' work order: validity first, then the order in which the jobs
+    asked for capacity."""
+    return 0 if row["kind"].lower() in order_tasks.VALIDITY_KINDS else 1, row["requested"], row["seq"]
+
+
+def prune(ctx: Context, now: float | None = None) -> None:
+    """Deletes the events, and the logs of ended tasks, older than the settings' keep_days, at most once an hour. A log
+    is found from its task's id, never from a stored path, so an edited database cannot aim the deletion elsewhere."""
+    conn = ctx.conn
+    now = time.time() if now is None else now
+    settings = settings_of(conn)
+    if settings.pruned is not None and now - settings.pruned < 3600:
+        return
+    cutoff = now - settings.keep_days * 86400
+    with writing(conn):
+        conn.execute("UPDATE settings SET pruned = ? WHERE id = 1", (now,))
+        conn.execute("DELETE FROM events WHERE time < ?", (cutoff,))
+        ids = [row[0] for row in conn.execute("SELECT id FROM tasks WHERE state IN ('done', 'failed', 'cancelled') "
+                                              "AND ended < ? AND log IS NOT NULL", (cutoff,))]
+        conn.execute("UPDATE tasks SET log = NULL WHERE state IN ('done', 'failed', 'cancelled') AND ended < ?",
+                     (cutoff,))
+    for task_id in ids:
+        path = os.path.join(ctx.logs, f"{task_id}.log")
+        with suppress(FileNotFoundError):
+            if NAME.fullmatch(task_id) and stat.S_ISREG(os.lstat(path).st_mode):
+                os.unlink(path)
 
 
 # MARK: - Running
@@ -826,11 +893,14 @@ class Supervisor:
     names it the job's owner in the transaction that reserves the job, and it goes on only once that transaction is
     over and it owns the job."""
 
-    def __init__(self, ctx: Context, task_id: str):
-        self.ctx, self.task_id = ctx, task_id
+    def __init__(self, ctx: Context, task_id: str, load=load_average):
+        self.ctx, self.task_id, self.load = ctx, task_id, load
         self.me = os.getpid()
         self.child: subprocess.Popen | None = None
         self.stop: int | None = None
+        self.over_limit = False
+        # Held while `child` is cleared, and while the sampler signals it, so the sampler never signals a reaped pid.
+        self.lock = threading.Lock()
 
     def run(self) -> int:
         for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
@@ -862,8 +932,8 @@ class Supervisor:
 
     def wait_for_capacity(self, conn: sqlite3.Connection) -> sqlite3.Row | None:
         """Polls once a second until the job may start, then marks it running; None when the job ends first:
-        cancelled, swept, or stopped by a signal."""
-        last_sweep = time.monotonic()
+        cancelled, swept, stopped by a signal, or held back by the machine's load past the settings' load_wait."""
+        last_sweep, held_since = time.monotonic(), None
         while True:
             if self.stop is not None:
                 self.finish(conn, None, f"stopped by signal {self.stop} before the command started")
@@ -872,11 +942,22 @@ class Supervisor:
                 row = conn.execute("SELECT * FROM tasks WHERE id = ?", (self.task_id,)).fetchone()
                 if row is None or row["state"] != "claimed" or row["owner"] != self.me:
                     return None
-                reason = self.blocker(conn, row)
-                if reason is None:
+                settings = settings_of(conn)
+                blocked = self.blocker(conn, row, machine(settings, self.load))
+                if blocked is None:
                     conn.execute("UPDATE tasks SET state = 'running', started = ?, note = '' WHERE id = ?",
                                  (time.time(), self.task_id))
                     return get_task(conn, self.task_id)
+                cause, reason = blocked
+                # Other jobs end; outside load need not. A job that the load alone holds back gives up in the end.
+                held_since = (held_since or time.monotonic()) if cause == "load" else None
+                if held_since is not None and time.monotonic() - held_since >= settings.load_wait:
+                    note = (f"{reason} for {span(time.monotonic() - held_since)}, the longest a job waits on the "
+                            f"machine's load (work settings --load-wait)")
+                    conn.execute("UPDATE tasks SET state = 'failed', ended = ?, note = ? WHERE id = ?",
+                                 (time.time(), note, self.task_id))
+                    record(conn, "failed", task=self.task_id, scope=row["scope"], agent=row["agent"], detail=note)
+                    return None
                 if reason != row["note"]:
                     conn.execute("UPDATE tasks SET note = ? WHERE id = ?", (reason, self.task_id))
             time.sleep(CAPACITY_POLL)
@@ -884,18 +965,15 @@ class Supervisor:
                 sweep(conn)
                 last_sweep = time.monotonic()
 
-    def blocker(self, conn: sqlite3.Connection, row: sqlite3.Row) -> str | None:
-        """Why the job cannot start now, or None. Waiting jobs start in work order, so a heavy job is not passed
-        forever by lighter ones."""
-        waiting = conn.execute("SELECT id, kind, requested, owner FROM tasks "
-                               "WHERE state = 'claimed' AND requested IS NOT NULL ORDER BY seq").fetchall()
-        line = [order_tasks.make_task({"id": item["id"], "kind": item["kind"], "queued": item["requested"]}, index)
-                for index, item in enumerate(waiting) if item["id"] == row["id"] or exists(item["owner"])]
-        first = order_tasks.order(order_tasks.Graph(line))[0]
-        if first != row["id"]:
-            return f"job {first} is ahead of it"
+    def blocker(self, conn: sqlite3.Connection, row: sqlite3.Row, box: Machine) -> tuple[str, str] | None:
+        """Why the job cannot start now, as (cause, reason), or None. Waiting jobs start in work order, so a heavy job
+        is not passed forever by lighter ones; a waiting job whose supervisor is gone keeps no place."""
+        waiting = conn.execute("SELECT id, kind, requested, seq, owner FROM tasks "
+                               "WHERE state = 'claimed' AND requested IS NOT NULL").fetchall()
+        first = min((item for item in waiting if item["id"] == row["id"] or exists(item["owner"])), key=waiting_order)
+        if first["id"] != row["id"]:
+            return "ahead", f"job {first['id']} is ahead of it"
         used = conn.execute("SELECT COALESCE(SUM(weight), 0) FROM tasks WHERE state = 'running'").fetchone()[0]
-        box = machine(self.ctx.env)
         return admission(row["weight"], used, box.capacity, box.load, box.load_limit)
 
     def execute(self, conn: sqlite3.Connection, row: sqlite3.Row) -> int:
@@ -921,8 +999,9 @@ class Supervisor:
             forward(child.pid, self.stop)
         self.update(conn, "UPDATE tasks SET pid = ? WHERE id = ?", (child.pid, self.task_id), "started",
                     f"process {child.pid}; waited {span(waited_of(row, time.time()))} for capacity")
+        log_limit = settings_of(conn).log_limit
         stop = threading.Event()
-        sampler = threading.Thread(target=self.sample, args=(child.pid, stop), daemon=True)
+        sampler = threading.Thread(target=self.sample, args=(child.pid, row["log"], log_limit, stop), daemon=True)
         sampler.start()
         raw, resources = self.reap(child.pid)
         status = os.waitstatus_to_exitcode(raw)
@@ -930,7 +1009,9 @@ class Supervisor:
         child.returncode = status
         stop.set()
         sampler.join(timeout=15)
-        self.finish(conn, status, "", resources.ru_utime + resources.ru_stime)
+        note = f"stopped: its log passed the limit of {log_limit} bytes (work settings --log-limit)" \
+            if self.over_limit else ""
+        self.finish(conn, status, note, resources.ru_utime + resources.ru_stime)
         return 0
 
     def reap(self, pid: int):
@@ -939,18 +1020,29 @@ class Supervisor:
         signal can reach a process that reused the pid; elsewhere it stops right after the reap."""
         if hasattr(os, "waitid"):
             os.waitid(os.P_PID, pid, os.WEXITED | os.WNOWAIT)
-            self.child = None
+            with self.lock:
+                self.child = None
             _, raw, resources = os.wait4(pid, 0)
         else:
             _, raw, resources = os.wait4(pid, 0)
-            self.child = None
+            with self.lock:
+                self.child = None
         return raw, resources
 
-    def sample(self, pid: int, stop: threading.Event) -> None:
-        """Records the job's CPU and memory 0.5 s after it starts, then every SAMPLE_INTERVAL seconds."""
-        conn, peak, pause = None, 0, 0.5
-        while not stop.wait(pause):
-            pause = SAMPLE_INTERVAL
+    def sample(self, pid: int, log: str, log_limit: int, stop: threading.Event) -> None:
+        """Every 0.5 s, checks the size of the job's log, and stops the job, TERM then KILL 5 s later, once the log
+        passes `log_limit`; from 0.5 s on, every SAMPLE_INTERVAL seconds, records the job's CPU and memory."""
+        conn, peak, ticks, stopping, killed = None, 0, 0, None, False
+        while not stop.wait(0.5):
+            ticks += 1
+            if stopping is None and size_of(log) > log_limit:
+                self.over_limit, stopping = True, time.monotonic()
+                self.signal_child(pid, signal.SIGTERM)
+            elif stopping is not None and not killed and time.monotonic() - stopping >= 5:
+                killed = True
+                self.signal_child(pid, signal.SIGKILL)
+            if ticks % round(SAMPLE_INTERVAL / 0.5) != 1:
+                continue
             table = processes()
             if not table:
                 continue
@@ -965,6 +1057,12 @@ class Supervisor:
                 print(f"work: could not record a sample of job {self.task_id}: {error}", file=sys.stderr, flush=True)
         if conn is not None:
             conn.close()
+
+    def signal_child(self, pid: int, signum: int) -> None:
+        """Signals the command's process group from the sampler, only while the command is not reaped."""
+        with self.lock:
+            if self.child is not None:
+                forward(pid, signum)
 
     def update(self, conn: sqlite3.Connection, sql: str, parameters: tuple, what: str, detail: str) -> None:
         """One write, with its event when it changed the task, retried while the database is busy: once the command
@@ -989,6 +1087,13 @@ class Supervisor:
                           "WHERE id = ? AND state NOT IN ('done', 'failed', 'cancelled')",
                     (state, status, time.time(), cpu_time, note, self.task_id),
                     "finished" if status is not None else "failed", detail)
+
+
+def size_of(path: str) -> int:
+    try:
+        return os.stat(path).st_size
+    except OSError:
+        return 0  # No log to measure is no log past the limit.
 
 
 def forward(pid: int, signum: int) -> None:
@@ -1267,6 +1372,7 @@ def cmd_add(ctx: Context, args: argparse.Namespace, command: list[str] | None) -
     if not KIND.fullmatch(args.kind):
         raise WorkError(f"kind {args.kind!r} is not valid: use up to 64 letters, digits, _ or -")
     title = check_text(args.title, "--title", 1000)
+    check_weight(args.weight)
     cwd = working_directory(args.cwd)
     files = canonical_files(args.files or [], cwd)
     after = unique(args.after or [])
@@ -1525,8 +1631,8 @@ def cmd_accept(ctx: Context, args: argparse.Namespace, command: list[str] | None
 
 def cmd_run(ctx: Context, args: argparse.Namespace, command: list[str] | None) -> int:
     agent = ctx.agent(args.agent)
-    machine(ctx.env)  # A bad $WORK_CAPACITY or $WORK_LOAD_FACTOR fails here, not in the detached supervisor.
     conn = ctx.conn
+    prune(ctx)
     if command is None:
         if args.task is None:
             raise WorkError("name a task you claimed, or give a command after --")
@@ -1545,6 +1651,7 @@ def cmd_run(ctx: Context, args: argparse.Namespace, command: list[str] | None) -
         if not KIND.fullmatch(kind):
             raise WorkError(f"kind {kind!r} is not valid: use up to 64 letters, digits, _ or -")
         title = check_text(args.title or "", "--title", 1000)
+        weight = check_weight(args.weight or 1.0)
         cwd = working_directory(args.cwd)
         files = canonical_files(args.files or [], cwd)
     supervisor = None
@@ -1560,8 +1667,8 @@ def cmd_run(ctx: Context, args: argparse.Namespace, command: list[str] | None) -
                 if holder is not None:
                     raise refusal(f"job {task_id} changes files that task {holder['id']} holds "
                                   f"({describe_state(holder)})")
-                insert_task(conn, task_id, title, kind, scope, agent, [], 1.0, 1.0, files, command, cwd,
-                            args.weight or 1.0, state="claimed")
+                insert_task(conn, task_id, title, kind, scope, agent, [], 1.0, 1.0, files, command, cwd, weight,
+                            state="claimed")
             row = get_task(conn, task_id)
             check_runnable(row, agent)
             log = os.path.join(ctx.logs, f"{task_id}.log")
@@ -1627,11 +1734,40 @@ def cmd_close(ctx: Context, args: argparse.Namespace, command: list[str] | None)
     return 0
 
 
+def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | None) -> int:
+    agent = ctx.optional_agent(args.agent)
+    conn = ctx.conn
+    changes = {key: value for key, value in (("capacity", args.capacity), ("load_factor", args.load_factor),
+                                             ("load_wait", args.load_wait), ("log_limit", args.log_limit),
+                                             ("keep_days", args.keep_days)) if value is not None}
+    if changes:
+        with writing(conn):
+            for key, value in changes.items():
+                # `key` comes from the fixed list above, never from input.
+                conn.execute(f"UPDATE settings SET {key} = ? WHERE id = 1", (None if value == "auto" else value,))
+            record(conn, "settings", agent=agent, detail=", ".join(f"{key} {value}" for key, value in changes.items()))
+    settings = settings_of(conn)
+    box = machine(settings)
+    if args.json:
+        emit({"capacity": box.capacity, "capacity_is_default": settings.capacity is None, "cpus": box.cpus,
+              "load_factor": settings.load_factor, "load_limit": box.load_limit, "load_wait": settings.load_wait,
+              "log_limit": settings.log_limit, "keep_days": settings.keep_days})
+        return 0
+    default = " (the default: the CPU count minus 2)" if settings.capacity is None else ""
+    print(f"capacity: {box.capacity:g} cores{default}\n"
+          f"load factor: {settings.load_factor:g}; jobs start below load {box.load_limit:.2f} on {box.cpus} CPUs\n"
+          f"load wait: {span(settings.load_wait)}; a job that the load alone holds back longer fails\n"
+          f"log limit: {settings.log_limit} bytes; a job whose log grows past it is stopped\n"
+          f"keep: {settings.keep_days:g} days of events and of the logs of ended tasks")
+    return 0
+
+
 def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None) -> int:
     conn = ctx.conn
     swept = sweep(conn)
+    prune(ctx)
     scope = ctx.scope(args.scope)
-    box = machine(ctx.env)
+    box = machine(settings_of(conn))
     now = time.time()
     with reading(conn):
         scopes = scope_rows(conn, scope)
@@ -1791,6 +1927,16 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("id")
         sub.add_argument("--note", help="why")
 
+    sub = command("settings", cmd_settings, "show or set the capacity and limits that every agent's jobs share",
+                  agent=True)
+    sub.add_argument("--capacity", type=capacity_setting,
+                     help="cores that running jobs may take together, or auto for the CPU count minus 2")
+    sub.add_argument("--load-factor", type=positive, help="jobs start below this load per CPU (default 1.5)")
+    sub.add_argument("--load-wait", type=positive, metavar="SECONDS",
+                     help="the longest a job waits on the load alone before it fails (default 1800)")
+    sub.add_argument("--log-limit", type=counting(1), metavar="BYTES",
+                     help="a job whose log grows past this is stopped (default 268435456)")
+    sub.add_argument("--keep-days", type=positive, help="events and logs of ended tasks kept this long (default 14)")
     command("status", cmd_status, "scopes, jobs with their CPU and memory, counts, and the machine's load",
             scope=True)
     sub = command("log", cmd_log, "the events, oldest first", scope=True)

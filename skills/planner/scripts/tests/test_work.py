@@ -72,8 +72,9 @@ class WorkTestCase(unittest.TestCase):
         self.project = os.path.join(self.root, "project")
         os.makedirs(self.project)
         self.env = {key: value for key, value in os.environ.items() if not key.startswith("WORK_")}
+        self.env["AGENT_WORK_HOME"] = self.home
         # A fixed capacity and a load limit no machine reaches keep the tests independent of the machine's load.
-        self.env.update(AGENT_WORK_HOME=self.home, WORK_CAPACITY="16", WORK_LOAD_FACTOR="1000")
+        self.assertEqual(self.call("settings", "--capacity", "16", "--load-factor", "1000").status, 0)
 
     def tearDown(self):
         self.stop_jobs()
@@ -154,6 +155,7 @@ class WorkTestCase(unittest.TestCase):
         """Kills what a test left running: each job's process group, then its supervisor."""
         if not os.path.exists(os.path.join(self.home, "work.db")):
             return
+        # A test that plays the supervisor in this process leaves its own pid as an owner: that one is left alone.
         rows = self.database("SELECT pid, owner FROM tasks WHERE state IN ('claimed', 'running')")
         for row in rows:
             for target, kill in ((row["pid"], os.killpg), (row["owner"], os.kill)):
@@ -161,7 +163,7 @@ class WorkTestCase(unittest.TestCase):
                     with contextlib.suppress(ProcessLookupError, PermissionError):
                         kill(target, signal.SIGKILL)
         for row in rows:
-            if row["owner"]:
+            if row["owner"] and row["owner"] != os.getpid():
                 self.until(lambda: not work.exists(row["owner"]), "a supervisor to stop")
 
     def race(self, mode, agents, *extra):
@@ -441,6 +443,15 @@ class RunTests(WorkTestCase):
         task = self.task("lost")
         self.assertEqual((task["state"], task["status"], task["note"]), ("failed", None, f"its directory {gone} is gone"))
 
+    def test_a_job_whose_log_passes_the_limit_is_stopped(self):
+        self.call("settings", "--log-limit", "65536")
+        result = self.work("run", "--id", "noisy", "--timeout", "20", "--", "sh", "-c",
+                           "while :; do echo 0123456789; done", agent="a")
+        self.assertEqual(result.status, 128 + signal.SIGTERM, result.out)
+        task = self.task("noisy")
+        self.assertIn("stopped: its log passed the limit of 65536 bytes", task["note"])
+        self.assertLess(os.path.getsize(task["log"]), 64 * 1024 * 1024, "stopped within about a second")
+
     def test_an_ad_hoc_job_keeps_its_fields_and_refuses_held_files(self):
         self.work("scope", "set", "proj")
         result = self.work("run", "--id", "held", "--scope", "proj", "--weight", "2", "--files", "src",
@@ -457,11 +468,13 @@ class RunTests(WorkTestCase):
 
 class CapacityTests(WorkTestCase):
     def test_with_capacity_one_the_second_job_starts_when_the_first_ends(self):
-        one = {"WORK_CAPACITY": "1"}
+        self.call("settings", "--capacity", "1")
         self.assertEqual(self.work("run", "--id", "first", "--timeout", "0", "--", *self.gate("first"),
-                                   agent="alice", env=one).status, 124)
+                                   agent="alice").status, 124)
         self.until(lambda: self.state("first") == "running", "the first job to start")
-        second = self.start("run", "--id", "second", "--", "sh", "-c", "echo second", agent="bob", env=one)
+        # The capacity is the database's: an agent's environment cannot raise it for its own jobs.
+        second = self.start("run", "--id", "second", "--", "sh", "-c", "echo second", agent="bob",
+                            env={"WORK_CAPACITY": "16"})
         self.until(lambda: self.state("second") == "waiting", "the second job to wait")
         self.open_gate("first")
         output, errors = second.communicate(timeout=60)
@@ -474,35 +487,86 @@ class CapacityTests(WorkTestCase):
         self.assertAlmostEqual(self.task("second")["waited"], times["second"]["started"] - times["second"]["requested"],
                                places=2)
 
+    def queue_behind(self, busy, *jobs, capacity="1"):
+        """Sets the capacity, starts a job that holds it until its gate opens, then queues `jobs`, (id, extra
+        arguments) pairs, one after the other, each once the one before waits."""
+        self.call("settings", "--capacity", capacity)
+        self.work("run", "--id", busy[0], *busy[1], "--timeout", "0", "--", *self.gate(busy[0]), agent="a")
+        self.until(lambda: self.state(busy[0]) == "running", "the first job to start")
+        for task_id, extra in jobs:
+            self.work("run", "--id", task_id, *extra, "--timeout", "0", "--", "true", agent="b")
+            self.until(lambda: self.state(task_id) == "waiting", f"job {task_id} to wait")
+
+    def started(self):
+        return {row["id"]: row["started"] for row in self.database("SELECT id, started FROM tasks")}
+
     def test_waiting_jobs_start_in_work_order(self):
-        one = {"WORK_CAPACITY": "1"}
-        self.work("run", "--id", "busy", "--timeout", "0", "--", *self.gate("busy"), agent="a", env=one)
-        self.until(lambda: self.state("busy") == "running", "the first job to start")
-        self.work("run", "--id", "perf", "--kind", "performance", "--timeout", "0", "--", "true", agent="b", env=one)
-        self.work("run", "--id", "fix", "--kind", "validity", "--timeout", "0", "--", "true", agent="c", env=one)
-        self.until(lambda: self.state("perf") == self.state("fix") == "waiting", "both jobs to wait")
+        self.queue_behind(("busy", []), ("perf", ["--kind", "performance"]), ("fix", ["--kind", "validity"]))
         self.open_gate("busy")
         self.assertEqual(self.work("wait", "busy", "perf", "fix").status, 0)
-        started = {row["id"]: row["started"] for row in self.database("SELECT id, started FROM tasks")}
+        started = self.started()
         self.assertLess(started["busy"], started["fix"])
         self.assertLess(started["fix"], started["perf"], "validity work starts first, whatever its arrival")
 
+    def test_waiting_jobs_of_one_tier_start_in_the_order_they_asked(self):
+        self.queue_behind(("busy", []), ("zeta", []), ("alpha", []))
+        self.open_gate("busy")
+        self.assertEqual(self.work("wait", "busy", "zeta", "alpha").status, 0)
+        started = self.started()
+        self.assertLess(started["zeta"], started["alpha"], "first in, first out, whatever the ids")
+
+    @unittest.skipIf((os.cpu_count() or 1) < 2, "a weight of 2 needs two CPUs")
+    def test_the_capacity_counts_the_weights_of_running_jobs(self):
+        self.queue_behind(("heavy", ["--weight", "2"]), ("second", ["--weight", "2"]), capacity="3")
+        self.assertIn("2 of 3 cores are taken and this job needs 2", self.task("second")["note"])
+        self.open_gate("heavy")
+        self.assertEqual(self.work("wait", "heavy", "second").status, 0)
+        started, ended = self.started(), self.database("SELECT ended FROM tasks WHERE id = 'heavy'")[0]["ended"]
+        self.assertGreaterEqual(started["second"], ended)
+
+    def test_outside_load_holds_a_job_back_and_fails_it_after_the_load_wait(self):
+        self.call("settings", "--load-factor", "1.5", "--load-wait", "0.5")
+        for task_id in ("heavy", "light"):
+            self.work("add", "--id", task_id, "--", "true", agent="a")
+            self.work("claim", task_id, agent="a")
+            self.accept(task_id, "a")
+        ctx = work.Context(self.env)
+        self.addCleanup(ctx.close)
+        busy, idle = os.cpu_count() * 1.5, 0.0
+        for task_id, load in (("heavy", busy), ("light", idle)):
+            with work.writing(ctx.conn):
+                work.reserve(ctx.conn, work.get_task(ctx.conn, task_id), "a", os.getpid(), "unused.log")
+            # This process owns the job, and a fake load average stands in for the machine's.
+            outcome = work.Supervisor(ctx, task_id, load=lambda load=load: load).wait_for_capacity(ctx.conn)
+            if task_id == "heavy":
+                self.assertIsNone(outcome)
+            else:
+                self.assertEqual(outcome["state"], "running")
+        heavy = self.task("heavy")
+        self.assertEqual((heavy["state"], heavy["started"], heavy["status"]), ("failed", None, None))
+        self.assertIn(f"the load average {busy:.2f} is at or above {busy:.2f}", heavy["note"])
+        self.assertIn("the longest a job waits on the machine's load", heavy["note"])
+
     def test_admission(self):
         self.assertIsNone(work.admission(2, 3, 6, 1.0, 12.0))
-        self.assertIn("5 of 6 cores are taken", work.admission(2, 5, 6, 1.0, 12.0))
+        self.assertEqual(work.admission(2, 5, 6, 1.0, 12.0), ("capacity", "5 of 6 cores are taken and this job needs 2"))
         self.assertIsNone(work.admission(8, 0, 6, 1.0, 12.0), "a job heavier than the capacity runs alone")
-        self.assertIn("load average", work.admission(1, 0, 6, 12.0, 12.0))
+        self.assertEqual(work.admission(1, 0, 6, 12.0, 12.0)[0], "load")
         self.assertIsNone(work.admission(1, 0, 6, None, 12.0), "an unknown load does not block")
 
-    def test_the_capacity_defaults_to_the_cpu_count_minus_two(self):
-        box = work.machine({})
-        self.assertEqual(box.capacity, max(1, (os.cpu_count() or 1) - 2))
-        self.assertEqual(box.load_limit, box.cpus * 1.5)
-        self.assertEqual(work.machine({"WORK_CAPACITY": "3", "WORK_LOAD_FACTOR": "2"}).capacity, 3)
-        for bad in ("0", "-1", "lots", "inf"):
-            with self.subTest(bad=bad), self.assertRaises(work.WorkError):
-                work.machine({"WORK_CAPACITY": bad})
-        self.assertEqual(self.work("run", "--", "true", agent="a", env={"WORK_CAPACITY": "none"}).status, 2)
+    def test_settings_hold_the_capacity_and_limits_for_every_agent(self):
+        self.assertEqual(self.json("settings")[1]["capacity"], 16)
+        cpus = os.cpu_count() or 1
+        status, shown = self.json("settings", "--capacity", "auto", "--log-limit", "1024", "--keep-days", "2")
+        self.assertEqual(status, 0)
+        self.assertEqual((shown["capacity"], shown["capacity_is_default"]), (max(1, cpus - 2), True))
+        self.assertEqual((shown["log_limit"], shown["keep_days"], shown["load_limit"]), (1024, 2, cpus * 1000))
+        for arguments in (("--capacity", "0"), ("--capacity", "lots"), ("--load-factor", "-1"),
+                          ("--load-wait", "nan"), ("--log-limit", "0"), ("--keep-days", "inf")):
+            with self.subTest(arguments=arguments):
+                self.assertEqual(self.work("settings", *arguments).status, 2)
+        self.assertEqual(self.work("add", "--weight", str(cpus + 1), agent="a").status, 2)
+        self.assertEqual(self.work("run", "--weight", str(cpus + 1), "--", "true", agent="a").status, 2)
 
 
 class WaitTests(WorkTestCase):
@@ -546,12 +610,12 @@ class WaitTests(WorkTestCase):
         self.assertIn("task b failed: flaky", waited.out)
 
     def test_cancel_withdraws_a_job_that_waits_for_capacity(self):
-        one = {"WORK_CAPACITY": "1"}
+        self.call("settings", "--capacity", "1")
         marker = os.path.join(self.root, "never")
-        self.work("run", "--id", "busy", "--timeout", "0", "--", *self.gate("busy"), agent="a", env=one)
+        self.work("run", "--id", "busy", "--timeout", "0", "--", *self.gate("busy"), agent="a")
         self.until(lambda: self.state("busy") == "running", "the first job to start")
-        self.assertEqual(self.work("run", "--id", "later", "--timeout", "0", "--", "touch", marker, agent="b",
-                                   env=one).status, 124)
+        self.assertEqual(self.work("run", "--id", "later", "--timeout", "0", "--", "touch", marker,
+                                   agent="b").status, 124)
         self.until(lambda: self.state("later") == "waiting", "the job to wait for capacity")
         self.assertIn("job later still waiting for capacity", self.work("wait", "later", "--timeout", "0").out)
         supervisor = self.task("later")["supervisor"]
@@ -653,13 +717,13 @@ class StatusTests(WorkTestCase):
         self.assertEqual((task["state"], task["status"], task["note"]), ("failed", 128 + signal.SIGTERM, ""))
 
     def test_a_job_whose_supervisor_stops_or_dies_before_it_starts_is_failed(self):
-        one = {"WORK_CAPACITY": "1"}
-        self.work("run", "--id", "busy", "--timeout", "0", "--", *self.gate("busy"), agent="a", env=one)
+        self.call("settings", "--capacity", "1")
+        self.work("run", "--id", "busy", "--timeout", "0", "--", *self.gate("busy"), agent="a")
         self.until(lambda: self.state("busy") == "running", "the first job to start")
         for task_id, signum, note in (("stopped", signal.SIGTERM, "stopped by signal 15 before the command started"),
                                       ("killed", signal.SIGKILL, "ended before the command started")):
             with self.subTest(task_id=task_id):
-                self.work("run", "--id", task_id, "--timeout", "0", "--", "true", agent="b", env=one)
+                self.work("run", "--id", task_id, "--timeout", "0", "--", "true", agent="b")
                 self.until(lambda: self.state(task_id) == "waiting", "the job to wait")
                 os.kill(self.task(task_id)["supervisor"], signum)
                 self.assertEqual(self.work("wait", task_id).status, 1)
@@ -686,6 +750,35 @@ class StatusTests(WorkTestCase):
         self.open_gate("live")
         self.assertEqual(self.work("wait", "live").status, 0, "its own status is recorded")
 
+    def test_old_events_and_logs_are_pruned(self):
+        self.call("settings", "--keep-days", "1")
+        for task_id in ("old", "new"):
+            self.assertEqual(self.work("run", "--id", task_id, "--", "true", agent="a").status, 0)
+        old_log, new_log = self.task("old")["log"], self.task("new")["log"]
+        long_ago = time.time() - 3 * 86400
+        self.database("UPDATE tasks SET ended = ? WHERE id = 'old'", long_ago)
+        self.database("UPDATE events SET time = ? WHERE task = 'old'", long_ago)
+        self.database("UPDATE settings SET pruned = NULL")  # The runs above pruned less than an hour ago.
+        self.assertEqual(self.work("status").status, 0)
+        self.assertFalse(os.path.exists(old_log))
+        self.assertIsNone(self.task("old")["log"])
+        self.assertTrue(os.path.exists(new_log))
+        self.assertEqual(self.json("log", "--task", "old")[1]["events"], [])
+        self.assertNotEqual(self.json("log", "--task", "new")[1]["events"], [])
+
+    def test_a_database_of_the_first_schema_gains_the_settings(self):
+        first = os.path.join(self.root, "first")
+        os.makedirs(first, mode=0o700)
+        with contextlib.closing(sqlite3.connect(os.path.join(first, "work.db"))) as conn:
+            for statement in work.MIGRATIONS[0]:
+                conn.execute(statement)
+            conn.execute("PRAGMA user_version = 1")
+            conn.commit()
+        os.chmod(os.path.join(first, "work.db"), 0o600)
+        status, shown = self.json("settings", env={"AGENT_WORK_HOME": first})
+        self.assertEqual(status, 0)
+        self.assertTrue(shown["capacity_is_default"])
+
     def test_log_records_each_state_change(self):
         self.work("scope", "set", "proj")
         self.work("add", "--id", "t", "--scope", "proj", agent="alice")
@@ -710,16 +803,18 @@ class ConcurrencyTests(WorkTestCase):
 
 class SafetyTests(WorkTestCase):
     def test_a_state_directory_that_others_can_write_is_refused(self):
-        os.makedirs(self.home)
-        os.chmod(self.home, 0o777)
-        result = self.work("status")
+        loose = os.path.join(self.root, "loose")
+        os.makedirs(loose)
+        os.chmod(loose, 0o777)
+        result = self.work("status", env={"AGENT_WORK_HOME": loose})
         self.assertEqual(result.status, 1)
         self.assertIn("must be private to you", result.err)
 
     def test_a_state_directory_must_be_private_under_directories_that_only_you_can_write(self):
-        os.makedirs(self.home)
-        os.chmod(self.home, 0o755)
-        readable = self.work("status")
+        readable_home = os.path.join(self.root, "readable")
+        os.makedirs(readable_home)
+        os.chmod(readable_home, 0o755)
+        readable = self.work("status", env={"AGENT_WORK_HOME": readable_home})
         self.assertEqual(readable.status, 1, "others may not even read the queue")
         self.assertIn("chmod 700", readable.err)
         shared = os.path.join(self.root, "shared")
