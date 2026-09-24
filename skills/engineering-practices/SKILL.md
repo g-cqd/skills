@@ -30,7 +30,7 @@ one is `planner`.
 §SMALL    PR ≤ ~15-min-review · slice-by-behavior ¬by-file-type
 §SCOPE    boy-scout ∈ scope-only ⇒ rest ⇒ follow-up-ticket
 §CLOSE    ¬report-done BEFORE §5 gate ∀5-steps
-§WAIT     long-work ⇒ harness-notify | scripts/wait-for.sh ⇒ ¬fixed-sleep
+§WAIT     long-work ⇒ harness-notify | work run|wait (planner) ⇒ ¬fixed-sleep
 §DEPS     add-dependency ∷ architectural-decision ¬convenience
 §BAN      big-bang-rewrite · drive-by-churn · flag ∅removal-ticket ·
           "tests pass" as done-evidence
@@ -121,31 +121,32 @@ too early, and a loop of long sleeps compounds both. Wait on the event, not the 
 1. **Let the harness tell you.** When the harness runs a command in the background and reports its end, as
    Claude Code does for background commands and subagents, start it that way and carry on with other work, or
    end the turn. The notice arrives the moment it finishes.
-2. **Otherwise wait on the condition.** `scripts/wait-for.sh` returns as soon as its condition holds, and stops at
-   a limit under the tool call's own (570 s by default):
+2. **Otherwise run it with `work`.** `work` is `planner`'s `scripts/work.py`, installed at
+   `~/.agent-harness/bin/work`, and needs no setup. `work run` starts the command when the machine has room for it
+   (`--weight N` for the cores it uses), returns the moment it ends with its own status, and stops waiting at a
+   limit under the tool call's own (570 s by default). `work wait` waits the same way on what `work` did not start:
    ```sh
-   wait-for.sh run tests.status tests.log -- swift test --jobs 2   # start it, then wait for it
-   wait-for.sh file tests.status                                   # exited 124, still running: wait again
-   wait-for.sh pid 4242                                            # a process you started elsewhere
-   wait-for.sh log build.log 'Build complete'                      # a line in a log
-   wait-for.sh gone P2.lock                                        # a lock file its phase deletes
+   work run --weight 4 -- swift test --parallel      # start it, then wait for it
+   work wait job-7                                   # exited 124, still running: wait again
+   work wait --pid 4242                              # a process you started elsewhere
+   work wait --file tests.status                     # a status file; one holding a number exits with it
+   work wait --log build.log 'Build complete'        # a line in a log (an extended regular expression)
+   work wait --gone P2.lock                          # a lock file its phase deletes
    ```
-   It exits with the command's own status, or 124 when the limit passes first. Call it again; never lengthen a
-   sleep instead.
+   Both exit with the command's own status, or 124 when the limit passes first. Call `work wait` again; never
+   lengthen a sleep instead.
 3. **Keep the output whole and the status true.** Never pipe a command into `tail`, `head` or `grep` when you need
    its result: the pipe reports the last command's status, so a failed build reads as success, and a cut output hides
-   the result lines. `wait-for.sh run` keeps the full output in its log, prints the last lines (`--tail N`) and exits
-   with the command's own status: 127 when the command is missing, 128 plus the signal when a signal killed it. If
-   the command must be a pipeline, run it as `bash -c 'set -o pipefail; …'`.
+   the result lines. `work run` keeps the full output in its log, prints the last lines (`--tail N`) and exits with
+   the command's own status: 127 when the command is missing, 128 plus the signal when a signal killed it. If the
+   command must be a pipeline, run it as `bash -c 'set -o pipefail; …'`.
 4. **Prefer the exit to a log line, and a report to the log.** Output sent to a file is buffered in blocks, Swift's
-   test runner's among it, so a `log` wait can lag the work, and a run that hangs or is killed loses its last lines,
-   summary included; `run` and `pid` wait on the process itself. Take the result from the exit status and from a
-   report the tool writes itself (`swift test --xunit-output FILE`, `xcodebuild -resultBundlePath DIR`), and treat a
-   missing summary as a run that did not finish, never as a pass.
-5. **Report the time the work took,** from the line `wait-for.sh` prints, not the time you waited.
-6. **Share the machine.** When other agents run on it too, start long work through `planner`'s `scripts/work.py`
-   (`work run --weight N -- …`): it waits until the machine has room, runs the command, and keeps its status the
-   same way.
+   test runner's among it, so a `--log` wait can lag the work, and a run that hangs or is killed loses its last
+   lines, summary included; `work run` and `--pid` wait on the process itself. Take the result from the exit status
+   and from a report the tool writes itself (`swift test --xunit-output FILE`, `xcodebuild -resultBundlePath DIR`),
+   and treat a missing summary as a run that did not finish, never as a pass.
+5. **Report the time the work took,** from the line `work` prints, which also gives the wait for capacity apart
+   from the run, not the time you waited.
 
 ## 7. Rationalizations
 

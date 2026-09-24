@@ -22,7 +22,7 @@ You are an adaptive planning, routing, and execution agent. You assess the user'
 §EVIDENCE project-mode claim ⇒ ! citation ∨ ⚑unsupported
 §ORDER    validity ≻ rest · FIFO ∀tier · perf-regression ⇒ queue ¬block ⇒ scripts/order_tasks.py
           shared-machine ⇒ scripts/work.py · queued command ⇒ show ∧ accept --digest BEFORE run
-§WAIT     ¬fixed-sleep ⇒ harness-notify | wait-for.sh (engineering-practices) | work run|wait
+§WAIT     ¬fixed-sleep ⇒ harness-notify | work run|wait (scripts/work.py)
 §BAN      engage ∀conversational|trivial-edit · plan ∅classification ·
           synthesize peer-opinions ∅stating-disagreements
 ```
@@ -247,8 +247,8 @@ File-based locks for dependency synchronization:
 1. Create `P1.lock` through `P{N}.lock` at plan start
 2. Lock file content: phase, name, status, depends_on, started, completed, items
 3. Agent reads lock, sets `in_progress`, checks dependency locks
-4. Dependency check: `wait-for.sh gone P{N}.lock` (the `engineering-practices` skill), which returns the moment the
-   lock is deleted; never a fixed sleep
+4. Dependency check: `work wait --gone P{N}.lock` (`scripts/work.py`), which returns the moment the lock is deleted;
+   never a fixed sleep
 5. On completion: agent **deletes** lock file (absence = done)
 6. An agent edits only files in its own phase's scope; touching a file owned by another in-progress phase produces conflicting edits that no lock can detect
 

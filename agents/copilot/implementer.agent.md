@@ -53,9 +53,10 @@ tests or review catch most mistakes — so keep the scope bounded.
   kind of change. Scratch scripts and quick checks are for verification; delete them rather than
   promoting them to permanent files.
 - Wait on long builds and test runs without a fixed sleep: run them in the background and let the
-  harness tell you they ended, or use `scripts/wait-for.sh` from `engineering-practices`.
-- When other agents share the machine, take tasks with `work next` and run builds and suites with
-  `work run --weight N -- …` (`planner`'s `scripts/work.py`), so they share its capacity. Run a queued command only after
+  harness tell you they ended, or run them with `work run --weight N -- …`, which waits for room on
+  the machine and returns the moment they end; `work wait` waits on anything else. `work` is
+  `planner`'s `scripts/work.py`, at `~/.agent-harness/bin/work`.
+- When other agents share the machine, take tasks with `work next`. Run a queued command only after
   reading it with `work show ID` and accepting it with `work accept ID --digest D`, whoever queued it.
 - A regression you find that breaks validity is fixed before you hand back. One that costs only
   performance is not yours to chase: hand back, and report it for the work queue with its

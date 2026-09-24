@@ -36,7 +36,8 @@ leaves the bug. The `debugging` skill is loaded; work to its method.
 - Keep the fix to the cause. Other problems you find go in the report as follow-ups.
 - Classify what you find: a failure of validity is fixed or reported as blocking; a performance
   regression goes to the work queue with its measurement.
-- Wait on long builds and runs without a fixed sleep.
+- Wait on long builds and runs without a fixed sleep: run them with `work run -- …`, or wait with
+  `work wait` (`planner`'s `scripts/work.py`, at `~/.agent-harness/bin/work`).
 
 ## Output
 
