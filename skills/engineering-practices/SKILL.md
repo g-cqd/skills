@@ -142,9 +142,11 @@ too early, and a loop of long sleeps compounds both. Wait on the event, not the 
    command must be a pipeline, run it as `bash -c 'set -o pipefail; …'`.
 4. **Prefer the exit to a log line, and a report to the log.** Output sent to a file is buffered in blocks, Swift's
    test runner's among it, so a `--log` wait can lag the work, and a run that hangs or is killed loses its last
-   lines, summary included; `work run` and `--pid` wait on the process itself. Take the result from the exit status
-   and from a report the tool writes itself (`swift test --xunit-output FILE`, `xcodebuild -resultBundlePath DIR`),
-   and treat a missing summary as a run that did not finish, never as a pass.
+   lines, summary included, so its log hides the test that did not finish; `work run` and `--pid` wait on the
+   process itself. Take the result from the exit status and from a report the tool writes itself (`swift test
+   --xunit-output FILE`, `xcodebuild -resultBundlePath DIR`), and treat a missing summary as a run that did not
+   finish, never as a pass. To watch a long run live, run it under a pseudo-terminal, which buffers by line:
+   `script -q /dev/null swift test`.
 5. **Report the time the work took,** from the line `work` prints, which also gives the wait for capacity apart
    from the run, not the time you waited.
 
