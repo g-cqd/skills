@@ -12,6 +12,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from collections import Counter, namedtuple
@@ -441,7 +442,8 @@ class RunTests(WorkTestCase):
         result = self.work("run", "lost", agent="a")
         self.assertEqual(result.status, 1, "not 127: the command was never looked for")
         task = self.task("lost")
-        self.assertEqual((task["state"], task["status"], task["note"]), ("failed", None, f"its directory {gone} is gone"))
+        self.assertEqual((task["state"], task["status"], task["note"]),
+                         ("failed", None, f"its directory {gone} is gone"))
 
     def test_a_job_whose_log_passes_the_limit_is_stopped(self):
         self.call("settings", "--log-limit", "65536")
@@ -536,8 +538,7 @@ class CapacityTests(WorkTestCase):
         for task_id, load in (("heavy", busy), ("light", idle)):
             with work.writing(ctx.conn):
                 work.reserve(ctx.conn, work.get_task(ctx.conn, task_id), "a", os.getpid(), "unused.log")
-            # This process owns the job, and a fake load average stands in for the machine's.
-            outcome = work.Supervisor(ctx, task_id, load=lambda load=load: load).wait_for_capacity(ctx.conn)
+            outcome = self.wait_for_capacity(task_id, load)
             if task_id == "heavy":
                 self.assertIsNone(outcome)
             else:
@@ -547,9 +548,28 @@ class CapacityTests(WorkTestCase):
         self.assertIn(f"the load average {busy:.2f} is at or above {busy:.2f}", heavy["note"])
         self.assertIn("the longest a job waits on the machine's load", heavy["note"])
 
+    def wait_for_capacity(self, task_id, load):
+        """Plays the supervisor of a job this process owns, with a fake load average for the machine's, in a thread
+        with its own connection, so that a wait that never ends fails the test instead of hanging it."""
+        outcome = []
+
+        def supervise():
+            ctx = work.Context(self.env)
+            try:
+                outcome.append(work.Supervisor(ctx, task_id, load=lambda: load).wait_for_capacity(ctx.conn))
+            finally:
+                ctx.close()
+
+        thread = threading.Thread(target=supervise, daemon=True)
+        thread.start()
+        thread.join(timeout=20)
+        self.assertFalse(thread.is_alive(), f"the wait of job {task_id} ended")
+        return outcome[0]
+
     def test_admission(self):
         self.assertIsNone(work.admission(2, 3, 6, 1.0, 12.0))
-        self.assertEqual(work.admission(2, 5, 6, 1.0, 12.0), ("capacity", "5 of 6 cores are taken and this job needs 2"))
+        self.assertEqual(work.admission(2, 5, 6, 1.0, 12.0),
+                         ("capacity", "5 of 6 cores are taken and this job needs 2"))
         self.assertIsNone(work.admission(8, 0, 6, 1.0, 12.0), "a job heavier than the capacity runs alone")
         self.assertEqual(work.admission(1, 0, 6, 12.0, 12.0)[0], "load")
         self.assertIsNone(work.admission(1, 0, 6, None, 12.0), "an unknown load does not block")
@@ -697,18 +717,21 @@ class StatusTests(WorkTestCase):
         self.assertFalse(os.path.exists(rolled_back))
 
     def test_a_supervisor_started_by_hand_leaves_a_job_it_does_not_own(self):
-        self.work("run", "--id", "owned", "--timeout", "0", "--", *self.gate("owned"), agent="a")
-        self.until(lambda: self.state("owned") == "running", "the job to start")
+        self.call("settings", "--capacity", "1")
+        self.work("run", "--id", "busy", "--timeout", "0", "--", *self.gate("busy"), agent="a")
+        self.until(lambda: self.state("busy") == "running", "the first job to start")
+        self.work("run", "--id", "owned", "--timeout", "0", "--", "true", agent="a")
+        self.until(lambda: self.state("owned") == "waiting", "the job to wait for capacity")
         before = self.task("owned")
         stray = subprocess.run([sys.executable, SCRIPT, "_supervise", "owned"], env=self.env, cwd=self.project,
                                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
         self.assertEqual(stray.returncode, 1)
         self.assertIn("not waiting for this supervisor", stray.stderr)
         after = self.task("owned")
-        self.assertEqual((after["state"], after["supervisor"], after["pid"]),
-                         (before["state"], before["supervisor"], before["pid"]))
-        self.open_gate("owned")
-        self.assertEqual(self.work("wait", "owned").status, 0)
+        self.assertEqual((after["state"], after["supervisor"], after["requested"]),
+                         (before["state"], before["supervisor"], before["requested"]))
+        self.open_gate("busy")
+        self.assertEqual(self.work("wait", "busy", "owned").status, 0)
 
     def test_a_signal_is_recorded_and_forwarded_but_never_raised_nor_sent_after_the_reap(self):
         supervisor = work.Supervisor(work.Context(self.env), "none")
