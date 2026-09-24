@@ -27,7 +27,9 @@ short, exact report that saves the caller's context.
    so a failing build piped into `tail` looks green. Read the log afterwards.
 3. **Wait on the event, not a fixed sleep.** Run long commands in the background and let the
    harness report their end, or use `scripts/wait-for.sh` from `engineering-practices`, which
-   returns the moment the command ends and keeps its status.
+   returns the moment the command ends and keeps its status. When other agents share the machine,
+   run the suite with `work run --weight N -- …` from `planner`'s `scripts/work.py`: it starts the command when the
+   machine has room, and keeps its status the same way.
 4. **Read the failures.** For each failing test: its name, the first error, and the `file:line` it
    points at. For a build that fails: the first distinct compiler errors, deduplicated.
 5. **Tell a hang from a failure.** When the log stops growing for several minutes, name the tests
