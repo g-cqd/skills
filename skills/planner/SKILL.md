@@ -21,7 +21,8 @@ You are an adaptive planning, routing, and execution agent. You assess the user'
 §ATOMIC   ∀task ! atomic ∧ independently-verifiable
 §EVIDENCE project-mode claim ⇒ ! citation ∨ ⚑unsupported
 §ORDER    validity ≻ rest · FIFO ∀tier · perf-regression ⇒ queue ¬block ⇒ scripts/order_tasks.py
-§WAIT     ¬fixed-sleep ⇒ harness-notify | wait-for.sh (engineering-practices)
+          shared-machine ⇒ scripts/work.py · other-agent command ⇒ show ∧ accept BEFORE run
+§WAIT     ¬fixed-sleep ⇒ harness-notify | wait-for.sh (engineering-practices) | work run|wait
 §BAN      engage ∀conversational|trivial-edit · plan ∅classification ·
           synthesize peer-opinions ∅stating-disagreements
 ```
@@ -305,6 +306,39 @@ its own prerequisite. Tasks come as JSON (`--tasks FILE` or `-`) or as `--task i
 
 It exits with 2 and names the problem for an unknown or duplicate id, a cycle (with its path), or a bad number. Its
 tests: `python3 -m unittest discover -s scripts/tests`.
+
+**Agents that share a machine share one queue.** `scripts/work.py` (`work` below) keeps, in one SQLite database
+(`$AGENT_WORK_HOME`, default `~/.local/state/agent-work`), what each scope works on, the queued tasks and commands,
+who holds which task and which files, and the CPU and memory of each running job; it orders the queue with
+`order_tasks.py`. Name yourself with `WORK_AGENT`, and point `WORK_SCOPE` at the scope you share with the other
+agents, a project or a conversation. `--scope S` means S and every scope under it; `--scope ''` means every scope.
+
+| Need | Command |
+|---|---|
+| Say what a scope works on | `work scope set conv-2 --kind conversation --parent app --task "Fix the parser"` |
+| Queue a task, or a command for any agent | `work add --id build --files src -- swift build` |
+| See the order, or a plan for K agents | `work order`, `work plan --agents 3` |
+| Take the next task | `work next`: the most urgent ready task whose files no claimed or running task holds |
+| Run the command of a task you claimed | `work show build`; `work accept build` if another agent wrote it; `work run build` |
+| Run a command of your own as a tracked job | `work run --weight 4 -- swift test --parallel` |
+| Wait for tasks, or for a scope's jobs | `work wait build test`, `work wait --all` |
+| Close a task that has no command | `work done ID`, `work fail ID`, `work cancel ID` |
+| See the scopes, jobs, CPU, memory, load, history | `work status`, `work log` |
+
+- **Claim, then accept.** Nothing runs on its own: a command runs when the agent that claimed its task runs it. A
+  command that another agent wrote runs only after the claimant reads it with `work show` and accepts it with
+  `work accept`; accept only a command you would run yourself. Commands are stored as argument lists and run
+  without a shell, with stdin closed.
+- **Capacity.** A job weighs the cores it uses (`--weight`, default 1). It starts while the running jobs' weights
+  plus its own fit the capacity (`WORK_CAPACITY`, default the CPU count minus 2) and the one-minute load average is
+  below the CPU count times `WORK_LOAD_FACTOR` (default 1.5). Otherwise it waits, and waiting jobs start in work
+  order. A job heavier than the capacity runs alone.
+- **Waiting.** `work run` and `work wait` return the moment the job ends, with its own exit status (127 for a
+  missing command, 128 plus the signal that killed it), and report the wait for capacity apart from the run time.
+  At `--timeout` (570 s) they exit with 124 while the job goes on; call `work wait ID` again.
+- **Stale jobs.** `work status` marks failed a job whose supervisor and command are gone with no recorded status.
+
+`python3 scripts/work.py --help` lists every option; its tests run in the same suite.
 
 ---
 
