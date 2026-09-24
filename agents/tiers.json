@@ -5,22 +5,22 @@
   "economy": {
     "_use": "mechanical, high-volume, low-risk: scanning, extraction, mapping, boilerplate, doc synthesis. Failures are cheap to retry.",
     "claude": "opus",
-    "codex": "gpt-5.6-sol",
-    "copilot": "claude-opus-5.5",
+    "codex": "gpt-6-sol",
+    "copilot": "Claude Opus 5.5",
     "effort": "low"
   },
   "standard": {
     "_use": "clear-scope local reasoning where tests or review catch most mistakes: implementing a specified change, writing tests.",
     "claude": "opus",
-    "codex": "gpt-5.6-sol",
-    "copilot": "claude-opus-5.5",
+    "codex": "gpt-6-sol",
+    "copilot": "Claude Opus 5.5",
     "effort": "medium"
   },
   "reasoning": {
     "_use": "ambiguous, cross-cutting, high-risk, long-horizon, or expensive-to-fix: architecture, adversarial review, security audit, planning and synthesis.",
     "claude": "opus",
     "codex": "gpt-6-astra",
-    "copilot": "claude-opus-5.5",
+    "copilot": "Claude Opus 5.5",
     "effort": "high"
   }
 }

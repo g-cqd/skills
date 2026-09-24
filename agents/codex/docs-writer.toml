@@ -1,6 +1,6 @@
 name = "docs-writer"
 description = "Writes the prose around the work: PR descriptions, work summaries, tickets and user stories, ADRs and design docs, release notes and changelogs. Use when a change needs documenting or a work item needs writing up. Economy tier — this is synthesis from material that already exists, where a wrong draft is cheap to revise."
-model = "gpt-5.6-sol"
+model = "gpt-6-sol"
 model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 developer_instructions = """

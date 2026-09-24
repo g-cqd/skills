@@ -42,8 +42,8 @@ enforced by the tool allowlist on Claude/Copilot and `sandbox_mode = "read-only"
 The tier→model mapping is the single place cost is tuned:
 
 ```
-economy    opus    / gpt-5.6-sol   — mechanical, high-volume, cheap-to-retry
-standard   opus    / gpt-5.6-sol   — clear-scope reasoning, tests catch mistakes
+economy    opus    / gpt-6-sol     — mechanical, high-volume, cheap-to-retry
+standard   opus    / gpt-6-sol     — clear-scope reasoning, tests catch mistakes
 reasoning  opus    / gpt-6-astra   — ambiguous, high-risk, expensive-to-fix
 ```
 
@@ -57,8 +57,8 @@ Each harness reads a different format, so one neutral source renders three varia
 
 | Harness | Location | Format | Model field | Tools | Read-only via |
 |---|---|---|---|---|---|
-| Claude Code | `~/.claude/agents/<name>.md` | MD + YAML | `haiku`/`sonnet`/`opus` | `tools:` CSV | tool allowlist |
-| Copilot | `~/.copilot/agents/<name>.agent.md` | MD + YAML | model id | `tools:` array | tool allowlist |
+| Claude Code | `~/.claude/agents/<name>.md` | MD + YAML | alias (`opus`, `fable`, `sonnet`, `haiku`) or full id (`claude-opus-5-5`) | `tools:` CSV | tool allowlist |
+| Copilot | `~/.copilot/agents/<name>.agent.md` | MD + YAML | display name (`Claude Opus 5.5`) | `tools:` array | tool allowlist |
 | Codex | `~/.codex/agents/<name>.toml` | TOML | model id | `sandbox_mode` | `read-only` sandbox |
 
 `build.py` maps the neutral `tier` and `tools` capability (`readonly` / `edit` / `full`) to each
