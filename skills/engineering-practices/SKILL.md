@@ -137,9 +137,15 @@ too early, and a loop of long sleeps compounds both. Wait on the event, not the 
    the result lines. `wait-for.sh run` keeps the full output in its log, prints the last lines (`--tail N`) and exits
    with the command's own status: 127 when the command is missing, 128 plus the signal when a signal killed it. If
    the command must be a pipeline, run it as `bash -c 'set -o pipefail; …'`.
-4. **Prefer the exit to a log line.** Some tools buffer output sent to a file, Swift's test runner among them, so a
-   `log` wait can lag the work; `run` and `pid` wait on the process itself.
+4. **Prefer the exit to a log line, and a report to the log.** Output sent to a file is buffered in blocks, Swift's
+   test runner's among it, so a `log` wait can lag the work, and a run that hangs or is killed loses its last lines,
+   summary included; `run` and `pid` wait on the process itself. Take the result from the exit status and from a
+   report the tool writes itself (`swift test --xunit-output FILE`, `xcodebuild -resultBundlePath DIR`), and treat a
+   missing summary as a run that did not finish, never as a pass.
 5. **Report the time the work took,** from the line `wait-for.sh` prints, not the time you waited.
+6. **Share the machine.** When other agents run on it too, start long work through `planner`'s `scripts/work.py`
+   (`work run --weight N -- …`): it waits until the machine has room, runs the command, and keeps its status the
+   same way.
 
 ## 7. Rationalizations
 

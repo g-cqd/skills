@@ -227,7 +227,7 @@ this; that is why coverage is measured in behaviors, not percent.
 - [ ] Hot paths benchmarked with CI baselines
 - [ ] Parsers and validators fuzzed
 - [ ] Critical flows smoke-tested
-- [ ] Full suite green with no unexplained failure
+- [ ] Full suite green with no unexplained failure, read from the runner's report or exit status, not a log's tail
 
 ---
 
@@ -346,6 +346,7 @@ debugging a failure without mentioning migration.
 | Running tests, reading results, CI invocation, simulators | `xcode` |
 | Fuzzing for memory corruption; sanitizer coverage | `memory-safety` |
 | Benchmark methodology and measurement discipline | `performance-engineering` |
+| Running a long suite beside other agents, waiting on it, reading its result | `planner` (`scripts/work.py`), `engineering-practices` §6 |
 | Whether a change is reviewable and complete | `code-review` |
 | Project factory, double, and fixture conventions | `project-conventions` |
 
