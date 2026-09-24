@@ -29,7 +29,9 @@ It builds a canonical root (`~/.agent-harness/`, override with `AGENT_HARNESS_RO
 standard, the skills, and the agents, then detects each harness (by home dir or CLI on `PATH`) and
 symlinks its `skills/`, `agents/`, and instruction file — `CLAUDE.md` or `AGENTS.md`, whichever it
 reads. One source of truth; re-run after `git pull`. Safe and idempotent: it replaces only its own
-symlinks and backs up any real file to `<name>.bak`.
+symlinks and the links named after this repository's skills, backs up any real file to `<name>.bak`,
+and leaves every other skill in the root alone. `python3 -m unittest discover -s tests` checks that
+against a temporary home.
 
 ## Structure
 

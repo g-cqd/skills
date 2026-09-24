@@ -57,10 +57,10 @@ link() {
   ok "$name" "$target"
 }
 
-# unlink_ours <linkname> <expected-target-substring> — remove only if it's our symlink.
+# unlink_ours <linkname> <root> — remove only if it's our symlink: one that points under the canonical root.
 unlink_ours() {
   local name="$1" want="$2"
-  if [[ -L "$name" && "$(readlink "$name")" == *"$want"* ]]; then
+  if [[ -L "$name" && "$(readlink "$name")" == "$want"/* ]]; then
     [[ $DRY -eq 1 ]] || rm -f "$name"
     printf '  removed %s\n' "$name"
   fi
@@ -86,9 +86,9 @@ if [[ "$MODE" == uninstall ]]; then
   for row in "${harness_rows[@]}"; do
     IFS='|' read -r hname home _cli instr _afmt <<<"$row"
     [[ -d "$home" ]] || continue
-    unlink_ours "$home/skills"  "agent-harness"
-    unlink_ours "$home/agents"  "agent-harness"
-    unlink_ours "$home/$instr"  "agent-harness"
+    unlink_ours "$home/skills"  "$ROOT"
+    unlink_ours "$home/agents"  "$ROOT"
+    unlink_ours "$home/$instr"  "$ROOT"
   done
   say ""; say "Canonical root left in place: $ROOT (rm -rf it to remove)."
   exit 0
@@ -153,4 +153,4 @@ if [[ $found -eq 0 ]]; then
 else
   say "${c_grn}Done.${c_off} Linked into $found harness(es). Re-run after 'git pull' to pick up updates."
 fi
-[[ $DRY -eq 1 ]] && say "${c_dim}(dry run — nothing changed)${c_off}"
+if [[ $DRY -eq 1 ]]; then say "${c_dim}(dry run — nothing changed)${c_off}"; fi
