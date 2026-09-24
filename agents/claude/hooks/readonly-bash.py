@@ -22,8 +22,9 @@ recognise is refused.
 
 How a command is checked:
   - The raw text holds no command substitution ($( or backticks) and no process substitution (<( or >( ).
-  - No word holds a $ outside single quotes that is not escaped: parameter expansion, and $'...' or $"..." quoting, can
-    build an option, such as ${X:--exec}, that the checks, which compare literal text, would not see.
+  - No word holds a $ outside single quotes that is not escaped, or an unquoted {...} that holds a comma or `..`:
+    parameter expansion, $'...' and $"..." quoting, and brace expansion can build an option, such as ${X:--exec} or
+    -{,}delete, that the checks, which compare literal text, would not see.
   - shlex splits the text into simple commands on ; && || | |& & and newlines, outside quotes, and every simple
     command must pass. A subshell or a group, ( ) { }, is refused. A heredoc body is input, not commands, and a
     comment, from an unquoted # that starts a word to the end of its line, is dropped.
@@ -252,22 +253,44 @@ def _lexer(text: str) -> shlex.shlex:
     return lexer
 
 
-def check_word(raw: str) -> None:
-    """Refuses a word whose raw text, as written, holds a `$` outside single quotes that no backslash escapes."""
-    quote, escaped = None, False
+def _characters(raw: str) -> list:
+    """The characters of a word's raw text without its quotes and escapes, each with how it was quoted: "" when bare,
+    '"' inside double quotes, and "'" inside single quotes or after a backslash."""
+    characters, quote, escaped = [], "", False
     for character in raw:
         if escaped:
+            characters.append((character, "'"))
             escaped = False
         elif quote == "'":
-            quote = None if character == "'" else quote
+            if character == "'":
+                quote = ""
+            else:
+                characters.append((character, "'"))
         elif character == "\\":
             escaped = True
         elif character == '"':
-            quote = None if quote == '"' else '"'
-        elif character == "'" and quote is None:
+            quote = "" if quote else '"'
+        elif character == "'" and not quote:
             quote = "'"
-        elif character == "$":
+        else:
+            characters.append((character, quote))
+    return characters
+
+
+def check_word(raw: str) -> None:
+    """Refuses a word whose raw text, as written, expands into words the checks cannot see: a `$` outside single quotes
+    that no backslash escapes, or a brace expansion, an unquoted {...} that holds a comma or `..`."""
+    depth, previous = 0, ""
+    for character, quote in _characters(raw):
+        if character == "$" and quote != "'":
             raise Refusal(f"`$` in `{raw}` expands to text this check cannot see; quote a literal `$` in single quotes")
+        if character == "{" and not quote:
+            depth += 1
+        elif character == "}" and not quote and depth:
+            depth -= 1
+        elif depth and (character == "," or character == previous == "."):
+            raise Refusal(f"brace expansion in `{raw}` builds words this check cannot see")
+        previous = character
 
 
 def _is_operator(text: str, token: str, end: int) -> bool:

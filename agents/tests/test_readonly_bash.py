@@ -99,6 +99,10 @@ ALLOWED = [
     "grep -n '$' f",
     "grep -n \\$HOME f",
     'grep -n "a\\$" f',
+    # Braces without a comma or .. inside expand to nothing: git's @{u} stays a word, and quoted braces are text.
+    "git log @{u}..HEAD --oneline",
+    "git show HEAD@{1}",
+    "find . -name '*.{h,m}'",
 ]
 
 BLOCKED = [
@@ -210,6 +214,10 @@ BLOCKED = [
     "git log -p ${X:---output=/tmp/pwn}",
     "find . ${IFS}-delete",
     'git log "${X:---output=/tmp/pwn}"',
+    # Brace expansion builds words the checks cannot see: -{,}delete becomes -delete -delete.
+    "find . -name '*.md' -{,}delete",
+    "git log -p --outp{,}ut=/tmp/pwn",
+    "git log -p --outp{u..u}t=/tmp/pwn",
 ]
 
 # (command, text the refusal must name)
@@ -224,6 +232,7 @@ REFUSAL_NAMES = [
     ("sed -i 's/a/b/' f", "-i"),
     ("PATH=/tmp ls", "PATH"),
     ("find . ${IFS}-delete", "${IFS}-delete"),
+    ("find . -{,}delete", "brace expansion in `-{,}delete`"),
 ]
 
 
