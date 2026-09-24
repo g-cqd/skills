@@ -178,29 +178,42 @@ A subagent is a scoped worker the main agent delegates to. Author once as a neut
 ```markdown
 ---
 name: <kebab-case>
-tier: economy | standard | reasoning
-tools: readonly | edit | full
+tier: micro | economy | standard | reasoning | frontier
+tools: <capabilities, comma-separated: read, search, lsp, shell | shell-readonly, edit, web, todo,
+        agents, skills, apple-docs> | all
 description: >
   <what it does, when to delegate to it, and what it does not do.
   Use PROACTIVELY for auto-delegation where appropriate.>
+max_turns: <optional turn budget, for a small job>
+skills: <optional skills to load at start>
+spawns: <optional agents it may start, with the agents capability>
 ---
-<system prompt: role, method, stay-in-lane rules, which skills to load, output contract>
+<system prompt: role, method, stay-in-lane rules, output contract>
 ```
 
 Then `python3 agents/build.py` renders `claude/<name>.md`, `copilot/<name>.agent.md`, and
-`codex/<name>.toml`, mapping the tier to a per-vendor model (`agents/tiers.json`) and the tool
-capability to each harness's vocabulary.
+`codex/<name>.toml`, mapping the tier to each harness's model and effort (`agents/tiers.json`) and
+each capability to the harness's tools. The header of `build.py` lists every key, and
+`python3 agents/build.py --check` fails when a generated file is stale.
 
 Design rules:
 
 - **One clear job**, a tool surface that matches it, instructions that keep it from drifting into
   adjacent work.
-- **Pick the cheapest tier that fits.** Default to economy; escalate to reasoning only for
-  ambiguous, cross-cutting, high-risk, or expensive-to-fix work. This is the whole cost model.
-- **Read-only where it can be** — `readonly` tools mean the agent cannot mutate the tree, enforced
-  by an allowlist on Claude/Copilot and `sandbox_mode` on Codex.
-- Keep the roster small. A focused handful the orchestrator can route cleanly beats a sprawling
-  catalog.
+- **Pick the cheapest tier that fits.** A small mechanical job with a clear stop is micro; default
+  to economy or standard; escalate to reasoning only for ambiguous, cross-cutting, high-risk, or
+  expensive-to-fix work, and to frontier only where a miss is the costliest outcome. This is the
+  whole cost model.
+- **Give the job every tool it needs, and nothing it does not.** An agent that must bounce back to
+  its caller for a `git log` costs more than one that runs it; an agent that can edit when it
+  should only report is a risk.
+- **Read-only where it can be.** `shell-readonly` gives a shell that only reads: Claude Code runs
+  the guard in `agents/claude/hooks/` before each command, Copilot gets no shell, and Codex, which
+  runs every agent in its parent's sandbox, relies on the prompt.
+- **Budget the small jobs.** `max_turns` stops a micro agent that wanders, on Claude Code, and
+  states the budget in the prompt everywhere.
+- Keep each agent to one job. A roster the orchestrator cannot route cleanly costs more than it
+  saves.
 
 The tier→model map in `agents/tiers.json` is the cost dial — re-audit it every few months, because
 the best-value model in each class drifts.
