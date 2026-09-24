@@ -299,6 +299,18 @@ class FailClosedTests(unittest.TestCase):
                 self.assertEqual(status, 2)
                 self.assertTrue(errors.startswith(PREFIX), errors)
 
+    def test_a_refusal_that_cannot_be_written_still_blocks(self):
+        # A pipe with no reader: writing the refusal raises BrokenPipeError, and the exit status must still be 2.
+        read_end, write_end = os.pipe()
+        os.close(read_end)
+        try:
+            result = subprocess.run(
+                [sys.executable, SCRIPT], input=json.dumps({"tool_name": "Bash", "tool_input": {"command": "rm x"}}),
+                stdout=subprocess.DEVNULL, stderr=write_end, text=True, timeout=30)
+        finally:
+            os.close(write_end)
+        self.assertEqual(result.returncode, 2)
+
 
 # Loads the hook, makes its check sleep past a one-second watchdog, and runs it as the script does.
 WATCHDOG_PROBE = """

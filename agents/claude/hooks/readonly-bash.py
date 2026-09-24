@@ -1037,7 +1037,12 @@ def run() -> int:
         return main()
     # Any failure must block: an exit status other than 0 or 2 would let the call through.
     except BaseException as error:
-        return block(f"the hook failed ({type(error).__name__}: {error})")
+        try:
+            return block(f"the hook failed ({type(error).__name__}: {error})")
+        except BaseException:
+            # Not even the refusal can be written. Leave at once: a failed flush as Python exits would make the status
+            # 120, which lets the call through.
+            os._exit(2)
     finally:
         signal.alarm(0)
 
