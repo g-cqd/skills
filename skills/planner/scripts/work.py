@@ -37,6 +37,7 @@ and every text view escapes them in commands and job output. Agent names come fr
 
 Exit status: 0 on success; 1 when work refuses (a task in the wrong state, nothing to claim, a command not
 accepted yet); 2 for an input error; for `run` and `wait`, the job's own status, or 124 when the timeout passed first.
+With --json, `timed_out` tells that timeout from a command that exits with 124 itself.
 """
 
 from __future__ import annotations
@@ -250,6 +251,12 @@ def printable(text: str) -> str:
 
 def display(argv: list[str]) -> str:
     return printable(shlex.join(argv))
+
+
+def brief(argv: list[str], limit: int = 200) -> str:
+    """A command for a one-line view, cut to `limit` characters; `show` prints it whole."""
+    text = display(argv)
+    return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
 def capped(label: str, items: list[str], limit: int = 10) -> str:
@@ -813,73 +820,60 @@ def admission(weight: float, used: float, capacity: float, load: float | None, l
 # MARK: - Running
 
 
-class Stopped(Exception):
-    def __init__(self, signum: int):
-        super().__init__(signum)
-        self.signum = signum
-
-
 class Supervisor:
     """Runs one job detached from the agent that asked for it: waits for capacity, starts the command in its own
-    process group with its output in the log, samples its CPU and memory, and records its true exit status. It takes
-    the job over from the `run` that started it only if that `run` still owns the job."""
+    process group with its output in the log, samples its CPU and memory, and records its true exit status. `run`
+    names it the job's owner in the transaction that reserves the job, and it goes on only once that transaction is
+    over and it owns the job."""
 
-    def __init__(self, ctx: Context, task_id: str, caller: int):
-        self.ctx, self.task_id, self.caller = ctx, task_id, caller
+    def __init__(self, ctx: Context, task_id: str):
+        self.ctx, self.task_id = ctx, task_id
         self.me = os.getpid()
         self.child: subprocess.Popen | None = None
-        self.deferring = False
-        self.pending: int | None = None
+        self.stop: int | None = None
 
     def run(self) -> int:
+        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            signal.signal(signum, self.on_signal)
+        # `run` closes this pipe once its transaction is over, committed or rolled back; a caller that dies closes it
+        # too. No stdin at all counts as closed.
+        with suppress(OSError):
+            while os.read(0, 4096):
+                continue
         conn = self.ctx.conn
         with writing(conn):
             row = conn.execute("SELECT * FROM tasks WHERE id = ?", (self.task_id,)).fetchone()
-            if row is None or row["state"] != "claimed" or row["requested"] is None or row["owner"] != self.caller:
+            if row is None or row["state"] != "claimed" or row["requested"] is None or row["owner"] != self.me:
                 print(f"work: task {self.task_id} is not waiting for this supervisor", file=sys.stderr, flush=True)
                 return 1
             # The wait for capacity, and the job's place among the waiting jobs, count from here, not from the
             # request, so that the supervisor's own start is not reported as a wait for capacity.
-            now = time.time()
-            conn.execute("UPDATE tasks SET owner = ?, owner_since = ?, requested = ? WHERE id = ?",
-                         (self.me, now, now, self.task_id))
-        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-            signal.signal(signum, self.on_signal)
-        try:
-            row = self.wait_for_capacity(conn)
-        except Stopped as stop:
-            self.deferring = True  # A second signal must not interrupt the record of the first.
-            self.finish(conn, None, f"stopped by signal {stop.signum} before the command started")
-            return 1
+            conn.execute("UPDATE tasks SET requested = ? WHERE id = ?", (time.time(), self.task_id))
+        row = self.wait_for_capacity(conn)
         return 0 if row is None else self.execute(conn, row)
 
     def on_signal(self, signum: int, frame: object) -> None:
-        """Forwards a signal to the command's process group once it runs; stops the wait for capacity before; and,
-        while the command starts, keeps the signal to forward once it has a process."""
-        if self.child is not None:
-            self.forward(signum)
-        elif self.deferring:
-            self.pending = signum
-        else:
-            raise Stopped(signum)
-
-    def forward(self, signum: int) -> None:
-        try:
-            os.killpg(self.child.pid, signum)
-        except (ProcessLookupError, PermissionError):
-            return  # The command's process group has already ended.
+        """Records the signal, which the wait for capacity checks between two polls, and forwards it to the command's
+        process group while the command runs. It raises nothing, so it never breaks off a transaction."""
+        self.stop = signum
+        child = self.child
+        if child is not None:
+            forward(child.pid, signum)
 
     def wait_for_capacity(self, conn: sqlite3.Connection) -> sqlite3.Row | None:
-        """Polls once a second until the job may start, then marks it running; None when it was cancelled."""
+        """Polls once a second until the job may start, then marks it running; None when the job ends first:
+        cancelled, swept, or stopped by a signal."""
         last_sweep = time.monotonic()
         while True:
+            if self.stop is not None:
+                self.finish(conn, None, f"stopped by signal {self.stop} before the command started")
+                return None
             with writing(conn):
                 row = conn.execute("SELECT * FROM tasks WHERE id = ?", (self.task_id,)).fetchone()
                 if row is None or row["state"] != "claimed" or row["owner"] != self.me:
                     return None
                 reason = self.blocker(conn, row)
                 if reason is None:
-                    self.deferring = True
                     conn.execute("UPDATE tasks SET state = 'running', started = ?, note = '' WHERE id = ?",
                                  (time.time(), self.task_id))
                     return get_task(conn, self.task_id)
@@ -905,32 +899,52 @@ class Supervisor:
         return admission(row["weight"], used, box.capacity, box.load, box.load_limit)
 
     def execute(self, conn: sqlite3.Connection, row: sqlite3.Row) -> int:
-        argv = json.loads(row["command"])
+        argv, cwd = json.loads(row["command"]), row["cwd"]
+        if not os.path.isdir(cwd):
+            print(f"work: cannot run {brief(argv)}: its directory {printable(cwd)} is gone", flush=True)
+            self.finish(conn, None, f"its directory {cwd} is gone")
+            return 1
         try:
             # Its stdout is the supervisor's, the log that `run` opened; stdin is closed, as no one can answer it.
-            self.child = subprocess.Popen(argv, cwd=row["cwd"], env={**os.environ, "PWD": row["cwd"]},
-                                          stdin=subprocess.DEVNULL, stderr=subprocess.STDOUT,
-                                          start_new_session=True, close_fds=True)
+            child = subprocess.Popen(argv, cwd=cwd, env={**os.environ, "PWD": cwd}, stdin=subprocess.DEVNULL,
+                                     stderr=subprocess.STDOUT, start_new_session=True, close_fds=True)
         except (OSError, ValueError) as error:
+            print(f"work: cannot run {brief(argv)}: {error}", flush=True)
+            if getattr(error, "filename", None) == cwd:
+                self.finish(conn, None, f"cannot enter its directory {cwd}: {error.strerror}")
+                return 1
             cannot = getattr(error, "errno", None) in (errno.EACCES, errno.EPERM, errno.ENOEXEC, errno.EISDIR)
-            print(f"work: cannot run {display(argv)}: {error}", flush=True)
             self.finish(conn, 126 if cannot else 127, f"could not start: {error}")
             return 0
-        if self.pending is not None:
-            self.forward(self.pending)
-        self.update(conn, "UPDATE tasks SET pid = ? WHERE id = ?", (self.child.pid, self.task_id), "started",
-                    f"process {self.child.pid}; waited {span(waited_of(row, time.time()))} for capacity")
+        self.child = child
+        if self.stop is not None:
+            forward(child.pid, self.stop)
+        self.update(conn, "UPDATE tasks SET pid = ? WHERE id = ?", (child.pid, self.task_id), "started",
+                    f"process {child.pid}; waited {span(waited_of(row, time.time()))} for capacity")
         stop = threading.Event()
-        sampler = threading.Thread(target=self.sample, args=(self.child.pid, stop), daemon=True)
+        sampler = threading.Thread(target=self.sample, args=(child.pid, stop), daemon=True)
         sampler.start()
-        _, raw, resources = os.wait4(self.child.pid, 0)
+        raw, resources = self.reap(child.pid)
         status = os.waitstatus_to_exitcode(raw)
         status = 128 - status if status < 0 else status
-        self.child.returncode = status
+        child.returncode = status
         stop.set()
         sampler.join(timeout=15)
         self.finish(conn, status, "", resources.ru_utime + resources.ru_stime)
         return 0
+
+    def reap(self, pid: int):
+        """Waits for the command to end, stops forwarding signals to it, and reaps it. Where the platform can wait
+        without reaping (waitid with WNOWAIT), forwarding stops while the ended command still holds its pid, so no
+        signal can reach a process that reused the pid; elsewhere it stops right after the reap."""
+        if hasattr(os, "waitid"):
+            os.waitid(os.P_PID, pid, os.WEXITED | os.WNOWAIT)
+            self.child = None
+            _, raw, resources = os.wait4(pid, 0)
+        else:
+            _, raw, resources = os.wait4(pid, 0)
+            self.child = None
+        return raw, resources
 
     def sample(self, pid: int, stop: threading.Event) -> None:
         """Records the job's CPU and memory 0.5 s after it starts, then every SAMPLE_INTERVAL seconds."""
@@ -977,21 +991,26 @@ class Supervisor:
                     "finished" if status is not None else "failed", detail)
 
 
+def forward(pid: int, signum: int) -> None:
+    """Sends a signal to the process group that `pid` leads."""
+    with suppress(ProcessLookupError, PermissionError):  # The group has ended; macOS answers EPERM for a zombie.
+        os.killpg(pid, signum)
+
+
 def supervise(argv: list[str], env: dict[str, str]) -> int:
-    """The hidden `_supervise TASK CALLER` command that `work run` starts detached."""
-    if len(argv) != 2 or not NAME.fullmatch(argv[0]) or not argv[1].isdigit():
+    """The hidden `_supervise TASK` command that `work run` starts detached, with a pipe for its stdin."""
+    if len(argv) != 1 or not NAME.fullmatch(argv[0]):
         print("work: _supervise is started by `work run`", file=sys.stderr)
         return 2
     ctx = Context(env)
     try:
-        return Supervisor(ctx, argv[0], int(argv[1])).run()
+        return Supervisor(ctx, argv[0]).run()
     finally:
         ctx.close()
 
 
-def reserve(ctx: Context, row: sqlite3.Row, agent: str) -> None:
-    """Marks a claimed task's command as asked to run by `agent`, in the caller's transaction, after the checks of
-    claim-then-accept. The caller owns the job until its supervisor takes it over."""
+def check_runnable(row: sqlite3.Row, agent: str) -> None:
+    """Refuses to run a task's command unless `agent` claimed the task, accepted its command, and it has not run."""
     task_id = row["id"]
     if row["command"] is None:
         raise refusal(f"task {task_id} has no command; close it with `work done {task_id}` when it is finished")
@@ -1007,79 +1026,31 @@ def reserve(ctx: Context, row: sqlite3.Row, agent: str) -> None:
         raise refusal(f"task {task_id} runs a command that {row['author']} queued, and you have not accepted it: "
                       f"read it with `work show {task_id}`, then accept it with the `work accept {task_id} --digest "
                       "...` line that show prints")
-    now = time.time()
-    ctx.conn.execute("UPDATE tasks SET requested = ?, owner = ?, owner_since = ?, log = ?, note = '' WHERE id = ?",
-                     (now, os.getpid(), now, os.path.join(ctx.logs, f"{task_id}.log"), task_id))
-    record(ctx.conn, "requested", task=task_id, scope=row["scope"], agent=agent, detail=f"weight {row['weight']:g}")
 
 
-def release(conn: sqlite3.Connection, task_id: str, note: str) -> None:
-    """Gives back a job that never reached its supervisor, so that its claimant can run it again."""
-    with writing(conn):
-        row = get_task(conn, task_id)
-        if conn.execute("UPDATE tasks SET requested = NULL, owner = NULL, owner_since = NULL, note = ? "
-                        "WHERE id = ? AND state = 'claimed' AND owner = ?", (note, task_id, os.getpid())).rowcount:
-            record(conn, "not started", task=task_id, scope=row["scope"], agent=row["agent"], detail=note)
-
-
-def launch(ctx: Context, row: sqlite3.Row, timeout: float, lines: int, as_json: bool) -> int:
-    """Starts the supervisor of a reserved job, then follows the job as `wait` does."""
-    task_id = row["id"]
+def start_supervisor(ctx: Context, task_id: str, log_path: str) -> subprocess.Popen:
+    """Starts the supervisor of a job, detached, with its output in a new log and a pipe for its stdin. It waits on
+    that pipe, so the caller must close it once the transaction that names it the owner is over."""
     try:
-        log = os.open(row["log"], os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+        log = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_APPEND | os.O_NOFOLLOW, 0o600)
     except OSError as error:
-        release(ctx.conn, task_id, f"cannot open the log: {error.strerror}")
-        raise refusal(f"cannot open the log {printable(row['log'])}: {error.strerror}") from None
+        raise refusal(f"cannot open the log {printable(log_path)}: {error.strerror}") from None
     try:
-        supervisor = subprocess.Popen([sys.executable, SCRIPT, "_supervise", task_id, str(os.getpid())], cwd="/",
-                                      env={**ctx.env, "AGENT_WORK_HOME": ctx.home}, stdin=subprocess.DEVNULL,
-                                      stdout=log, stderr=log, start_new_session=True, close_fds=True)
+        return subprocess.Popen([sys.executable, SCRIPT, "_supervise", task_id], cwd="/",
+                                env={**ctx.env, "AGENT_WORK_HOME": ctx.home}, stdin=subprocess.PIPE,
+                                stdout=log, stderr=log, start_new_session=True, close_fds=True)
     except OSError as error:
-        release(ctx.conn, task_id, f"cannot start its supervisor: {error}")
         raise refusal(f"cannot start the supervisor of job {task_id}: {error}") from None
     finally:
         os.close(log)
-    return follow(ctx, task_id, supervisor, timeout, lines, as_json)
 
 
-def follow(ctx: Context, task_id: str, supervisor: subprocess.Popen, timeout: float, lines: int, as_json: bool) -> int:
-    """Waits until the job ends, and returns its status, or 124 at the timeout. The timeout counts only once the
-    supervisor has taken the job over, so no job is left without an owner."""
-    conn, me = ctx.conn, os.getpid()
-    begun = time.monotonic()
-    deadline, handover_limit = begun + timeout, begun + 30.0
-    pause, shown_start, shown_wait = 0.05, False, False
-    while True:
-        exited = supervisor.poll() is not None
-        row = get_task(conn, task_id)
-        handed_over = row["owner"] != me
-        if row["state"] not in FINAL and not handed_over and (exited or time.monotonic() >= handover_limit):
-            if not exited:
-                supervisor.kill()
-                supervisor.wait()
-            release(conn, task_id, f"its supervisor exited with status {supervisor.returncode} before it took the job")
-            for line in tail(row["log"], lines):
-                print(printable(line))
-            raise refusal(f"the supervisor of job {task_id} could not start it (status {supervisor.returncode}); "
-                          f"its log is {printable(row['log'])}")
-        if row["state"] not in FINAL and handed_over and exited:
-            sweep(conn)
-            row = get_task(conn, task_id)
-        if not as_json:
-            if row["pid"] and not shown_start:
-                say(f"started job {task_id} ({display(json.loads(row['command']))}) as process {row['pid']}; "
-                    f"output in {printable(row['log'])}")
-                shown_start = True
-            elif row["state"] == "claimed" and row["note"] and handed_over and not shown_wait:
-                say(f"job {task_id} waits for capacity: {printable(row['note'])}")
-                shown_wait = True
-        if row["state"] in FINAL:
-            return report([row], [row], lines, as_json, timed_out=False)
-        now = time.monotonic()
-        if handed_over and now >= deadline:
-            return report([row], [], lines, as_json, timed_out=True)
-        time.sleep(max(0.01, min(pause, deadline - now)) if handed_over else pause)
-        pause = min(pause * 1.5, 0.5)
+def reserve(conn: sqlite3.Connection, row: sqlite3.Row, agent: str, owner: int, log: str) -> None:
+    """Records that `owner`, the supervisor, runs the job, in the caller's transaction."""
+    now = time.time()
+    conn.execute("UPDATE tasks SET requested = ?, owner = ?, owner_since = ?, log = ?, note = '' WHERE id = ?",
+                 (now, owner, now, log, row["id"]))
+    record(conn, "requested", task=row["id"], scope=row["scope"], agent=agent, detail=f"weight {row['weight']:g}")
 
 
 def end_line(row: sqlite3.Row, now: float) -> str:
@@ -1110,7 +1081,8 @@ def pending_line(row: sqlite3.Row, now: float) -> str:
 def report(rows: list[sqlite3.Row], ended: list[sqlite3.Row], lines: int, as_json: bool, timed_out: bool) -> int:
     """Prints how the waited tasks stand, and returns the exit status: 124 at the timeout; else, with every task
     ended, 0 when all are done or the status of the first in `rows` that is not; with --any, the status of the first
-    to end (`ended` is in the order of their ends)."""
+    to end (`ended` is in the order of their ends). JSON carries `timed_out`, which tells a timeout from a command
+    that exits with 124 itself."""
     now = time.time()
     if timed_out:
         status = 124
@@ -1132,18 +1104,25 @@ def report(rows: list[sqlite3.Row], ended: list[sqlite3.Row], lines: int, as_jso
     return status
 
 
-def wait_for(ctx: Context, ids: list[str], any_: bool, timeout: float, lines: int, as_json: bool) -> int:
+def wait_for(ctx: Context, ids: list[str], any_: bool, timeout: float, lines: int, as_json: bool,
+             supervisor: subprocess.Popen | None = None) -> int:
     """Returns as soon as every task (or, with `any_`, one) is done, failed or cancelled, polling the database with a
-    pause that grows from 0.05 s to 0.5 s; sweeps dead jobs every 2 s so that it never waits on one."""
+    pause that grows from 0.05 s to 0.5 s; sweeps dead jobs every 2 s so that it never waits on one. `run` passes the
+    supervisor it started: its end is reaped and swept at once, and the job's start or wait is announced."""
     conn = ctx.conn
     begun = time.monotonic()
     deadline, next_sweep, pause = begun + timeout, begun, 0.05
+    announced = set() if supervisor is not None and not as_json else None
     while True:
         now = time.monotonic()
+        if supervisor is not None and supervisor.poll() is not None:
+            supervisor, next_sweep = None, now  # Reaped; if it ended before recording the job, the sweep says so now.
         if now >= next_sweep:
             sweep(conn)
             next_sweep = now + 2.0
         rows = [get_task(conn, task_id) for task_id in ids]
+        if announced is not None:
+            announce(rows[0], announced)
         ended = sorted((row for row in rows if row["state"] in FINAL), key=lambda row: row["ended"] or 0.0)
         if ended and (any_ or len(ended) == len(rows)):
             return report(rows, ended, lines, as_json, timed_out=False)
@@ -1151,6 +1130,17 @@ def wait_for(ctx: Context, ids: list[str], any_: bool, timeout: float, lines: in
             return report(rows, ended, lines, as_json, timed_out=True)
         time.sleep(max(0.01, min(pause, deadline - now)))
         pause = min(pause * 1.5, 0.5)
+
+
+def announce(row: sqlite3.Row, announced: set[str]) -> None:
+    """Says once that a job waits for capacity, and once that it started."""
+    if row["pid"] and "started" not in announced:
+        say(f"started job {row['id']} ({brief(json.loads(row['command']))}) as process {row['pid']}; "
+            f"output in {printable(row['log'])}")
+        announced.update(("started", "waiting"))
+    elif row["state"] == "claimed" and row["requested"] is not None and row["note"] and "waiting" not in announced:
+        say(f"job {row['id']} waits for capacity: {printable(row['note'])}")
+        announced.add("waiting")
 
 
 # MARK: - Commands
@@ -1546,9 +1536,6 @@ def cmd_run(ctx: Context, args: argparse.Namespace, command: list[str] | None) -
         if extras:
             raise WorkError(f"{', '.join(extras)} describe a new job; give its command after --")
         task_id = check_name(args.task, "task")
-        with writing(conn):
-            reserve(ctx, get_task(conn, task_id), agent)
-            row = get_task(conn, task_id)
     else:
         if args.task is not None:
             raise WorkError("give a task ID or a command after --, not both")
@@ -1560,18 +1547,30 @@ def cmd_run(ctx: Context, args: argparse.Namespace, command: list[str] | None) -
         title = check_text(args.title or "", "--title", 1000)
         cwd = working_directory(args.cwd)
         files = canonical_files(args.files or [], cwd)
+    supervisor = None
+    try:
+        # One transaction creates the job if it is new, checks it, starts its supervisor and names it the owner:
+        # there is no moment when the job is reserved and nobody owns it, and a rollback leaves nothing behind.
         with writing(conn):
-            task_id = check_name(args.id, "task") if args.id else new_id(conn, "job")
-            if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone():
-                raise WorkError(f"task {task_id} exists already")
-            holder = holder_of(order_tasks.make_task({"id": task_id, "files": files}, 0), holders(conn))
-            if holder is not None:
-                raise refusal(f"job {task_id} changes files that task {holder['id']} holds ({describe_state(holder)})")
-            insert_task(conn, task_id, title, kind, scope, agent, [], 1.0, 1.0, files, command, cwd,
-                        args.weight or 1.0, state="claimed")
-            reserve(ctx, get_task(conn, task_id), agent)
+            if command is not None:
+                task_id = check_name(args.id, "task") if args.id else new_id(conn, "job")
+                if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone():
+                    raise WorkError(f"task {task_id} exists already")
+                holder = holder_of(order_tasks.make_task({"id": task_id, "files": files}, 0), holders(conn))
+                if holder is not None:
+                    raise refusal(f"job {task_id} changes files that task {holder['id']} holds "
+                                  f"({describe_state(holder)})")
+                insert_task(conn, task_id, title, kind, scope, agent, [], 1.0, 1.0, files, command, cwd,
+                            args.weight or 1.0, state="claimed")
             row = get_task(conn, task_id)
-    return launch(ctx, row, args.timeout, args.tail, args.json)
+            check_runnable(row, agent)
+            log = os.path.join(ctx.logs, f"{task_id}.log")
+            supervisor = start_supervisor(ctx, task_id, log)
+            reserve(conn, row, agent, supervisor.pid, log)
+    finally:
+        if supervisor is not None:
+            supervisor.stdin.close()  # The supervisor goes on only if it finds itself the owner.
+    return wait_for(ctx, [task_id], False, args.timeout, args.tail, args.json, supervisor)
 
 
 def cmd_wait(ctx: Context, args: argparse.Namespace, command: list[str] | None) -> int:

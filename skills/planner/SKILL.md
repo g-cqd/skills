@@ -337,7 +337,8 @@ agents, a project or a conversation. `--scope S` means S and every scope under i
   order. A job heavier than the capacity runs alone.
 - **Waiting.** `work run` and `work wait` return the moment the job ends, with its own exit status (127 for a
   missing command, 128 plus the signal that killed it), and report the wait for capacity apart from the run time.
-  At `--timeout` (570 s) they exit with 124 while the job goes on; call `work wait ID` again.
+  At `--timeout` (570 s) they exit with 124 while the job goes on; call `work wait ID` again. With `--json`,
+  `timed_out` tells that timeout from a command that exits with 124 itself.
 - **Stale jobs.** `work status` marks failed a job whose supervisor and command are gone with no recorded status.
 
 `python3 scripts/work.py --help` lists every option; its tests run in the same suite.
