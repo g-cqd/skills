@@ -91,6 +91,10 @@ ALLOWED = [
     "ls | xargs -I{} echo {}",
     "cat <<-EOF\n\tx\n\tEOF\nls",
     "cat <<EOF | grep x\nbody\nEOF",
+    # A # that starts a word begins a comment, which the shell ignores to the end of the line: here it runs only ls.
+    "ls  # it's done; rm x",
+    "# show the state\ngit status",
+    "cat <<EOF # the body starts on the next line\nrm x\nEOF",
 ]
 
 BLOCKED = [
@@ -192,6 +196,11 @@ BLOCKED = [
     "cat <<-EOF\n\tx\n\tEOF\nrm x",
     # Only ASCII digits make a file descriptor: a superscript two is an argument, so this creates a tag.
     "git tag \u00b2>/dev/null",
+    # A heredoc marker inside a comment starts no heredoc, so the lines after it are commands.
+    "ls # <<EOF\nrm -rf build\nEOF",
+    "ls;# <<EOF\nrm x\nEOF",
+    "ls \\\n# <<EOF\nrm x\nEOF",
+    "cat <<EOF # comment\nx\nEOF\nrm x",
 ]
 
 # (command, text the refusal must name)
