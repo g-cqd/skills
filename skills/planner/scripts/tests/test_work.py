@@ -609,6 +609,20 @@ class WaitTests(WorkTestCase):
         self.assertEqual(waited.status, 1, "the first task that is not done sets the status")
         self.assertIn("task b failed: flaky", waited.out)
 
+    def test_only_the_claimant_or_the_author_of_an_unclaimed_task_closes_it(self):
+        for task_id in ("unclaimed", "held"):
+            self.call("add", "--id", task_id, agent="alice")
+        self.call("claim", "held", agent="bob")
+        for verb in ("done", "fail", "cancel"):
+            with self.subTest(verb=verb):
+                refused = self.call(verb, "unclaimed", agent="bob")
+                self.assertEqual(refused.status, 1)
+                self.assertIn("only alice closes it", refused.err)
+                self.assertEqual(self.call(verb, "held", agent="alice").status, 1, "bob holds it")
+        self.assertEqual([self.task(task_id)["state"] for task_id in ("unclaimed", "held")], ["queued", "claimed"])
+        self.assertEqual(self.call("cancel", "unclaimed", agent="alice").status, 0)
+        self.assertEqual(self.call("done", "held", agent="bob").status, 0)
+
     def test_cancel_withdraws_a_job_that_waits_for_capacity(self):
         self.call("settings", "--capacity", "1")
         marker = os.path.join(self.root, "never")
@@ -749,6 +763,29 @@ class StatusTests(WorkTestCase):
         self.assertEqual(self.state("live"), "running")
         self.open_gate("live")
         self.assertEqual(self.work("wait", "live").status, 0, "its own status is recorded")
+
+    def test_alive_tells_a_live_process_from_a_zombie_or_a_reused_pid(self):
+        me, now = os.getpid(), time.time()
+
+        def seen(stat, start):
+            return {me: work.Process(me, os.getppid(), os.getpgid(0), stat, 0.0, 0, start)}
+
+        self.assertTrue(work.alive(me, now, seen("S", now - 10)))
+        self.assertFalse(work.alive(me, now - 60, seen("S", now)), "a process that started after the job took its pid")
+        self.assertFalse(work.alive(me, now, seen("Z", now - 10)), "a zombie has ended")
+        self.assertTrue(work.alive(me, now - 60, None), "without ps, the pid's existence decides")
+
+    def test_the_sweep_fails_a_job_whose_pids_now_belong_to_newer_processes(self):
+        self.call("add", "--id", "ghost", "--", "true", agent="a")
+        self.call("claim", "ghost", agent="a")
+        impostor = subprocess.Popen(["sleep", "30"])
+        self.addCleanup(impostor.wait)
+        self.addCleanup(impostor.kill)
+        long_ago = time.time() - 600
+        self.database("UPDATE tasks SET state = 'running', requested = ?, started = ?, owner = ?, owner_since = ?, "
+                      "pid = ? WHERE id = 'ghost'", long_ago, long_ago, impostor.pid, long_ago, impostor.pid)
+        swept = self.work("status")
+        self.assertIn("swept: ghost failed: the job ended without a recorded status", swept.out)
 
     def test_old_events_and_logs_are_pruned(self):
         self.call("settings", "--keep-days", "1")
