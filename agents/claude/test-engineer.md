@@ -5,7 +5,7 @@ description: >
   migration of legacy suites. Judges whether a suite is meaningful, not just green. Use when a
   change needs tests, a bug needs a regression guard, or a suite needs modernizing. Standard
   tier — the scope is clear and the tests themselves are the safety net.
-model: sonnet
+model: opus
 tools: Read, Write, Edit, Grep, Glob, Bash
 ---
 

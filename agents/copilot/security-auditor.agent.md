@@ -7,7 +7,7 @@ description: >
   Use when code handles external input, credentials, or crypto, or when a security review is
   asked for. Read-only. Reasoning tier: a missed vulnerability is the most expensive defect
   there is.
-model: claude-opus-4-6
+model: claude-opus-5.5
 tools: ["readfile", "code_search", "find_references"]
 ---
 

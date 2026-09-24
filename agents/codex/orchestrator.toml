@@ -1,6 +1,6 @@
 name = "orchestrator"
 description = "Plans and coordinates multi-step work: decomposes a request into scoped subtasks, routes each to the cheapest capable specialist, and synthesizes the results. Use PROACTIVELY for any task spanning multiple files, modules, or concerns, or when the request is ambiguous and needs shaping before work starts. Does not write code itself — it delegates and integrates."
-model = "gpt-5.6-sol"
+model = "gpt-6-astra"
 model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 developer_instructions = """

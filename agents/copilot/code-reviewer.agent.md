@@ -6,7 +6,7 @@ description: >
   PROACTIVELY after a change is written and before it lands. Read-only — it reports findings,
   it does not edit. Reasoning tier: review quality is the expensive judgment the cheap tiers
   cannot provide.
-model: claude-opus-4-6
+model: claude-opus-5.5
 tools: ["readfile", "code_search", "find_references"]
 ---
 

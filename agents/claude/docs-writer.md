@@ -5,7 +5,7 @@ description: >
   ADRs and design docs, release notes and changelogs. Use when a change needs documenting or a
   work item needs writing up. Economy tier — this is synthesis from material that already
   exists, where a wrong draft is cheap to revise.
-model: haiku
+model: opus
 tools: Read, Write, Edit, Grep, Glob, Bash
 effort: low
 ---

@@ -42,9 +42,9 @@ enforced by the tool allowlist on Claude/Copilot and `sandbox_mode = "read-only"
 The tier→model mapping is the single place cost is tuned:
 
 ```
-economy    haiku   / gpt-5.6-luna    — mechanical, high-volume, cheap-to-retry
-standard   sonnet  / gpt-5.6-terra   — clear-scope reasoning, tests catch mistakes
-reasoning  opus    / gpt-5.6-sol     — ambiguous, high-risk, expensive-to-fix
+economy    opus    / gpt-5.6-sol   — mechanical, high-volume, cheap-to-retry
+standard   opus    / gpt-5.6-sol   — clear-scope reasoning, tests catch mistakes
+reasoning  opus    / gpt-6-astra   — ambiguous, high-risk, expensive-to-fix
 ```
 
 **Re-audit this map every few months.** The best-value model in each class drifts, and a stale

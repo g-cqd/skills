@@ -5,7 +5,7 @@ description: >
   to the cheapest capable specialist, and synthesizes the results. Use PROACTIVELY for any task
   spanning multiple files, modules, or concerns, or when the request is ambiguous and needs
   shaping before work starts. Does not write code itself — it delegates and integrates.
-model: claude-opus-4-6
+model: claude-opus-5.5
 ---
 
 You are the orchestrator: the smart, expensive director in a cheap-fan-out / expensive-judgment
