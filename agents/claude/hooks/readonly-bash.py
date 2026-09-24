@@ -21,8 +21,9 @@ the repository sets, or a file named like an option are out of scope. It is an a
 recognise is refused.
 
 How a command is checked:
-  - The raw text holds no command substitution ($( or backticks), no process substitution (<( or >( ), and no
-    $'...' or $"..." quoting, which could hide an option from the check.
+  - The raw text holds no command substitution ($( or backticks) and no process substitution (<( or >( ).
+  - No word holds a $ outside single quotes that is not escaped: parameter expansion, and $'...' or $"..." quoting, can
+    build an option, such as ${X:--exec}, that the checks, which compare literal text, would not see.
   - shlex splits the text into simple commands on ; && || | |& & and newlines, outside quotes, and every simple
     command must pass. A subshell or a group, ( ) { }, is refused. A heredoc body is input, not commands, and a
     comment, from an unquoted # that starts a word to the end of its line, is dropped.
@@ -55,8 +56,6 @@ RAW_REFUSALS = (
     ("`", "command substitution with backticks can run any command"),
     ("<(", "process substitution `<(` can run any command"),
     (">(", "process substitution `>(` can run any command"),
-    ("$'", "`$'...'` quoting can hide an option from this check"),
-    ('$"', '`$"..."` quoting can hide an option from this check'),
 )
 PUNCTUATION = "();<>|&\n"
 SEPARATORS = frozenset({";", "&&", "||", "|", "|&", "&"})
@@ -253,6 +252,24 @@ def _lexer(text: str) -> shlex.shlex:
     return lexer
 
 
+def check_word(raw: str) -> None:
+    """Refuses a word whose raw text, as written, holds a `$` outside single quotes that no backslash escapes."""
+    quote, escaped = None, False
+    for character in raw:
+        if escaped:
+            escaped = False
+        elif quote == "'":
+            quote = None if character == "'" else quote
+        elif character == "\\":
+            escaped = True
+        elif character == '"':
+            quote = None if quote == '"' else '"'
+        elif character == "'" and quote is None:
+            quote = "'"
+        elif character == "$":
+            raise Refusal(f"`$` in `{raw}` expands to text this check cannot see; quote a literal `$` in single quotes")
+
+
 def _is_operator(text: str, token: str, end: int) -> bool:
     """Whether `token`, which ends at `end` in `text`, is an operator the shell sees, not a quoted or escaped word."""
     start = end - len(token)
@@ -363,6 +380,7 @@ def _read_line(text: str, offset: int, tokens: list) -> int:
             previous_end, last_word = end, None
             continue
         start = _skip_blanks(text, previous_end)
+        check_word(text[start:end])
         word = _continued(text[start:end], token)
         previous_end = end
         if word is None:
