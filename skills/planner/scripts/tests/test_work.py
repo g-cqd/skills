@@ -134,7 +134,9 @@ class WorkTestCase(unittest.TestCase):
     def database(self, query, *parameters):
         with contextlib.closing(sqlite3.connect(os.path.join(self.home, "work.db"), timeout=30)) as conn:
             conn.row_factory = sqlite3.Row
-            return conn.execute(query, parameters).fetchall()
+            rows = conn.execute(query, parameters).fetchall()
+            conn.commit()
+            return rows
 
     def until(self, predicate, message, timeout=10.0):
         """Waits for a condition, checking it every 20 ms; fails the test at the limit."""
@@ -621,16 +623,66 @@ class SafetyTests(WorkTestCase):
         os.chmod(self.home, 0o777)
         result = self.work("status")
         self.assertEqual(result.status, 1)
-        self.assertIn("writable only by you", result.err)
+        self.assertIn("must be private to you", result.err)
+
+    def test_a_state_directory_must_be_private_under_directories_that_only_you_can_write(self):
+        os.makedirs(self.home)
+        os.chmod(self.home, 0o755)
+        readable = self.work("status")
+        self.assertEqual(readable.status, 1, "others may not even read the queue")
+        self.assertIn("chmod 700", readable.err)
+        shared = os.path.join(self.root, "shared")
+        os.makedirs(shared)
+        os.chmod(shared, 0o775)
+        under = self.work("status", env={"AGENT_WORK_HOME": os.path.join(shared, "state")})
+        self.assertEqual(under.status, 1)
+        self.assertIn(f"{shared} is writable by other users", under.err)
+        self.assertFalse(os.path.exists(os.path.join(shared, "state")), "nothing is created under it")
+
+    def test_the_state_directory_is_resolved_once_and_its_links_refused(self):
+        target = os.path.join(self.root, "real-state")
+        link = os.path.join(self.root, "link-state")
+        os.symlink(target, link)
+        self.assertEqual(self.work("status", env={"AGENT_WORK_HOME": link}).status, 0)
+        self.assertTrue(os.path.isfile(os.path.join(target, "work.db")), "SQLite opens the resolved path")
+        self.assertTrue(os.path.islink(link))
+        with self.assertRaises(work.WorkError) as refused:
+            work.guard(link, private=True)
+        self.assertIn("symbolic link", str(refused.exception))
+
+    def test_text_fields_refuse_control_and_invisible_characters(self):
+        for text in ("fine\rrm", "a\x1b[2Jb", "left‮right", "tab\there", "zero​width"):
+            with self.subTest(text=text):
+                self.assertEqual(self.work("add", "--title", text, agent="a").status, 2)
+        self.assertEqual(self.work("scope", "set", "s", "--task", "a\rb").status, 2)
+        self.assertEqual(self.work("add", "--files", "a\nb", agent="a").status, 2)
+        self.work("add", "--id", "t", agent="a")
+        self.assertEqual(self.work("cancel", "t", "--note", "\x1b[31mred", agent="a").status, 2)
+        self.assertEqual(self.task("t")["state"], "queued")
 
     def test_show_escapes_characters_that_could_hide_part_of_a_command(self):
-        self.work("add", "--id", "sly", "--title", "fine\rrm", "--", "echo", "safe\r\x1b[2Krm -rf x‮", agent="bob")
+        self.work("add", "--id", "sly", "--", "echo", "safe\r\x1b[2Krm -rf x‮", agent="bob")
         shown = self.work("show", "sly").out
         self.assertNotIn("\r", shown)
         self.assertNotIn("\x1b", shown)
         self.assertNotIn("‮", shown)
         self.assertIn("\\r\\x1b[2Krm -rf x\\u202e", shown)
         self.assertEqual(self.task("sly")["command"], ["echo", "safe\r\x1b[2Krm -rf x‮"])
+
+    def test_job_output_and_stored_titles_are_escaped(self):
+        result = self.work("run", "--", "printf", "clear\\033[2Jline\\rover\\n", agent="a")
+        self.assertEqual(result.status, 0)
+        self.assertNotIn("\x1b", result.out)
+        self.assertNotIn("\r", result.out)
+        # The escape shows as text; a carriage return ends a line, as it does for a progress bar.
+        self.assertIn("\nclear\\x1b[2Jline\nover\n", result.out)
+        # A title that reached the database another way, by hand or from an older work.py, is escaped in a plan.
+        self.work("add", "--id", "titled", agent="a")
+        self.database("UPDATE tasks SET title = ? WHERE id = 'titled'", "bad\x1b[2Jtitle")
+        planned = self.work("plan", "--agents", "1")
+        self.assertEqual(planned.status, 0)
+        self.assertNotIn("\x1b", planned.out)
+        self.assertIn("titled bad\\x1b[2Jtitle", planned.out)
 
     def test_input_errors_exit_with_2(self):
         self.work("add", "--id", "real", agent="a")

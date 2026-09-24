@@ -30,8 +30,10 @@ Rules:
   - Sweep: `status`, `wait`, `next` and `claim` mark failed a job whose supervisor and command are gone with no
     recorded status.
 
-State: $AGENT_WORK_HOME/work.db (default ~/.local/state/agent-work), with job logs in logs/. The directory must
-belong to you and be writable only by you. Agent names come from --agent or $WORK_AGENT.
+State: $AGENT_WORK_HOME/work.db (default ~/.local/state/agent-work), with job logs in logs/. The path is resolved
+once; the directory must be yours and private (mode 700), and no directory above it may be a link, belong to another
+user than you or root, or be writable by others. Titles, notes and paths refuse control and invisible characters,
+and every text view escapes them in commands and job output. Agent names come from --agent or $WORK_AGENT.
 
 Exit status: 0 on success; 1 when work refuses (a task in the wrong state, nothing to claim, a command not
 accepted yet); 2 for an input error; for `run` and `wait`, the job's own status, or 124 when the timeout passed first.
@@ -49,11 +51,12 @@ import re
 import shlex
 import signal
 import sqlite3
+import stat
 import subprocess
 import sys
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -156,14 +159,14 @@ def check_name(value: str, what: str) -> str:
 
 
 def check_text(value: str, what: str, limit: int = MAX_TEXT) -> str:
+    """`value` as a title, a note, a scope's task or a path: printable characters only. A control character, an escape
+    sequence, a carriage return or a direction override would let a text rewrite the terminal of the agent that
+    reads it; NUL and unpaired surrogates are not printable either."""
     if len(value) > limit:
         raise WorkError(f"{what} is longer than {limit} characters")
-    if "\x00" in value:
-        raise WorkError(f"{what} holds a NUL character")
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError:
-        raise WorkError(f"{what} is not valid UTF-8") from None
+    hidden = next((char for char in value if not char.isprintable()), None)
+    if hidden is not None:
+        raise WorkError(f"{what} holds the control or invisible character {hidden!r}")
     return value
 
 
@@ -218,7 +221,7 @@ def working_directory(given: str | None) -> str:
     except OSError as error:
         raise WorkError(f"the current directory is gone: {error.strerror}") from None
     if not os.path.isdir(path):
-        raise WorkError(f"{path} is not a directory")
+        raise WorkError(f"{printable(path)} is not a directory")
     return check_text(path, "the directory")
 
 
@@ -313,7 +316,8 @@ class Context:
     def __init__(self, env: dict[str, str]):
         self.env = env
         raw = env.get("AGENT_WORK_HOME") or os.path.join("~", ".local", "state", "agent-work")
-        self.home = os.path.abspath(os.path.expanduser(raw))
+        # Resolved once: every later use, SQLite's included, names the directory that connect() checked.
+        self.home = os.path.realpath(os.path.expanduser(raw))
         self._conn: sqlite3.Connection | None = None
 
     @property
@@ -358,15 +362,29 @@ def connect(home: str) -> sqlite3.Connection:
     logs = os.path.join(home, "logs")
     path = os.path.join(home, "work.db")
     try:
-        # Each path is checked before anything is created inside it.
-        os.makedirs(home, mode=0o700, exist_ok=True)
-        private(home)
-        os.makedirs(logs, mode=0o700, exist_ok=True)
-        private(logs)
-        os.close(os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600))
-        private(path)
+        # Each directory is checked before anything is created inside it.
+        parts = [part for part in home.split(os.sep) if part]
+        current = os.sep
+        guard(current, private=False)
+        for depth, part in enumerate(parts, start=1):
+            current = os.path.join(current, part)
+            if not os.path.lexists(current):
+                with suppress(FileExistsError):  # Another agent created it first; the guard checks it all the same.
+                    os.mkdir(current, 0o700)
+            guard(current, private=depth == len(parts))
+        if not os.path.lexists(logs):
+            with suppress(FileExistsError):
+                os.mkdir(logs, 0o700)
+        guard(logs, private=True)
+        descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            info = os.fstat(descriptor)
+        finally:
+            os.close(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise refusal(f"{printable(path)} must be a file of yours that only you can read and write (chmod 600)")
     except OSError as error:
-        raise refusal(f"cannot prepare {home}: {error.strerror}") from None
+        raise refusal(f"cannot prepare {printable(home)}: {error.strerror}") from None
     conn = sqlite3.connect(path, timeout=30.0, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -375,11 +393,22 @@ def connect(home: str) -> sqlite3.Connection:
     return conn
 
 
-def private(path: str) -> None:
-    """Refuse a state path that another user could write: the queue holds commands that agents run."""
-    status = os.stat(path)
-    if status.st_uid != os.getuid() or status.st_mode & 0o022:
-        raise refusal(f"{path} must belong to you and be writable only by you (chmod go-w {shlex.quote(path)})")
+def guard(path: str, private: bool) -> None:
+    """Refuses a component of the state directory that another user could replace or change, since the queue holds
+    commands that agents run: a symbolic link, which could be swapped; anything owned by a user other than you or
+    root; a directory that others can write. The state directory itself (`private`) must be yours and mode 700."""
+    info = os.lstat(path)
+    shown = printable(path)
+    if stat.S_ISLNK(info.st_mode):
+        raise refusal(f"{shown} is a symbolic link; set AGENT_WORK_HOME to a path without one")
+    if not stat.S_ISDIR(info.st_mode):
+        raise refusal(f"{shown} is not a directory")
+    if info.st_uid != os.getuid() and (private or info.st_uid != 0):
+        raise refusal(f"{shown} belongs to another user")
+    if private and info.st_mode & 0o077:
+        raise refusal(f"{shown} must be private to you: chmod 700 {shlex.quote(path)}")
+    if info.st_mode & 0o022:
+        raise refusal(f"{shown} is writable by other users, who could replace the state directory under it")
 
 
 def migrate(conn: sqlite3.Connection) -> None:
@@ -459,9 +488,10 @@ def new_id(conn: sqlite3.Connection, prefix: str) -> str:
 
 
 def order_task(row: sqlite3.Row, index: int, after: list[str] = ()) -> order_tasks.Task:
-    """The order_tasks view of a row; `index` is its arrival rank and `after` the prerequisites to keep."""
+    """The order_tasks view of a row; `index` is its arrival rank and `after` the prerequisites to keep. The title is
+    escaped, since order_tasks.render prints it as it is."""
     return order_tasks.make_task({
-        "id": row["id"], "title": row["title"], "kind": row["kind"], "after": list(after),
+        "id": row["id"], "title": printable(row["title"]), "kind": row["kind"], "after": list(after),
         "size": row["size"], "value": row["value"], "files": json.loads(row["files"]),
     }, index)
 
@@ -997,7 +1027,7 @@ def launch(ctx: Context, row: sqlite3.Row, timeout: float, lines: int, as_json: 
         log = os.open(row["log"], os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_APPEND | os.O_NOFOLLOW, 0o600)
     except OSError as error:
         release(ctx.conn, task_id, f"cannot open the log: {error.strerror}")
-        raise refusal(f"cannot open the log {row['log']}: {error.strerror}") from None
+        raise refusal(f"cannot open the log {printable(row['log'])}: {error.strerror}") from None
     try:
         supervisor = subprocess.Popen([sys.executable, SCRIPT, "_supervise", task_id, str(os.getpid())], cwd="/",
                                       env={**ctx.env, "AGENT_WORK_HOME": ctx.home}, stdin=subprocess.DEVNULL,
@@ -1027,16 +1057,16 @@ def follow(ctx: Context, task_id: str, supervisor: subprocess.Popen, timeout: fl
                 supervisor.wait()
             release(conn, task_id, f"its supervisor exited with status {supervisor.returncode} before it took the job")
             for line in tail(row["log"], lines):
-                print(line)
+                print(printable(line))
             raise refusal(f"the supervisor of job {task_id} could not start it (status {supervisor.returncode}); "
-                          f"its log is {row['log']}")
+                          f"its log is {printable(row['log'])}")
         if row["state"] not in FINAL and handed_over and exited:
             sweep(conn)
             row = get_task(conn, task_id)
         if not as_json:
             if row["pid"] and not shown_start:
                 say(f"started job {task_id} ({display(json.loads(row['command']))}) as process {row['pid']}; "
-                    f"output in {row['log']}")
+                    f"output in {printable(row['log'])}")
                 shown_start = True
             elif row["state"] == "claimed" and row["note"] and handed_over and not shown_wait:
                 say(f"job {task_id} waits for capacity: {printable(row['note'])}")
@@ -1091,8 +1121,9 @@ def report(rows: list[sqlite3.Row], ended: list[sqlite3.Row], lines: int, as_jso
             {**task_json(row, now), "tail": tail(row["log"], lines)} for row in rows]})
         return status
     for row in rows:
+        # A job's output is escaped too: it may hold what the terminal would take for a control sequence.
         for line in tail(row["log"], lines) if row["log"] and (row["state"] in FINAL or timed_out) else []:
-            print(line)
+            print(printable(line))
         say(end_line(row, now) if row["state"] in FINAL else pending_line(row, now))
     if timed_out:
         say(f"call `work wait {' '.join(row['id'] for row in rows if row['state'] not in FINAL)}` to keep waiting")
@@ -1450,7 +1481,7 @@ def cmd_show(ctx: Context, args: argparse.Namespace, command: list[str] | None) 
     if files:
         lines.append(capped("files", [printable(path) for path in files]))
     if row["log"]:
-        lines.append(f"log: {row['log']}")
+        lines.append(f"log: {printable(row['log'])}")
     if row["requested"] is not None:
         run = f"run: waited {span(waited_of(row, now))} for capacity, ran {span(ran_of(row, now))}"
         if row["status"] is not None:
