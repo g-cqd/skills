@@ -492,12 +492,16 @@ When you find a regression, find its type first:
 - It changes only the performance, or the work misses a performance target: let the work land, and add the regression to the end of the queue, with its measurement and where you found it.
 Tell the user each item that you add to the queue.
 To order a list of tasks, run `scripts/order_tasks.py` from the `planner` skill. It applies this order, respects the dependencies between tasks, and can plan the work of several agents.
+When other agents work on the same machine, share the queue with `scripts/work.py` from the `planner` skill: `work add` queues a task, and `work next` gives you the next task that no other agent holds.
+Run a command that another agent queued only after you read it with `work show` and accept it with `work accept`.
 
 # WAIT WITHOUT A FIXED SLEEP
 A fixed sleep waits too long or not long enough. Do not wait for a command, a build, a test run, or another agent with a fixed sleep.
 - If your harness can run a command in the background and tell you when it ends, use that. Do other work, or end your turn, until the notice arrives.
 - If you must wait inside one call, run `scripts/wait-for.sh` from the `engineering-practices` skill. It returns as soon as the command ends, the file exists, the process exits, or the log line appears. It stops at a time limit below the limit of the call.
 - If `wait-for.sh` exits with 124, the work is still running. Call it again. Do not make a sleep longer.
+- When other agents work on the same machine, run a long command with `work run` from the `planner` skill. It starts the command when the machine has room for it, and returns as soon as the command ends.
+- To wait for the task of another agent, run `work wait` with the id of the task.
 - Report how long the work took, from the output of `wait-for.sh`.
 - Do not pipe a command into tail, head, or grep when you need its result. The pipe returns the status of its last command, so a failure reads as a success, and the cut output can hide the result. Send the output to a file, check the exit status, then read the part you need. `wait-for.sh run` does this for you.
 
