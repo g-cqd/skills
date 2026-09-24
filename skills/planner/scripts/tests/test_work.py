@@ -716,6 +716,101 @@ class MachineGateTests(WorkTestCase):
         self.assertEqual(self.work("settings", "--memory-limit", "high").status, 2)
 
 
+class BackfillTests(WorkTestCase):
+    def job(self, task_id, weight, state, since=None, kind="other"):
+        """A job in a given state, `since` seconds ago: running since then, or waiting for capacity since then."""
+        self.call("add", "--id", task_id, "--weight", str(weight), "--kind", kind, "--", "true", agent="a")
+        self.call("claim", task_id, agent="a")
+        self.accept(task_id, "a")
+        stamp = time.time() - (since or 0)
+        if state == "running":
+            self.database("UPDATE tasks SET state = 'running', requested = ?, started = ?, owner = ? WHERE id = ?",
+                          stamp, stamp, os.getpid(), task_id)
+        else:
+            self.database("UPDATE tasks SET requested = ?, owner = ? WHERE id = ?", stamp, os.getpid(), task_id)
+
+    def why(self, task_id):
+        """What holds a waiting job now, as its supervisor sees it, on a machine under no pressure."""
+        ctx = work.Context(self.env)
+        try:
+            row = work.get_task(ctx.conn, task_id)
+            box = work.machine(work.settings_of(ctx.conn), FakeGauge().read())
+            return work.Supervisor(ctx, task_id, gauge=FakeGauge()).blocker(ctx.conn, row, box)
+        finally:
+            ctx.close()
+
+    def test_a_small_job_backfills_past_a_blocked_large_head(self):
+        self.call("settings", "--capacity", "3")
+        self.work("run", "--id", "busy", "--weight", "2", "--timeout", "0", "--", *self.gate("busy"), agent="a")
+        self.until(lambda: self.state("busy") == "running", "the first job to start")
+        self.work("run", "--id", "head", "--weight", "2", "--timeout", "0", "--", "true", agent="b")
+        self.until(lambda: self.state("head") == "waiting", "the head to wait")
+        self.assertIn("head: ", self.work("status").out)
+        self.assertIn("2 of 3 cores are taken and this job needs 2", self.work("status").out)
+        self.work("run", "--id", "small", "--timeout", "0", "--", *self.gate("small"), agent="c")
+        self.until(lambda: self.state("small") == "running", "the small job to start past the head")
+        self.assertEqual(self.state("head"), "waiting")
+        self.open_gate("busy")
+        self.until(lambda: self.state("head") in ("running", "done"), "the head to start once the busy job ends")
+        self.open_gate("small")
+        self.assertEqual(self.work("wait", "busy", "head", "small").status, 0)
+        started = {row["id"]: row["started"] for row in self.database("SELECT id, started FROM tasks")}
+        self.assertLess(started["small"], started["head"])
+
+    def test_a_job_that_would_take_the_heads_cores_waits(self):
+        self.call("settings", "--capacity", "5")
+        self.job("busy", 2, "running", since=60)
+        self.job("head", 4, "waiting", since=10)
+        self.job("medium", 2, "waiting", since=5)
+        self.assertEqual(self.why("medium"), ("ahead", "job head is ahead of it and needs 4 of the 5 cores, which "
+                                                        "leaves 1 for jobs behind it; this job needs 2"))
+        self.job("light", 1, "waiting", since=4)
+        self.assertIsNone(self.why("light"), "it fits in the core the head leaves free")
+
+    def test_jobs_that_started_while_the_head_waited_keep_their_cores_from_the_next(self):
+        self.call("settings", "--capacity", "5", "--small-weight", "0.5")
+        self.job("busy", 1, "running", since=60)
+        self.job("head", 4, "waiting", since=30)
+        self.job("first", 1, "running", since=10)  # Backfilled: it may still run when the head can start.
+        self.job("second", 1, "waiting", since=5)
+        cause, reason = self.why("second")
+        self.assertEqual(cause, "ahead")
+        self.assertIn("leaves 0 for jobs behind it", reason)
+
+    def test_a_large_head_is_not_starved(self):
+        self.call("settings", "--capacity", "3")
+        self.job("busy", 1, "running", since=600)
+        self.job("head", 3, "waiting", since=10)
+        self.job("small", 1, "waiting", since=5)
+        self.assertIsNone(self.why("small"), "a small job may delay the head for a while")
+        self.database("UPDATE tasks SET requested = ? WHERE id = 'head'", time.time() - 400)
+        self.assertEqual(self.why("small"), ("ahead", "job head has waited 6 min 40 s, past the backfill limit of "
+                                                      "5 min 0 s, so no job starts before it"))
+        self.database("UPDATE tasks SET state = 'done', ended = ? WHERE id = 'busy'", time.time())
+        self.assertIsNone(self.why("head"), "once the busy job ends, the head starts")
+        self.assertEqual(self.why("small"), ("ahead", "job head has waited 6 min 40 s, past the backfill limit of "
+                                                      "5 min 0 s, so no job starts before it"))
+
+    def test_a_validity_head_keeps_its_place_from_small_jobs(self):
+        self.call("settings", "--capacity", "3")
+        self.job("busy", 1, "running", since=60)
+        self.job("fix", 3, "waiting", since=10, kind="validity")
+        self.job("small", 1, "waiting", since=5)
+        self.assertEqual(self.why("small"), ("ahead", "job fix is ahead of it and needs 3 of the 3 cores, which leaves "
+                                                      "0 for jobs behind it; this job needs 1, and job fix, validity "
+                                                      "work, keeps its place"))
+        self.call("settings", "--capacity", "5")
+        self.database("UPDATE tasks SET weight = 3 WHERE id = 'busy'")
+        self.assertIsNone(self.why("small"), "a job that cannot delay it may still start")
+
+    def test_backfill_never_takes_the_heads_turn(self):
+        self.call("settings", "--capacity", "2")
+        self.job("head", 1, "waiting", since=10)
+        self.job("small", 1, "waiting", since=5)
+        self.assertEqual(self.why("small"), ("ahead", "job head is ahead of it, and there is room for it"))
+        self.assertIsNone(self.why("head"))
+
+
 class WaitTests(WorkTestCase):
     def test_wait_any_returns_at_the_first_end_and_all_waits_for_the_scope(self):
         self.work("scope", "set", "proj")

@@ -339,7 +339,10 @@ changes with each new shell, so set `WORK_AGENT` to claim a task in one call and
   running jobs' weights plus its own fit the capacity (default the CPU count minus 2) and the machine is not under
   pressure: the CPU at least 15% idle (`--idle-min`) and memory pressure below warning (`--memory-limit`). The load
   average gates only on Linux (`--load-factor`, default 1.5 per CPU): macOS counts threads waiting on memory and
-  disk in it, so a machine at load 90 can be half idle. Otherwise it waits, and waiting jobs start in work order.
+  disk in it, so a machine at load 90 can be half idle. Otherwise it waits, and waiting jobs start in work order,
+  with backfill: when the head of the line lacks cores, a later job may start first if it fits now and in the cores
+  the head leaves free, or if it is small (`--small-weight`, 1 core) while no validity job is ahead of it. Once the
+  head has waited `--backfill-wait` (5 min), nothing starts before it, so no job starves.
   A job heavier than the capacity runs alone; a job that the machine's pressure alone holds back longer than the
   load wait (30 min) fails. These values live in the database, so every agent's jobs share them: `work settings`.
   `work status` shows the signals and the thresholds, and each waiting job's reason names what holds it.
