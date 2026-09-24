@@ -226,6 +226,10 @@ BLOCKED = [
     "ls | xargs -n2 uniq",
     "ls | xargs -n2 xxd",
     "ls | xargs uniq",
+    # rg runs --hostname-bin when a hyperlink format needs the host name.
+    "rg --hostname-bin /tmp/x --hyperlink-format '{host}' foo",
+    "rg --hostname-bin=/tmp/x foo",
+    "rg --hyperlink-format=default foo",
 ]
 
 # (command, text the refusal must name)
