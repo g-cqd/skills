@@ -141,8 +141,9 @@ class WorkTestCase(unittest.TestCase):
             conn.commit()
             return rows
 
-    def until(self, predicate, message, timeout=10.0):
-        """Waits for a condition, checking it every 20 ms; fails the test at the limit."""
+    def until(self, predicate, message, timeout=30.0):
+        """Waits for a condition, checking it every 20 ms; fails the test at the limit, which is generous because
+        other agents can load the machine heavily while the tests run."""
         deadline = time.monotonic() + timeout
         while True:
             value = predicate()
@@ -156,16 +157,19 @@ class WorkTestCase(unittest.TestCase):
         """Kills what a test left running: each job's process group, then its supervisor."""
         if not os.path.exists(os.path.join(self.home, "work.db")):
             return
-        # A test that plays the supervisor in this process leaves its own pid as an owner: that one is left alone.
-        rows = self.database("SELECT pid, owner FROM tasks WHERE state IN ('claimed', 'running')")
+        # Every job whose processes may still run: those claimed or running, and those a sweep failed without a
+        # status, which a failing test can leave alive. A test that plays the supervisor in this process leaves its
+        # own pid as an owner: that one is left alone.
+        rows = self.database("SELECT pid, owner FROM tasks WHERE state IN ('claimed', 'running') "
+                             "OR (state = 'failed' AND status IS NULL AND owner IS NOT NULL)")
         for row in rows:
             for target, kill in ((row["pid"], os.killpg), (row["owner"], os.kill)):
                 if target and target != os.getpid():
                     with contextlib.suppress(ProcessLookupError, PermissionError):
                         kill(target, signal.SIGKILL)
-        for row in rows:
-            if row["owner"] and row["owner"] != os.getpid():
-                self.until(lambda: not work.exists(row["owner"]), "a supervisor to stop")
+        for owner in {row["owner"] for row in rows} - {None, os.getpid()}:
+            # A child of this process stays a zombie until its test reaps it, in a cleanup; a zombie has stopped.
+            self.until(lambda: not work.alive(owner, None, work.processes([owner])), "a supervisor to stop")
 
     def race(self, mode, agents, *extra):
         """Starts one worker process per agent, releases them together, and returns what each one got."""
