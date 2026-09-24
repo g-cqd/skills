@@ -20,12 +20,15 @@ Rules:
     it: agent names are self-declared, so no name proves who wrote a command. Only a command typed inline with
     `work run -- ...` needs no acceptance. Commands are stored as argument lists and run without a shell.
   - Capacity: a job weighs the cores it uses (default 1, at most the CPU count). It starts only while the running
-    jobs' weights plus its own fit the capacity, or when no job runs, and while the one-minute load average is below
-    the CPU count times the load factor. Jobs that wait for room start in work order: validity first, then the order
-    in which they asked. A job that the load alone holds back past the load wait fails. `work settings` shows and
-    sets these values, kept in the database so that every agent's jobs are admitted alike: capacity (default the
-    CPU count minus 2, at least 1), load factor (1.5), load wait (1800 s), log limit, and how long events and logs
-    are kept.
+    jobs' weights plus its own fit the capacity, or when no job runs, and while the machine is not under pressure:
+    the CPU at least idle-min idle (15%, measured over the supervisor's last poll), memory pressure below the memory
+    limit (warning, from the kernel), and, on Linux only, the load average below the CPU count times the load factor
+    (1.5). macOS counts threads that wait on memory and disk in its load average, so there it is shown, not used.
+    Jobs that wait for room start in work order: validity first, then the order in which they asked. A job that the
+    machine's pressure alone holds back past the load wait fails. `work settings` shows and sets these values, kept
+    in the database so that every agent's jobs are admitted alike: capacity (default the CPU count minus 2, at least
+    1), idle min, memory limit, load factor, load wait (1800 s), log limit, and how long events and logs are kept;
+    `work status` shows the signals beside them, and a waiting job's reason names the signal that holds it.
   - Jobs: a detached supervisor starts the command in its own process group with stdin closed, writes its output
     whole to a log, stops it if the log passes the log limit (256 MiB), samples the CPU and memory of its process
     tree every 2 s with ps, and records its true exit status: 127 when the command is missing, 126 when it cannot
@@ -155,6 +158,11 @@ MIGRATIONS = ((
     )""",
     "INSERT INTO settings (id) VALUES (1)",
     "CREATE INDEX events_by_time ON events (time)",
+), (
+    # The machine gate reads idle CPU and memory pressure; the load average stays a gate on Linux only.
+    "ALTER TABLE settings ADD COLUMN idle_min REAL NOT NULL DEFAULT 15 CHECK (idle_min >= 0 AND idle_min < 100)",
+    "ALTER TABLE settings ADD COLUMN memory_limit TEXT NOT NULL DEFAULT 'warning' "
+    "CHECK (memory_limit IN ('warning', 'critical', 'off'))",
 ))
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -219,6 +227,13 @@ def duration(text: str) -> float:
         raise argparse.ArgumentTypeError(f"{text!r} is not a number") from None
     if not (math.isfinite(value) and value >= 0):
         raise argparse.ArgumentTypeError(f"{text!r} is not a finite number, zero or more")
+    return value
+
+
+def percent(text: str) -> float:
+    value = duration(text)
+    if value >= 100:
+        raise argparse.ArgumentTypeError(f"{text!r} is not below 100")
     return value
 
 
@@ -822,24 +837,163 @@ class Settings:
     log_limit: int
     keep_days: float
     pruned: float | None
+    idle_min: float = 15.0
+    memory_limit: str = "warning"
 
 
 def settings_of(conn: sqlite3.Connection) -> Settings:
     row = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
     return Settings(row["capacity"], row["load_factor"], row["load_wait"], row["log_limit"], row["keep_days"],
-                    row["pruned"])
+                    row["pruned"], row["idle_min"], row["memory_limit"])
+
+
+MEMORY_LEVELS = ("normal", "warning", "critical")
+MACHINE_CAUSES = ("memory", "idle", "load")
+
+
+@dataclass
+class Signals:
+    """What the machine says about its own pressure. Any of them may be unknown (None), which holds nothing back.
+
+    idle is the share of CPU time spent idle over the last sample, in percent: the CPU that a new job can have.
+    memory is the kernel's memory pressure, normal, warning or critical. load is the one-minute load average, which
+    gates only where it measures CPU demand (`load_gate`): on Linux. macOS counts threads that wait on memory and
+    disk in it too, so a machine can show a load of 90 while half its CPU is idle."""
+
+    idle: float | None
+    memory: str | None
+    load: float | None
+    load_gate: bool
+
+
+def macos_libc():
+    import ctypes
+    import ctypes.util
+    libc = ctypes.CDLL(ctypes.util.find_library("c"))
+    libc.mach_host_self.restype = ctypes.c_uint
+    return ctypes, libc
+
+
+def macos_cpu_ticks() -> tuple[int, int] | None:
+    """(idle ticks, all ticks) of every CPU since boot, from host_statistics(HOST_CPU_LOAD_INFO)."""
+    try:
+        ctypes, libc = macos_libc()
+        info, count = (ctypes.c_uint * 4)(), ctypes.c_uint(4)  # user, system, idle, nice
+        if libc.host_statistics(libc.mach_host_self(), 3, info, ctypes.byref(count)) != 0:
+            return None
+    except (OSError, AttributeError):
+        return None
+    return info[2], sum(info)
+
+
+def macos_memory_level() -> str | None:
+    """kern.memorystatus_vm_pressure_level: 1 normal, 2 warning, 4 critical."""
+    try:
+        ctypes, libc = macos_libc()
+        value, size = ctypes.c_int(0), ctypes.c_size_t(ctypes.sizeof(ctypes.c_int))
+        if libc.sysctlbyname(b"kern.memorystatus_vm_pressure_level", ctypes.byref(value), ctypes.byref(size),
+                             None, 0) != 0:
+            return None
+    except (OSError, AttributeError):
+        return None
+    return {1: "normal", 2: "warning", 4: "critical"}.get(value.value)
+
+
+def linux_cpu_ticks(stat: str) -> tuple[int, int] | None:
+    """(idle ticks, all ticks) from /proc/stat's first line; waiting on I/O counts as idle CPU."""
+    fields = stat.split("\n", 1)[0].split()
+    if len(fields) < 5 or fields[0] != "cpu":
+        return None
+    try:
+        ticks = [int(field) for field in fields[1:9]]
+    except ValueError:
+        return None
+    return ticks[3] + (ticks[4] if len(ticks) > 4 else 0), sum(ticks)
+
+
+def linux_memory_level(meminfo: str) -> str | None:
+    """From /proc/meminfo: warning below 10% of memory available, critical below 5%."""
+    values = {}
+    for line in meminfo.splitlines():
+        name, _, rest = line.partition(":")
+        parts = rest.split()
+        if parts and parts[0].isdigit():
+            values[name] = int(parts[0])
+    total, available = values.get("MemTotal"), values.get("MemAvailable")
+    if not total or available is None:
+        return None
+    share = available / total
+    return "critical" if share < 0.05 else "warning" if share < 0.10 else "normal"
+
+
+def read_text(path: str) -> str | None:
+    try:
+        with open(path) as handle:
+            return handle.read()
+    except OSError:
+        return None
+
+
+class Gauge:
+    """Reads the machine's signals. Idle CPU is measured between two readings of the CPU ticks: a supervisor that
+    polls once a second measures over that second; a reading sooner than `window` after the last waits out the
+    rest of the window. `prime` takes the first reading early, so that the first measure need not wait."""
+
+    def __init__(self, platform: str = sys.platform, window: float = 0.5):
+        self.platform, self.window = platform, window
+        self.last: tuple[float, tuple[int, int]] | None = None
+
+    def ticks(self) -> tuple[int, int] | None:
+        if self.platform == "darwin":
+            return macos_cpu_ticks()
+        if self.platform.startswith("linux"):
+            stat = read_text("/proc/stat")
+            return linux_cpu_ticks(stat) if stat else None
+        return None
+
+    def memory(self) -> str | None:
+        if self.platform == "darwin":
+            return macos_memory_level()
+        if self.platform.startswith("linux"):
+            meminfo = read_text("/proc/meminfo")
+            return linux_memory_level(meminfo) if meminfo else None
+        return None
+
+    def prime(self) -> None:
+        ticks = self.ticks()
+        if ticks is not None:
+            self.last = (time.monotonic(), ticks)
+
+    def idle(self) -> float | None:
+        now, ticks = time.monotonic(), self.ticks()
+        if ticks is None:
+            return None
+        if self.last is None or now - self.last[0] < self.window:
+            time.sleep(self.window if self.last is None else self.window - (now - self.last[0]))
+            before, (now, ticks) = ticks if self.last is None else self.last[1], (time.monotonic(), self.ticks())
+            if ticks is None:
+                return None
+        else:
+            before = self.last[1]
+        self.last = (now, ticks)
+        idle, total = ticks[0] - before[0], ticks[1] - before[1]
+        return 100.0 * idle / total if total > 0 else None
+
+    def read(self, idle: bool = True) -> Signals:
+        """The signals now; without `idle`, idle CPU is not measured, as when no threshold reads it."""
+        return Signals(self.idle() if idle else None, self.memory(), load_average(), self.platform.startswith("linux"))
 
 
 @dataclass
 class Machine:
     cpus: int
     capacity: float
-    factor: float
-    load: float | None
+    settings: Settings
+    signals: Signals | None
 
     @property
     def load_limit(self) -> float:
-        return self.cpus * self.factor
+        return self.cpus * self.settings.load_factor
 
 
 def load_average() -> float | None:
@@ -849,9 +1003,9 @@ def load_average() -> float | None:
         return None
 
 
-def machine(settings: Settings, load=load_average) -> Machine:
+def machine(settings: Settings, signals: Signals | None = None) -> Machine:
     cpus = os.cpu_count() or 1
-    return Machine(cpus, settings.capacity or max(1, cpus - 2), settings.load_factor, load())
+    return Machine(cpus, settings.capacity or max(1, cpus - 2), settings, signals)
 
 
 def check_weight(weight: float) -> float:
@@ -861,16 +1015,48 @@ def check_weight(weight: float) -> float:
     return weight
 
 
-def admission(weight: float, used: float, capacity: float, load: float | None,
-              load_limit: float) -> tuple[str, str] | None:
-    """Why a job of `weight` cores cannot start now, as (cause, reason), or None when it can: its weight must fit the
-    capacity beside the running jobs' weights `used`, unless no job runs, so that a job heavier than the capacity runs
-    alone rather than never; and the load average must be below `load_limit`."""
+def fits(weight: float, used: float, capacity: float) -> tuple[str, str] | None:
+    """Why a job of `weight` cores does not fit beside the running jobs' weights `used`, or None when it does. A job
+    heavier than the capacity fits when no job runs, so that it runs alone rather than never."""
     if used > 0 and used + weight > capacity + 1e-9:
         return "capacity", f"{used:g} of {capacity:g} cores are taken and this job needs {weight:g}"
-    if load is not None and load >= load_limit:
-        return "load", f"the load average {load:.2f} is at or above {load_limit:.2f}"
     return None
+
+
+def pressure(box: Machine) -> tuple[str, str] | None:
+    """Why the machine itself holds jobs back, as (cause, reason) naming the signal, or None. Memory pressure at or
+    above the settings' memory_limit holds them; so does idle CPU below idle_min; so does, on Linux only, a load
+    average at or above the CPU count times load_factor. An unknown signal holds nothing."""
+    signals, settings = box.signals, box.settings
+    if signals is None:
+        return None
+    if settings.memory_limit != "off" and signals.memory in MEMORY_LEVELS \
+            and MEMORY_LEVELS.index(signals.memory) >= MEMORY_LEVELS.index(settings.memory_limit):
+        return "memory", f"memory pressure is {signals.memory}; jobs start below {settings.memory_limit}"
+    if signals.idle is not None and signals.idle < settings.idle_min:
+        return "idle", f"the CPU is {signals.idle:.0f}% idle; jobs start at {settings.idle_min:g}% idle or more"
+    if signals.load_gate and signals.load is not None and signals.load >= box.load_limit:
+        return "load", f"the load average {signals.load:.2f} is at or above {box.load_limit:.2f}"
+    return None
+
+
+def admission(weight: float, used: float, box: Machine) -> tuple[str, str] | None:
+    """Why a job of `weight` cores cannot start now, as (cause, reason), or None when it can: it must fit the
+    capacity, and the machine must not be under pressure."""
+    return fits(weight, used, box.capacity) or pressure(box)
+
+
+def describe_machine(box: Machine) -> str:
+    """The machine's signals and the thresholds that gate jobs, for status."""
+    signals, settings = box.signals, box.settings
+    idle = f"{signals.idle:.0f}%" if signals and signals.idle is not None else "unknown"
+    memory = signals.memory if signals and signals.memory else "unknown"
+    load = f"{signals.load:.2f}" if signals and signals.load is not None else "unknown"
+    memory_rule = "not a gate" if settings.memory_limit == "off" else f"jobs start below {settings.memory_limit}"
+    load_rule = f"jobs start below {box.load_limit:.2f}" if signals and signals.load_gate else \
+        "not a gate here: it counts threads waiting on memory and disk"
+    return (f"machine: {box.cpus} CPUs; CPU {idle} idle (jobs start at {settings.idle_min:g}% or more); "
+            f"memory pressure {memory} ({memory_rule}); load {load} ({load_rule})")
 
 
 def waiting_order(row: sqlite3.Row) -> tuple:
@@ -911,8 +1097,8 @@ class Supervisor:
     names it the job's owner in the transaction that reserves the job, and it goes on only once that transaction is
     over and it owns the job."""
 
-    def __init__(self, ctx: Context, task_id: str, load=load_average):
-        self.ctx, self.task_id, self.load = ctx, task_id, load
+    def __init__(self, ctx: Context, task_id: str, gauge: Gauge | None = None):
+        self.ctx, self.task_id, self.gauge = ctx, task_id, gauge or Gauge()
         self.me = os.getpid()
         self.child: subprocess.Popen | None = None
         self.stop: int | None = None
@@ -923,6 +1109,7 @@ class Supervisor:
     def run(self) -> int:
         for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
             signal.signal(signum, self.on_signal)
+        self.gauge.prime()  # The handshake and the takeover below overlap the first sample of idle CPU.
         # `run` closes this pipe once its transaction is over, committed or rolled back; a caller that dies closes it
         # too. No stdin at all counts as closed.
         with suppress(OSError):
@@ -950,7 +1137,7 @@ class Supervisor:
 
     def wait_for_capacity(self, conn: sqlite3.Connection) -> sqlite3.Row | None:
         """Polls once a second until the job may start, then marks it running; None when the job ends first:
-        cancelled, swept, stopped by a signal, or held back by the machine's load past the settings' load_wait."""
+        cancelled, swept, stopped by a signal, or held back by the machine's pressure past the settings' load_wait."""
         last_sweep, held_since = time.monotonic(), None
         while True:
             if self.stop is not None:
@@ -961,17 +1148,17 @@ class Supervisor:
                 if row is None or row["state"] != "claimed" or row["owner"] != self.me:
                     return None
                 settings = settings_of(conn)
-                blocked = self.blocker(conn, row, machine(settings, self.load))
+                blocked = self.blocker(conn, row, machine(settings, self.gauge.read(idle=settings.idle_min > 0)))
                 if blocked is None:
                     conn.execute("UPDATE tasks SET state = 'running', started = ?, note = '' WHERE id = ?",
                                  (time.time(), self.task_id))
                     return get_task(conn, self.task_id)
                 cause, reason = blocked
-                # Other jobs end; outside load need not. A job that the load alone holds back gives up in the end.
-                held_since = (held_since or time.monotonic()) if cause == "load" else None
+                # Other jobs end; outside pressure need not. A job that the machine alone holds back gives up at last.
+                held_since = (held_since or time.monotonic()) if cause in MACHINE_CAUSES else None
                 if held_since is not None and time.monotonic() - held_since >= settings.load_wait:
                     note = (f"{reason} for {span(time.monotonic() - held_since)}, the longest a job waits on the "
-                            f"machine's load (work settings --load-wait)")
+                            f"machine's pressure (work settings --load-wait)")
                     conn.execute("UPDATE tasks SET state = 'failed', ended = ?, note = ? WHERE id = ?",
                                  (time.time(), note, self.task_id))
                     record(conn, "failed", task=self.task_id, scope=row["scope"], agent=row["agent"], detail=note)
@@ -992,7 +1179,7 @@ class Supervisor:
         if first["id"] != row["id"]:
             return "ahead", f"job {first['id']} is ahead of it"
         used = conn.execute("SELECT COALESCE(SUM(weight), 0) FROM tasks WHERE state = 'running'").fetchone()[0]
-        return admission(row["weight"], used, box.capacity, box.load, box.load_limit)
+        return admission(row["weight"], used, box)
 
     def execute(self, conn: sqlite3.Connection, row: sqlite3.Row) -> int:
         argv, cwd = json.loads(row["command"]), row["cwd"]
@@ -1919,7 +2106,8 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
     conn = ctx.conn
     changes = {key: value for key, value in (("capacity", args.capacity), ("load_factor", args.load_factor),
                                              ("load_wait", args.load_wait), ("log_limit", args.log_limit),
-                                             ("keep_days", args.keep_days)) if value is not None}
+                                             ("keep_days", args.keep_days), ("idle_min", args.idle_min),
+                                             ("memory_limit", args.memory_limit)) if value is not None}
     if changes:
         with writing(conn):
             for key, value in changes.items():
@@ -1930,13 +2118,18 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
     box = machine(settings)
     if args.json:
         emit({"capacity": box.capacity, "capacity_is_default": settings.capacity is None, "cpus": box.cpus,
+              "idle_min": settings.idle_min, "memory_limit": settings.memory_limit,
               "load_factor": settings.load_factor, "load_limit": box.load_limit, "load_wait": settings.load_wait,
               "log_limit": settings.log_limit, "keep_days": settings.keep_days})
         return 0
     default = " (the default: the CPU count minus 2)" if settings.capacity is None else ""
+    memory_rule = "not a gate" if settings.memory_limit == "off" else f"jobs start below {settings.memory_limit}"
     print(f"capacity: {box.capacity:g} cores{default}\n"
-          f"load factor: {settings.load_factor:g}; jobs start below load {box.load_limit:.2f} on {box.cpus} CPUs\n"
-          f"load wait: {span(settings.load_wait)}; a job that the load alone holds back longer fails\n"
+          f"idle min: {settings.idle_min:g}%; jobs start while the CPU is at least this idle\n"
+          f"memory limit: {settings.memory_limit}; {memory_rule} memory pressure\n"
+          f"load factor: {settings.load_factor:g}; on Linux only, jobs start below load {box.load_limit:.2f} on "
+          f"{box.cpus} CPUs\n"
+          f"load wait: {span(settings.load_wait)}; a job that the machine's pressure alone holds back longer fails\n"
           f"log limit: {settings.log_limit} bytes; a job whose log grows past it is stopped\n"
           f"keep: {settings.keep_days:g} days of events and of the logs of ended tasks")
     return 0
@@ -1947,7 +2140,7 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
     swept = sweep(conn)
     prune(ctx)
     scope = ctx.scope(args.scope)
-    box = machine(settings_of(conn))
+    box = machine(settings_of(conn), Gauge().read())
     now = time.time()
     with reading(conn):
         scopes = scope_rows(conn, scope)
@@ -1963,17 +2156,21 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
     waiting = [row for row in active if row["state"] == "claimed" and row["requested"] is not None]
     tally = {state: totals.get(state, 0) for state in ("queued", "claimed", "running", "done", "failed", "cancelled")}
     tally["ready"] = sum(1 for waits in view.waits.values() if not waits)
-    host = {"cpus": box.cpus, "load": box.load, "load_limit": box.load_limit, "load_factor": box.factor,
-            "capacity": box.capacity, "used": used, "jobs": jobs}
+    signals, settings = box.signals, box.settings
+    host = {"cpus": box.cpus, "idle": signals.idle, "idle_min": settings.idle_min, "memory": signals.memory,
+            "memory_limit": settings.memory_limit, "load": signals.load, "load_gate": signals.load_gate,
+            "load_limit": box.load_limit, "capacity": box.capacity, "used": used, "jobs": jobs,
+            "holds": pressure(box)[1] if pressure(box) else None}
     if args.json:
         emit({"time": iso(now), "scope": scope, "machine": host,
               "scopes": [scope_json(row, counts) for row in scopes],
               "running": [task_json(row, now) for row in running], "waiting": [task_json(row, now) for row in waiting],
               "counts": tally, "swept": swept})
         return 0
-    load = f"{box.load:.2f}" if box.load is not None else "unknown"
-    print(f"machine: {box.cpus} CPUs, load {load} (1 min), jobs start below load {box.load_limit:.2f}; "
-          f"{used:g} of {box.capacity:g} cores taken by {jobs} job(s)")
+    print(describe_machine(box))
+    held = pressure(box)
+    print(f"capacity: {used:g} of {box.capacity:g} cores taken by {jobs} job(s)"
+          + (f"; new jobs wait: {held[1]}" if held else ""))
     if scopes:
         print("scopes:")
         print("\n".join("  " + line for line in scope_tree(scopes, counts)))
@@ -2123,7 +2320,12 @@ def build_parser() -> argparse.ArgumentParser:
                   agent=True)
     sub.add_argument("--capacity", type=capacity_setting,
                      help="cores that running jobs may take together, or auto for the CPU count minus 2")
-    sub.add_argument("--load-factor", type=positive, help="jobs start below this load per CPU (default 1.5)")
+    sub.add_argument("--idle-min", type=percent, metavar="PERCENT",
+                     help="jobs start while the CPU is at least this idle (default 15)")
+    sub.add_argument("--memory-limit", choices=("warning", "critical", "off"),
+                     help="jobs start below this memory pressure (default warning)")
+    sub.add_argument("--load-factor", type=positive,
+                     help="on Linux, jobs start below this load per CPU (default 1.5)")
     sub.add_argument("--load-wait", type=positive, metavar="SECONDS",
                      help="the longest a job waits on the load alone before it fails (default 1800)")
     sub.add_argument("--log-limit", type=counting(1), metavar="BYTES",

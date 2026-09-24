@@ -57,7 +57,8 @@ class InstallTests(unittest.TestCase):
         state = pathlib.Path(self.directory.name) / "state"
         environment = {"HOME": str(self.home), "PATH": "/usr/bin:/bin", "AGENT_WORK_HOME": str(state)}
         # A load limit no machine reaches, so the job starts however busy the machine is.
-        subprocess.run([str(work), "settings", "--load-factor", "1000"], env=environment, capture_output=True,
+        subprocess.run([str(work), "settings", "--load-factor", "1000", "--idle-min", "0",
+                        "--memory-limit", "off"], env=environment, capture_output=True,
                        timeout=120, check=True)
         ran = subprocess.run([str(work), "run", "--", "echo", "linked"], env=environment, capture_output=True,
                              text=True, timeout=120, cwd=self.directory.name)
