@@ -105,6 +105,7 @@ ALLOWED = [
     "find . -name '*.{h,m}'",
     "brew list",
     "brew --prefix openssl@3",
+    "git ls-files | xargs wc -l",
 ]
 
 BLOCKED = [
@@ -236,6 +237,10 @@ BLOCKED = [
     "brew info ./formula.rb",
     "brew list ./formula.rb",
     "brew outdated",
+    # The input of xargs can add options: these run find -delete and git log --output=x.
+    "echo -delete | xargs find .",
+    "echo --output=x | xargs git log",
+    "ls | xargs sed -n 1p",
 ]
 
 # (command, text the refusal must name)

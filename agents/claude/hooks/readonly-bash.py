@@ -33,7 +33,8 @@ How a command is checked:
   - Redirections: input (<, <<, <<<) is fine; output (>, >>, >|, &>, N>) only to /dev/null; an fd duplication such as
     2>&1 is fine.
   - Leading NAME=value assignments are allowed only for the variables in ASSIGNMENTS.
-  - The wrappers command, time, nice, timeout, env and xargs are unwrapped, and the command they run is checked.
+  - The wrappers command, time, nice, timeout, env and xargs are unwrapped, and the command they run is checked. The
+    input of xargs can add any option, so xargs may run only a program in XARGS_PROGRAMS, which no option makes write.
   - The program, the basename of argv[0], must be in the allowlist and pass the rule for it, if it has one.
 
 Check a command by hand:
@@ -238,6 +239,10 @@ XARGS_VALUES = frozenset({"-n", "-L", "-I", "-P", "-s", "-E", "-d"})
 # xargs appends as many words of its input as fit to the command, so the command is checked with two more operands, a
 # second operand being the one that uniq and xxd write, unless -I places the input.
 XARGS_OPERAND = "xargs-input"
+# Programs xargs may run. Its input can add any word to the command, options included (`echo -delete | xargs find .`),
+# so only programs that no option makes write a file or run a program qualify. grep counts, though ugrep installed as
+# grep would not.
+XARGS_PROGRAMS = ALWAYS_ALLOWED | {"grep", "egrep", "fgrep"}
 
 
 class Refusal(Exception):
@@ -628,6 +633,7 @@ WRAPPERS = {
 
 def check_argv(argv: list) -> None:
     """Checks a command's program and arguments, unwrapping each wrapper to check the command it runs."""
+    through_xargs = False
     while argv:
         program = argv[0]
         if "/" in program and not program.startswith("/"):
@@ -635,7 +641,11 @@ def check_argv(argv: list) -> None:
         name = os.path.basename(program)
         if name not in WRAPPERS:
             check_program(name, argv[1:])
+            if through_xargs and name not in XARGS_PROGRAMS:
+                raise Refusal(f"xargs can pass `{name}` any option from its input, one that writes included; only "
+                              "programs no option makes write, such as grep, cat or wc, can run under xargs")
             return
+        through_xargs = through_xargs or name == "xargs"
         argv = WRAPPERS[name](argv[1:])
 
 
