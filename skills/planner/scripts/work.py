@@ -24,10 +24,14 @@ Rules:
     the CPU at least idle-min idle (15%, measured over the supervisor's last poll), memory pressure below the memory
     limit (warning, from the kernel), and, on Linux only, the load average below the CPU count times the load factor
     (1.5). macOS counts threads that wait on memory and disk in its load average, so there it is shown, not used.
-    Jobs that wait for room start in work order: validity first, then the order in which they asked. A job that the
-    machine's pressure alone holds back past the load wait fails. `work settings` shows and sets these values, kept
+    Jobs that wait for room start in work order: validity first, then the order in which they asked, with backfill:
+    a job behind the head may start first if it fits now and in the cores the head leaves free, or if it is small
+    (small weight, 1) while the head has waited less than the backfill wait (300 s) and no validity job is ahead of
+    it. A head past the backfill wait keeps every job behind it, so none starves. A job that the machine's pressure
+    alone holds back past the load wait fails. `work settings` shows and sets these values, kept
     in the database so that every agent's jobs are admitted alike: capacity (default the CPU count minus 2, at least
-    1), idle min, memory limit, load factor, load wait (1800 s), log limit, and how long events and logs are kept;
+    1), idle min, memory limit, load factor, backfill wait, small weight, load wait (1800 s), log limit, and how
+    long events and logs are kept;
     `work status` shows the signals beside them, and a waiting job's reason names the signal that holds it.
   - Jobs: a detached supervisor starts the command in its own process group with stdin closed, writes its output
     whole to a log, stops it if the log passes the log limit (256 MiB), samples the CPU and memory of its process
@@ -163,6 +167,10 @@ MIGRATIONS = ((
     "ALTER TABLE settings ADD COLUMN idle_min REAL NOT NULL DEFAULT 15 CHECK (idle_min >= 0 AND idle_min < 100)",
     "ALTER TABLE settings ADD COLUMN memory_limit TEXT NOT NULL DEFAULT 'warning' "
     "CHECK (memory_limit IN ('warning', 'critical', 'off'))",
+), (
+    # Backfill: a later job may start past a waiting head that cannot, within these bounds.
+    "ALTER TABLE settings ADD COLUMN backfill_wait REAL NOT NULL DEFAULT 300 CHECK (backfill_wait > 0)",
+    "ALTER TABLE settings ADD COLUMN small_weight REAL NOT NULL DEFAULT 1 CHECK (small_weight > 0)",
 ))
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -839,12 +847,14 @@ class Settings:
     pruned: float | None
     idle_min: float = 15.0
     memory_limit: str = "warning"
+    backfill_wait: float = 300.0
+    small_weight: float = 1.0
 
 
 def settings_of(conn: sqlite3.Connection) -> Settings:
     row = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
     return Settings(row["capacity"], row["load_factor"], row["load_wait"], row["log_limit"], row["keep_days"],
-                    row["pruned"], row["idle_min"], row["memory_limit"])
+                    row["pruned"], row["idle_min"], row["memory_limit"], row["backfill_wait"], row["small_weight"])
 
 
 MEMORY_LEVELS = ("normal", "warning", "critical")
@@ -1059,6 +1069,44 @@ def describe_machine(box: Machine) -> str:
             f"memory pressure {memory} ({memory_rule}); load {load} ({load_rule})")
 
 
+def backfill(row: sqlite3.Row, ahead: list[sqlite3.Row], running: list[sqlite3.Row], box: Machine,
+             now: float) -> tuple[str, str] | None:
+    """Why a job behind the head of the line may not start before it, or None when it may, by the EASY rule: only
+    when the head cannot start for want of cores, never when there is room for it. We know
+    no job's run time, so the head's reservation is kept in cores: whatever runs now may end before the head can
+    start, but a job that started while the head waited may still run then. So a job may start past the head when
+    it fits in the free cores now and
+      - it fits in the cores the head leaves free: the head's weight, the weights of the jobs that started while the
+        head waited, and its own, fit the capacity together, so it can never delay the head; or
+      - it is small (at most small_weight cores) and no validity job is ahead of it: it may delay the head, but only
+        until the head has waited backfill_wait.
+    Once the head has waited backfill_wait, nothing starts before it, so no job starves. O(R + A) for R running and
+    A waiting jobs ahead."""
+    head, settings, weight = ahead[0], box.settings, row["weight"]
+    waited = now - head["requested"]
+    if waited >= settings.backfill_wait:
+        return "ahead", (f"job {head['id']} has waited {span(waited)}, past the backfill limit of "
+                         f"{span(settings.backfill_wait)}, so no job starts before it")
+    used = sum(item["weight"] for item in running)
+    if fits(head["weight"], used, box.capacity) is None:
+        return "ahead", f"job {head['id']} is ahead of it, and there is room for it"
+    if used + weight > box.capacity + 1e-9:
+        return "capacity", f"{used:g} of {box.capacity:g} cores are taken and this job needs {weight:g}"
+    since = sum(item["weight"] for item in running if item["started"] is not None
+                and item["started"] >= head["requested"])
+    spare = box.capacity - head["weight"] - since
+    if weight <= spare + 1e-9:
+        return None
+    validity = next((item for item in ahead if item["kind"].lower() in order_tasks.VALIDITY_KINDS), None)
+    if weight <= settings.small_weight + 1e-9 and validity is None:
+        return None
+    reason = (f"job {head['id']} is ahead of it and needs {head['weight']:g} of the {box.capacity:g} cores, which "
+              f"leaves {max(0.0, spare):g} for jobs behind it; this job needs {weight:g}")
+    if validity is not None and weight <= settings.small_weight + 1e-9:
+        reason += f", and job {validity['id']}, validity work, keeps its place"
+    return "ahead", reason
+
+
 def waiting_order(row: sqlite3.Row) -> tuple:
     """A waiting job's place in line, in order_tasks' work order: validity first, then the order in which the jobs
     asked for capacity."""
@@ -1171,14 +1219,19 @@ class Supervisor:
                 last_sweep = time.monotonic()
 
     def blocker(self, conn: sqlite3.Connection, row: sqlite3.Row, box: Machine) -> tuple[str, str] | None:
-        """Why the job cannot start now, as (cause, reason), or None. Waiting jobs start in work order, so a heavy job
-        is not passed forever by lighter ones; a waiting job whose supervisor is gone keeps no place."""
-        waiting = conn.execute("SELECT id, kind, requested, seq, owner FROM tasks "
+        """Why the job cannot start now, as (cause, reason), or None. Waiting jobs start in work order; a waiting job
+        whose supervisor is gone keeps no place. A job behind the head of the line may start before it only as
+        `backfill` allows."""
+        waiting = conn.execute("SELECT id, kind, requested, seq, owner, weight FROM tasks "
                                "WHERE state = 'claimed' AND requested IS NOT NULL").fetchall()
-        first = min((item for item in waiting if item["id"] == row["id"] or exists(item["owner"])), key=waiting_order)
-        if first["id"] != row["id"]:
-            return "ahead", f"job {first['id']} is ahead of it"
-        used = conn.execute("SELECT COALESCE(SUM(weight), 0) FROM tasks WHERE state = 'running'").fetchone()[0]
+        line = sorted((item for item in waiting if item["id"] == row["id"] or exists(item["owner"])), key=waiting_order)
+        running = conn.execute("SELECT weight, started FROM tasks WHERE state = 'running'").fetchall()
+        used = sum(item["weight"] for item in running)
+        if line[0]["id"] != row["id"]:
+            ahead = line[:[item["id"] for item in line].index(row["id"])]
+            held = backfill(row, ahead, running, box, time.time())
+            if held is not None:
+                return held
         return admission(row["weight"], used, box)
 
     def execute(self, conn: sqlite3.Connection, row: sqlite3.Row) -> int:
@@ -2107,7 +2160,9 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
     changes = {key: value for key, value in (("capacity", args.capacity), ("load_factor", args.load_factor),
                                              ("load_wait", args.load_wait), ("log_limit", args.log_limit),
                                              ("keep_days", args.keep_days), ("idle_min", args.idle_min),
-                                             ("memory_limit", args.memory_limit)) if value is not None}
+                                             ("memory_limit", args.memory_limit),
+                                             ("backfill_wait", args.backfill_wait),
+                                             ("small_weight", args.small_weight)) if value is not None}
     if changes:
         with writing(conn):
             for key, value in changes.items():
@@ -2120,7 +2175,8 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
         emit({"capacity": box.capacity, "capacity_is_default": settings.capacity is None, "cpus": box.cpus,
               "idle_min": settings.idle_min, "memory_limit": settings.memory_limit,
               "load_factor": settings.load_factor, "load_limit": box.load_limit, "load_wait": settings.load_wait,
-              "log_limit": settings.log_limit, "keep_days": settings.keep_days})
+              "log_limit": settings.log_limit, "keep_days": settings.keep_days,
+              "backfill_wait": settings.backfill_wait, "small_weight": settings.small_weight})
         return 0
     default = " (the default: the CPU count minus 2)" if settings.capacity is None else ""
     memory_rule = "not a gate" if settings.memory_limit == "off" else f"jobs start below {settings.memory_limit}"
@@ -2130,6 +2186,8 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
           f"load factor: {settings.load_factor:g}; on Linux only, jobs start below load {box.load_limit:.2f} on "
           f"{box.cpus} CPUs\n"
           f"load wait: {span(settings.load_wait)}; a job that the machine's pressure alone holds back longer fails\n"
+          f"backfill wait: {span(settings.backfill_wait)}; a job that waited longer keeps every job behind it\n"
+          f"small weight: {settings.small_weight:g}; a job this light may start past the head for a while\n"
           f"log limit: {settings.log_limit} bytes; a job whose log grows past it is stopped\n"
           f"keep: {settings.keep_days:g} days of events and of the logs of ended tasks")
     return 0
@@ -2326,6 +2384,10 @@ def build_parser() -> argparse.ArgumentParser:
                      help="jobs start below this memory pressure (default warning)")
     sub.add_argument("--load-factor", type=positive,
                      help="on Linux, jobs start below this load per CPU (default 1.5)")
+    sub.add_argument("--backfill-wait", type=positive, metavar="SECONDS",
+                     help="once the head of the line waited this long, no job starts before it (default 300)")
+    sub.add_argument("--small-weight", type=positive, metavar="CORES",
+                     help="a job this light may start past the head until the backfill wait (default 1)")
     sub.add_argument("--load-wait", type=positive, metavar="SECONDS",
                      help="the longest a job waits on the load alone before it fails (default 1800)")
     sub.add_argument("--log-limit", type=counting(1), metavar="BYTES",
