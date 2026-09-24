@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import signal
 import sqlite3
 import subprocess
@@ -594,6 +595,23 @@ class StatusTests(WorkTestCase):
                 self.assertIn(note, task["note"])
         self.open_gate("busy")
         self.assertEqual(self.work("wait", "busy").status, 0)
+
+    def test_a_slow_ps_does_not_make_a_live_job_look_dead(self):
+        self.work("run", "--id", "live", "--timeout", "0", "--", *self.gate("live"), agent="a")
+        self.until(lambda: self.state("live") == "running", "the job to start")
+        # A ps that measures at once but answers 3 s later, as a loaded machine can make it.
+        fake = os.path.join(self.root, "bin")
+        os.makedirs(fake)
+        with open(os.path.join(fake, "ps"), "w") as handle:
+            handle.write(f'#!/bin/sh\noutput=$({shutil.which("ps")} "$@")\nstatus=$?\nsleep 3\n'
+                         'printf "%s\\n" "$output"\nexit $status\n')
+        os.chmod(os.path.join(fake, "ps"), 0o755)
+        slow = self.work("status", env={"PATH": fake + os.pathsep + self.env.get("PATH", "")})
+        self.assertEqual(slow.status, 0, slow.err)
+        self.assertNotIn("swept", slow.out)
+        self.assertEqual(self.state("live"), "running")
+        self.open_gate("live")
+        self.assertEqual(self.work("wait", "live").status, 0, "its own status is recorded")
 
     def test_log_records_each_state_change(self):
         self.work("scope", "set", "proj")

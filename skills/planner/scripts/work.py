@@ -645,6 +645,9 @@ def processes(pids=None) -> dict[int, Process] | None:
             return {}
     command = ["ps", "-o", "pid=,ppid=,pgid=,stat=,%cpu=,rss=,etime="]
     command += ["-A"] if pids is None else ["-p", ",".join(map(str, pids))]
+    # The clock is read before ps measures. Read after, it would place every start later by however long ps and
+    # this process took to answer, and under load a live job would look like a newer process that reused its pid.
+    now, table = time.time(), {}
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=10,
                                 env={**os.environ, "LC_ALL": "C"})
@@ -652,7 +655,6 @@ def processes(pids=None) -> dict[int, Process] | None:
         return None
     if result.returncode != 0 and result.stderr.strip():
         return None
-    now, table = time.time(), {}
     for line in result.stdout.splitlines():
         fields = line.split()
         if len(fields) != 7:
