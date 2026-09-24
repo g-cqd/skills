@@ -19,8 +19,9 @@ exits 0.
 
 Threat model: a guardrail that stops a read-only agent from changing files, git state, processes or the network by
 mistake. It is not a sandbox against a hostile repository: git config that runs a textconv or diff driver, a pager
-the repository sets, or a file named like an option are out of scope. It is an allowlist: a command it does not
-recognise is refused.
+the repository sets, or a file named like an option are out of scope. Two effects are accepted: git status, git grep
+and git log may refresh .git/index, and jq --rawfile and cat read any file the user can read, as these agents read
+files anyway. It is an allowlist: a command it does not recognise is refused.
 
 How a command is checked:
   - The raw text holds no command substitution ($( or backticks) and no process substitution (<( or >( ).
