@@ -85,9 +85,12 @@ Highest leverage first. Most real wins come from the first two.
 ### Benchmarking discipline
 
 Warm up. Run many iterations. Report **median and spread**, never the best run. Fix the inputs,
-isolate machine state, pin versions. Run the benchmark through `work` (`planner`'s `scripts/work.py`)
-with the machine's full weight (`work run --weight <cores> -- …`), so no other agent's job loads the
-machine while it measures. Compare like with like — same data, same build configuration,
+isolate machine state, pin versions. Run the benchmark through `work` (`planner`'s `scripts/work.py`).
+While iterating, compare before and after by interleaving A and B runs in one job (ABAB…) at weight
+2 or 3: both sides see the same background load, so it cancels out. Keep an exclusive run (`--weight`
+equal to the CPU count, so no other agent's job loads the machine) for the final numbers a report
+states: one per task, not one per iteration, since each drains the machine.
+Compare like with like — same data, same build configuration,
 **release mode**. A microbenchmark whose access pattern differs from production is fiction that
 will confidently mislead you.
 

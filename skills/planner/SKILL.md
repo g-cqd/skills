@@ -335,7 +335,10 @@ changes with each new shell, so set `WORK_AGENT` to claim a task in one call and
   agent names are self-declared, and a subagent inherits its parent's. Accept only a command you would run
   yourself. A command typed inline with `work run -- ...` needs no acceptance. Commands are stored as argument
   lists and run without a shell, with stdin closed.
-- **Capacity.** A job weighs the cores it uses (`--weight`, default 1, at most the CPU count). It starts while the
+- **Capacity.** A job weighs the cores it really uses (`--weight`, default 1, at most the CPU count): a build with
+  `--jobs N`, or an ordinary test run on N workers, weighs N, and a single-threaded benchmark 1 or 2. A heavier
+  weight leaves cores idle, and a job as heavy as the CPU count drains the machine before it starts: keep that for
+  the final numbers a report states, once per task (`performance-engineering`). A job starts while the
   running jobs' weights plus its own fit the capacity (default the CPU count minus 2) and the machine is not under
   pressure: the CPU at least 15% idle (`--idle-min`) and memory pressure below warning (`--memory-limit`). The load
   average gates only on Linux (`--load-factor`, default 1.5 per CPU): macOS counts threads waiting on memory and
