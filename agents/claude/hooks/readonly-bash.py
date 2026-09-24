@@ -140,9 +140,10 @@ EXACT_FORMS = {
     "xcode-select": {("-p",), ("--print-path",), ("-v",), ("--version",)},
     "xcodebuild": {("-version",), ("-showsdks",)},
 }
-# Programs allowed only when their first argument is one of these.
+# Programs allowed only when their first argument is one of these. brew's info, deps, uses, leaves and outdated are
+# left out: they can update Homebrew first, and info runs the Ruby of a formula file it is given.
 FIRST_ARGUMENTS = {
-    "brew": frozenset({"list", "info", "--prefix", "--version", "config", "deps", "uses", "leaves", "outdated"}),
+    "brew": frozenset({"--prefix", "--version", "config", "list"}),
     "plutil": frozenset({"-p", "-lint", "-help"}),
 }
 DEFAULTS_ACTIONS = frozenset({"read", "read-type", "domains", "find"})
@@ -827,6 +828,13 @@ def _check_pager(args: list) -> None:
             raise Refusal(f"pager argument `{argument}` runs a pager command at start, which can run a shell")
 
 
+def _check_brew(args: list) -> None:
+    """brew may name a formula only by name: given a path or a .rb file, brew loads it and runs its Ruby."""
+    for argument in args:
+        if "/" in argument or argument.endswith(".rb"):
+            raise Refusal(f"`brew {argument}` names a formula file, whose Ruby brew runs")
+
+
 def _check_gh(args: list) -> None:
     """gh may view and list pull requests, issues, runs, repositories and releases, search, and make GET API calls."""
     group = args[0] if args else ""
@@ -969,6 +977,7 @@ RULES = {
     "less": _check_pager,
     "more": _check_pager,
     "gh": _check_gh,
+    "brew": _check_brew,
 }
 
 

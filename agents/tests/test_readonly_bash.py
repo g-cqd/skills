@@ -103,6 +103,8 @@ ALLOWED = [
     "git log @{u}..HEAD --oneline",
     "git show HEAD@{1}",
     "find . -name '*.{h,m}'",
+    "brew list",
+    "brew --prefix openssl@3",
 ]
 
 BLOCKED = [
@@ -230,6 +232,10 @@ BLOCKED = [
     "rg --hostname-bin /tmp/x --hyperlink-format '{host}' foo",
     "rg --hostname-bin=/tmp/x foo",
     "rg --hyperlink-format=default foo",
+    # brew runs the Ruby of a formula file it is given, and info, deps and outdated can update Homebrew first.
+    "brew info ./formula.rb",
+    "brew list ./formula.rb",
+    "brew outdated",
 ]
 
 # (command, text the refusal must name)
