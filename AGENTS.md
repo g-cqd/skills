@@ -493,7 +493,8 @@ When you find a regression, find its type first:
 Tell the user each item that you add to the queue.
 To order a list of tasks, run `scripts/order_tasks.py` from the `planner` skill. It applies this order, respects the dependencies between tasks, and can plan the work of several agents.
 When other agents work on the same machine, share the queue with `scripts/work.py` from the `planner` skill: `work add` queues a task, and `work next` gives you the next task that no other agent holds.
-Run a command that another agent queued only after you read it with `work show` and accept it with `work accept`.
+Run a queued command only after you read it with `work show` and accept it with `work accept`, with the digest that `work show` prints.
+Do this also for a command queued under your own name. Another agent can use your name.
 
 # WAIT WITHOUT A FIXED SLEEP
 A fixed sleep waits too long or not long enough. Do not wait for a command, a build, a test run, or another agent with a fixed sleep.

@@ -127,6 +127,10 @@ class WorkTestCase(unittest.TestCase):
     def task(self, task_id):
         return self.json("show", task_id)[1]
 
+    def accept(self, task_id, agent):
+        """Reads a task's command as its claimant does, then accepts it with the digest that show printed."""
+        return self.work("accept", task_id, "--digest", self.task(task_id)["digest"], agent=agent)
+
     def database(self, query, *parameters):
         with contextlib.closing(sqlite3.connect(os.path.join(self.home, "work.db"), timeout=30)) as conn:
             conn.row_factory = sqlite3.Row
@@ -271,6 +275,7 @@ class ClaimTests(WorkTestCase):
         self.work("add", "--id", "edit-view", "--files", "src/app/view.swift", agent="alice")
         self.work("add", "--id", "docs", "--files", "docs", agent="alice")
         self.assertEqual(self.json("next", agent="alice")[1]["claimed"]["id"], "edit-app")
+        self.assertEqual(self.accept("edit-app", "alice").status, 0)
         self.assertEqual(self.work("run", "edit-app", "--timeout", "0", agent="alice").status, 124)
         self.until(lambda: self.task("edit-app")["state"] == "running", "the job to start")
         self.assertEqual(self.json("next", agent="bob")[1]["claimed"]["id"], "docs")
@@ -305,30 +310,68 @@ class AcceptTests(WorkTestCase):
         self.work("claim", "touch", agent="alice")
         refused = self.work("run", "touch", agent="alice")
         self.assertEqual(refused.status, 1)
-        self.assertIn("work accept touch", refused.err)
+        self.assertIn("work show touch", refused.err)
         self.assertFalse(os.path.exists(marker), "nothing runs before it is accepted")
         shown = self.task("touch")
         self.assertEqual((shown["author"], shown["agent"], shown["command"]), ("bob", "alice", ["touch", marker]))
         self.assertTrue(shown["needs_acceptance"])
-        self.assertIn("acceptance: needed", self.work("show", "touch").out)
+        self.assertIn(f"acceptance: needed from alice; if the command is right, run "
+                      f"`work accept touch --digest {shown['digest']}`", self.work("show", "touch").out)
         for intruder in ("carol", "bob"):
-            self.assertEqual(self.work("accept", "touch", agent=intruder).status, 1, "only the claimant accepts")
-        accepted = self.work("accept", "touch", agent="alice")
-        self.assertEqual(accepted.status, 0)
-        self.assertIn(f"touch {marker}", accepted.out)
+            self.assertEqual(self.accept("touch", intruder).status, 1, "only the claimant accepts")
+        self.assertEqual(self.work("accept", "touch", agent="alice").status, 2, "the digest is required")
+        accepted = self.accept("touch", "alice")
+        self.assertEqual(accepted.status, 0, accepted.err)
+        self.assertIn("accepted the command of task touch, queued by bob (2 arguments", accepted.out)
         self.assertEqual(self.work("run", "touch", agent="bob").status, 1, "only the claimant runs it")
         self.assertEqual(self.work("run", "touch", agent="alice").status, 0)
         self.assertTrue(os.path.exists(marker))
         self.assertEqual(self.task("touch")["accepted_by"], "alice")
 
-    def test_ones_own_command_needs_no_acceptance(self):
+    def test_a_command_queued_under_ones_own_name_still_needs_acceptance(self):
+        # Names are self-declared, and a subagent inherits its parent's: a command queued under "alice" may come from
+        # a subagent that alice never read.
         marker = os.path.join(self.root, "mine")
         self.work("add", "--id", "mine", "--", "touch", marker, agent="alice")
         self.work("claim", "mine", agent="alice")
-        self.assertFalse(self.task("mine")["needs_acceptance"])
-        self.assertIn("needs no acceptance", self.work("accept", "mine", agent="alice").out)
+        self.assertTrue(self.task("mine")["needs_acceptance"])
+        self.assertEqual(self.work("run", "mine", agent="alice").status, 1)
+        self.assertFalse(os.path.exists(marker))
+        self.assertEqual(self.accept("mine", "alice").status, 0)
         self.assertEqual(self.work("run", "mine", agent="alice").status, 0)
         self.assertTrue(os.path.exists(marker))
+
+    def test_a_command_typed_inline_needs_no_acceptance(self):
+        marker = os.path.join(self.root, "inline")
+        self.assertEqual(self.work("run", "--id", "inline", "--", "touch", marker, agent="alice").status, 0)
+        self.assertTrue(os.path.exists(marker))
+        self.assertEqual(self.task("inline")["accepted_by"], "alice")
+
+    def test_the_digest_binds_the_command_and_its_directory(self):
+        other = os.path.join(self.root, "other")
+        os.makedirs(other)
+        self.work("add", "--id", "here", "--", "make", "clean", agent="bob")
+        self.work("add", "--id", "there", "--cwd", other, "--", "make", "clean", agent="bob")
+        here, there = self.task("here"), self.task("there")
+        self.assertEqual(here["command"], there["command"])
+        self.assertNotEqual(here["digest"], there["digest"], "the same command in another directory differs")
+        self.work("claim", "here", agent="alice")
+        refused = self.work("accept", "here", "--digest", there["digest"], agent="alice")
+        self.assertEqual(refused.status, 1)
+        self.assertIn("does not match", refused.err)
+        self.assertEqual(self.work("accept", "here", "--digest", here["digest"].upper(), agent="alice").status, 0)
+
+    def test_show_puts_the_command_first_and_caps_long_lists(self):
+        files = [f"src/{'deep/' * 30}file{index}.swift" for index in range(1000)]
+        self.work("add", "--id", "wide", "--title", "t" * 1000, "--files", *files, "--", "rm", "-rf", "build",
+                  agent="bob")
+        shown = self.work("show", "wide").out.splitlines()
+        self.assertEqual(shown[:2], ["command of task wide (3 arguments, 12 bytes), queued by bob:", "  rm -rf build"])
+        self.assertTrue(shown[3].startswith("digest: "))
+        listed = next(line for line in shown if line.startswith("files"))
+        self.assertTrue(listed.startswith("files (the first 10 of 1000; all of them with --json): "))
+        self.assertLess(sum(len(line) for line in shown), 6000, "the text view stays short")
+        self.assertEqual(len(self.task("wide")["files"]), 1000)
 
 
 class RunTests(WorkTestCase):

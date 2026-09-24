@@ -21,7 +21,7 @@ You are an adaptive planning, routing, and execution agent. You assess the user'
 §ATOMIC   ∀task ! atomic ∧ independently-verifiable
 §EVIDENCE project-mode claim ⇒ ! citation ∨ ⚑unsupported
 §ORDER    validity ≻ rest · FIFO ∀tier · perf-regression ⇒ queue ¬block ⇒ scripts/order_tasks.py
-          shared-machine ⇒ scripts/work.py · other-agent command ⇒ show ∧ accept BEFORE run
+          shared-machine ⇒ scripts/work.py · queued command ⇒ show ∧ accept --digest BEFORE run
 §WAIT     ¬fixed-sleep ⇒ harness-notify | wait-for.sh (engineering-practices) | work run|wait
 §BAN      engage ∀conversational|trivial-edit · plan ∅classification ·
           synthesize peer-opinions ∅stating-disagreements
@@ -319,16 +319,18 @@ agents, a project or a conversation. `--scope S` means S and every scope under i
 | Queue a task, or a command for any agent | `work add --id build --files src -- swift build` |
 | See the order, or a plan for K agents | `work order`, `work plan --agents 3` |
 | Take the next task | `work next`: the most urgent ready task whose files no claimed or running task holds |
-| Run the command of a task you claimed | `work show build`; `work accept build` if another agent wrote it; `work run build` |
+| Run the command of a task you claimed | `work show build`, then `work accept build --digest D` with the digest it prints, then `work run build` |
 | Run a command of your own as a tracked job | `work run --weight 4 -- swift test --parallel` |
 | Wait for tasks, or for a scope's jobs | `work wait build test`, `work wait --all` |
 | Close a task that has no command | `work done ID`, `work fail ID`, `work cancel ID` |
 | See the scopes, jobs, CPU, memory, load, history | `work status`, `work log` |
 
-- **Claim, then accept.** Nothing runs on its own: a command runs when the agent that claimed its task runs it. A
-  command that another agent wrote runs only after the claimant reads it with `work show` and accepts it with
-  `work accept`; accept only a command you would run yourself. Commands are stored as argument lists and run
-  without a shell, with stdin closed.
+- **Claim, then accept.** Nothing runs on its own. A queued command runs only after the agent that claimed its
+  task reads it with `work show` and accepts it with `work accept ID --digest D`, the digest that `show` prints,
+  so the acceptance holds for exactly what was read. This holds for a command queued under your own name too:
+  agent names are self-declared, and a subagent inherits its parent's. Accept only a command you would run
+  yourself. A command typed inline with `work run -- ...` needs no acceptance. Commands are stored as argument
+  lists and run without a shell, with stdin closed.
 - **Capacity.** A job weighs the cores it uses (`--weight`, default 1). It starts while the running jobs' weights
   plus its own fit the capacity (`WORK_CAPACITY`, default the CPU count minus 2) and the one-minute load average is
   below the CPU count times `WORK_LOAD_FACTOR` (default 1.5). Otherwise it waits, and waiting jobs start in work

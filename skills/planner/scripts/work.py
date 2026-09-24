@@ -15,10 +15,10 @@ Rules:
     overlap no claimed or running task's files: an agent's best response in the congestion game of
     order_tasks.assign, given the tasks the other agents hold. File paths are stored absolute, so tasks in two
     projects conflict only when they change the same files.
-  - Claim, then accept: nothing runs on its own. A command runs when the agent that claimed its task runs it, and a
-    command that another agent wrote runs only after the claimant reads it (`work show`) and accepts it
-    (`work accept`). Commands are stored as argument lists and run without a shell. Acceptance is a review step,
-    not authentication: every agent runs as the same user.
+  - Claim, then accept: nothing runs on its own. A queued command runs only when the agent that claimed its task
+    has read it (`work show`, which prints its digest) and accepted it (`work accept ID --digest D`), whoever queued
+    it: agent names are self-declared, so no name proves who wrote a command. Only a command typed inline with
+    `work run -- ...` needs no acceptance. Commands are stored as argument lists and run without a shell.
   - Capacity: a job weighs the cores it uses (default 1). It starts only while the running jobs' weights plus its
     own fit the capacity ($WORK_CAPACITY, default the CPU count minus 2, at least 1), or when no job runs, and
     while the one-minute load average is below the CPU count times $WORK_LOAD_FACTOR (default 1.5). Jobs that wait
@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import errno
+import hashlib
 import json
 import math
 import os
@@ -246,6 +247,13 @@ def printable(text: str) -> str:
 
 def display(argv: list[str]) -> str:
     return printable(shlex.join(argv))
+
+
+def capped(label: str, items: list[str], limit: int = 10) -> str:
+    """A list for a text view, cut to its first `limit` items, so that a long list cannot flood the view."""
+    if len(items) <= limit:
+        return f"{label}: {', '.join(items)}"
+    return f"{label} (the first {limit} of {len(items)}; all of them with --json): {', '.join(items[:limit])}"
 
 
 def say(message: str) -> None:
@@ -459,10 +467,24 @@ def order_task(row: sqlite3.Row, index: int, after: list[str] = ()) -> order_tas
 
 
 def needs_acceptance(row: sqlite3.Row) -> bool:
-    """Whether the claimant must accept the command before it runs: another agent wrote it and the claimant has not
-    accepted it."""
-    return bool(row["command"]) and row["agent"] is not None and row["author"] != row["agent"] \
-        and row["accepted"] != row["agent"]
+    """Whether the claimant must still accept the command before it runs. Every queued command needs it, whoever
+    queued it: agent names are self-declared, and a subagent inherits its parent's, so "my own command" proves
+    nothing. Only a command typed inline with `work run -- ...` is accepted as it is created."""
+    return bool(row["command"]) and row["agent"] is not None and row["accepted"] != row["agent"]
+
+
+def digest(row: sqlite3.Row) -> str | None:
+    """The SHA-256 of a task's command and directory, which `show` prints and `accept --digest` must repeat, so that
+    an acceptance holds for exactly what was read."""
+    if not row["command"]:
+        return None
+    canonical = json.dumps([json.loads(row["command"]), row["cwd"]], separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("ascii")).hexdigest()
+
+
+def command_size(argv: list[str]) -> str:
+    size = sum(len(item.encode("utf-8", "surrogateescape")) for item in argv) + max(0, len(argv) - 1)
+    return f"{len(argv)} argument{'s' if len(argv) != 1 else ''}, {size} bytes"
 
 
 def waited_of(row: sqlite3.Row, now: float) -> float | None:
@@ -506,7 +528,7 @@ def task_json(row: sqlite3.Row, now: float | None = None) -> dict:
         "accepted_by": row["accepted"], "needs_acceptance": needs_acceptance(row),
         "after": json.loads(row["after"]), "size": row["size"], "value": row["value"],
         "files": json.loads(row["files"]), "weight": row["weight"],
-        "command": json.loads(row["command"]) if row["command"] else None, "cwd": row["cwd"],
+        "command": json.loads(row["command"]) if row["command"] else None, "cwd": row["cwd"], "digest": digest(row),
         "queued": iso(row["queued"]), "claimed": iso(row["claimed"]), "requested": iso(row["requested"]),
         "started": iso(row["started"]), "ended": iso(row["ended"]),
         "waited": rounded(waited_of(row, now)), "ran": rounded(ran_of(row, now)),
@@ -564,8 +586,8 @@ def next_steps(row: sqlite3.Row) -> list[str]:
     if row["command"] is None:
         return [f"close it with `work done {task_id}` or `work fail {task_id}` when it is finished"]
     if needs_acceptance(row):
-        return [f"{task_id} runs a command from {row['author']}: {display(json.loads(row['command']))}",
-                f"read it with `work show {task_id}`; if it is right, `work accept {task_id}`, "
+        return [f"{task_id} runs a command that {row['author']} queued; read it with `work show {task_id}`, and "
+                f"if it is right, accept it with the `work accept {task_id} --digest ...` line that show prints, "
                 f"then `work run {task_id}`"]
     return [f"run it with `work run {task_id}`"]
 
@@ -950,9 +972,9 @@ def reserve(ctx: Context, row: sqlite3.Row, agent: str) -> None:
     if row["agent"] != agent:
         raise refusal(f"task {task_id} is claimed by {row['agent']}; only that agent runs it")
     if needs_acceptance(row):
-        raise refusal(f"task {task_id} runs a command from {row['author']}: {display(json.loads(row['command']))}; "
-                      f"read it with `work show {task_id}`, and accept it with `work accept {task_id}` before you "
-                      "run it")
+        raise refusal(f"task {task_id} runs a command that {row['author']} queued, and you have not accepted it: "
+                      f"read it with `work show {task_id}`, then accept it with the `work accept {task_id} --digest "
+                      "...` line that show prints")
     now = time.time()
     ctx.conn.execute("UPDATE tasks SET requested = ?, owner = ?, owner_since = ?, log = ?, note = '' WHERE id = ?",
                      (now, os.getpid(), now, os.path.join(ctx.logs, f"{task_id}.log"), task_id))
@@ -1257,15 +1279,17 @@ def insert_task(conn: sqlite3.Connection, task_id: str, title: str, kind: str, s
     except order_tasks.InputError as error:
         raise WorkError(str(error)) from None
     now = time.time()
-    claimed = (author, now) if state == "claimed" else (None, None)
+    # A job typed inline with `work run -- ...` is claimed and accepted by its author as it is created: the caller
+    # typed the command itself. A queued command waits for its claimant's acceptance.
+    inline = (author, now, author) if state == "claimed" else (None, None, None)
     conn.execute("INSERT INTO tasks (id, title, kind, scope, author, queued, after, size, value, files, command, cwd, "
-                 "weight, state, agent, claimed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 "weight, state, agent, claimed, accepted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                  (task_id, title, kind, scope, author, now, json.dumps(after), size, value, json.dumps(files),
-                  json.dumps(command) if command is not None else None, cwd, weight, state, *claimed))
+                  json.dumps(command) if command is not None else None, cwd, weight, state, *inline))
     record(conn, "added", task=task_id, scope=scope, agent=author,
            detail=(title or "") + (f" [{display(command)}]" if command else ""))
     if state == "claimed":
-        record(conn, "claimed", task=task_id, scope=scope, agent=author)
+        record(conn, "claimed", task=task_id, scope=scope, agent=author, detail="typed inline with work run")
 
 
 def describe_queued(row: sqlite3.Row, moved_up_for: str | None, waits: list[tuple[str, str]]) -> str:
@@ -1400,29 +1424,31 @@ def cmd_show(ctx: Context, args: argparse.Namespace, command: list[str] | None) 
     if args.json:
         emit(task_json(row, now))
         return 0
-    lines = [f"task {row['id']}" + (f": {printable(row['title'])}" if row["title"] else ""),
-             f"state: {describe_state(row)}",
-             f"kind: {row['kind']}; size {row['size']:g}, value {row['value']:g}, weight {row['weight']:g}",
-             f"scope: {row['scope'] or '-'}; author: {row['author']}; queued {clock(row['queued'])}"]
-    after = json.loads(row["after"])
-    if after:
-        states = states_of(ctx.conn, after)
-        lines.append("after: " + ", ".join(f"{item} ({states.get(item, 'unknown')})" for item in after))
-    files = json.loads(row["files"])
-    if files:
-        lines.append("files: " + ", ".join(printable(path) for path in files))
+    task_id, lines = row["id"], []
     if row["command"]:
-        lines.append(f"command: {display(json.loads(row['command']))}")
-        lines.append(f"directory: {printable(row['cwd'])}")
+        # The command comes first, with its size, so that no long title or file list pushes it past the end of what
+        # a harness shows; the digest binds an acceptance to exactly this command in this directory.
+        argv, sealed = json.loads(row["command"]), digest(row)
+        lines += [f"command of task {task_id} ({command_size(argv)}), queued by {row['author']}:",
+                  f"  {display(argv)}", f"directory: {printable(row['cwd'])}", f"digest: {sealed}"]
         if row["agent"] is None:
-            lines.append(f"acceptance: whoever claims it must accept it before it runs, unless it is {row['author']}")
-        elif row["author"] == row["agent"]:
-            lines.append("acceptance: not needed; the agent that claimed it wrote it")
+            lines.append("acceptance: the agent that claims it accepts it after reading it")
         elif row["accepted"] == row["agent"]:
             lines.append(f"acceptance: accepted by {row['agent']}")
         else:
-            lines.append(f"acceptance: needed; {row['author']} wrote this command, so {row['agent']} runs "
-                         f"`work accept {row['id']}` if it is right")
+            lines.append(f"acceptance: needed from {row['agent']}; if the command is right, run "
+                         f"`work accept {task_id} --digest {sealed}`")
+    lines += [f"task {task_id}" + (f": {printable(row['title'])}" if row["title"] else ""),
+              f"state: {describe_state(row)}",
+              f"kind: {row['kind']}; size {row['size']:g}, value {row['value']:g}, weight {row['weight']:g}",
+              f"scope: {row['scope'] or '-'}; author: {row['author']}; queued {clock(row['queued'])}"]
+    after = json.loads(row["after"])
+    if after:
+        states = states_of(ctx.conn, after)
+        lines.append(capped("after", [f"{item} ({states.get(item, 'unknown')})" for item in after]))
+    files = json.loads(row["files"])
+    if files:
+        lines.append(capped("files", [printable(path) for path in files]))
     if row["log"]:
         lines.append(f"log: {row['log']}")
     if row["requested"] is not None:
@@ -1454,16 +1480,18 @@ def cmd_accept(ctx: Context, args: argparse.Namespace, command: list[str] | None
             raise refusal(f"task {task_id} is {describe_state(row)}; accept a command after you claim its task")
         if row["agent"] != agent:
             raise refusal(f"task {task_id} is claimed by {row['agent']}; only that agent accepts its command")
-        shown = display(json.loads(row["command"]))
-        if row["author"] == agent:
-            message = f"task {task_id} runs your own command, which needs no acceptance: {shown}"
-        elif row["accepted"] == agent:
-            message = f"you accepted the command of task {task_id} already: {shown}"
+        sealed = digest(row)
+        if args.digest.strip().lower() != sealed:
+            raise refusal(f"the digest does not match the command of task {task_id} in its directory; read it "
+                          f"with `work show {task_id}`, and accept it with the digest that show prints")
+        size = command_size(json.loads(row["command"]))
+        if row["accepted"] == agent:
+            message = f"you accepted the command of task {task_id} already ({size})"
         else:
             conn.execute("UPDATE tasks SET accepted = ? WHERE id = ?", (agent, task_id))
-            record(conn, "accepted", task=task_id, scope=row["scope"], agent=agent, detail=shown)
-            message = (f"accepted the command of task {task_id} from {row['author']}: {shown} "
-                       f"(in {printable(row['cwd'])})")
+            record(conn, "accepted", task=task_id, scope=row["scope"], agent=agent, detail=f"digest {sealed}")
+            message = (f"accepted the command of task {task_id}, queued by {row['author']} ({size}); "
+                       f"run it with `work run {task_id}`")
         row = get_task(conn, task_id)
     if args.json:
         emit(task_json(row))
@@ -1695,9 +1723,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = command("next", cmd_next, "claim the most urgent ready task whose files are free", scope=True, agent=True)
     sub.add_argument("--policy", choices=order_tasks.POLICIES, default="fifo")
-    for name, handler, help_text in (("claim", cmd_claim, "claim this task"),
-                                     ("accept", cmd_accept, "accept the command of a task you claimed")):
-        command(name, handler, help_text, agent=True).add_argument("id")
+    command("claim", cmd_claim, "claim this task", agent=True).add_argument("id")
+    sub = command("accept", cmd_accept, "accept the command of a task you claimed, after reading it with show",
+                  agent=True)
+    sub.add_argument("id")
+    sub.add_argument("--digest", required=True, help="the digest that `work show ID` prints for the command")
     command("show", cmd_show, "every field of a task, its command included").add_argument("id")
 
     sub = command("run", cmd_run, "run the command of a task you claimed, or a command of your own after --",
