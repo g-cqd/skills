@@ -12,8 +12,10 @@ A Claude Code PreToolUse hook for the Bash tool, wired in an agent's frontmatter
 
 Claude Code passes the call as JSON on stdin: {"tool_name": "Bash", "tool_input": {"command": "..."}}.
 Exit status 0 allows the call. Exit status 2 blocks it, and the one line on stderr tells the agent why. Any other
-status lets the call through, so the hook fails closed by itself: malformed JSON, a missing, empty or unparsable
-command, and any unexpected error all exit 2. A tool other than Bash exits 0.
+status lets the call through, so the hook fails closed by itself: malformed JSON, a missing, empty, unparsable or
+overlong command, and any unexpected error all exit 2, as does a check still running when a watchdog fires a few
+seconds in, since a hook that hangs until Claude Code's own timeout lets the call through. A tool other than Bash
+exits 0.
 
 Threat model: a guardrail that stops a read-only agent from changing files, git state, processes or the network by
 mistake. It is not a sandbox against a hostile repository: git config that runs a textconv or diff driver, a pager
@@ -46,9 +48,14 @@ import json
 import os
 import re
 import shlex
+import signal
 import sys
 
 ADVICE = "hand the change back to your caller instead"
+# Bounds on the hook's own work: the longest command it checks, in characters, and the seconds before its watchdog
+# blocks the call.
+MAX_COMMAND_LENGTH = 64 * 1024
+WATCHDOG_SECONDS = 3
 
 # MARK: - Policy: shell syntax
 
@@ -143,10 +150,13 @@ LIPO_QUERIES = frozenset({"-info", "-detailed_info", "-archs", "-verify_arch"})
 # end with e and its script (-ne '5p'); long options map to whether they make sed quiet.
 SED_CLUSTER = re.compile(r"-([nEru]*)(?:e(.*))?", re.S)
 SED_LONG_OPTIONS = {"--quiet": True, "--silent": True, "--regexp-extended": False, "--unbuffered": False}
-# A sed script of line addresses and p, =, or q commands only: no w, r, e, s, or a block.
+# A sed script may hold only commands that print: a line address or range, an optional !, then p, = or q; no w, r, e,
+# s, or block. The script is split on ; and newlines, and each command is matched alone, with whitespace allowed only
+# next to a literal character, so a match takes linear time: one pattern for the whole script backtracked
+# exponentially. A regular expression address that holds a ; is refused, as the split cuts it.
 _SED_ADDRESS = r"(?:\d+(?:~\d+)?|\$|/(?:[^/\\\n]|\\.)*/I?)"
-_SED_COMMAND = rf"(?:{_SED_ADDRESS}(?:\s*,\s*(?:{_SED_ADDRESS}|[+~]\d+))?)?\s*!?\s*(?:p|=|q\d*)"
-SED_SCRIPT = re.compile(rf"\s*{_SED_COMMAND}(?:\s*[;\n]\s*{_SED_COMMAND})*\s*;?\s*")
+SED_COMMAND = re.compile(rf"(?:{_SED_ADDRESS}(?:\s*,\s*(?:{_SED_ADDRESS}|[+~]\d+))?)?\s*(?:!\s*)?(?:p|=|q\d*)")
+SED_SEPARATOR = re.compile(r"[;\n]")
 XCRUN_QUERIES = frozenset({"--show-sdk-path", "--show-sdk-version", "--show-sdk-platform-path", "--version"})
 XCRUN_FIND = frozenset({"--find", "-find", "-f"})
 XCRUN_SDK = frozenset({"--sdk", "-sdk"})
@@ -716,7 +726,8 @@ def _check_sed(args: list) -> None:
             raise Refusal("`sed` has no script")
         scripts.append(operands.pop(0))
     for script in scripts:
-        if not SED_SCRIPT.fullmatch(script):
+        commands = [command.strip() for command in SED_SEPARATOR.split(script)]
+        if not any(commands) or not all(SED_COMMAND.fullmatch(command) for command in commands if command):
             raise Refusal(f"sed script `{script}` does more than print lines")
 
 
@@ -965,6 +976,8 @@ RULES = {
 
 def check_command(command: str) -> None:
     """Raises Refusal unless every simple command in `command` is read-only."""
+    if len(command) > MAX_COMMAND_LENGTH:
+        raise Refusal(f"the command is longer than {MAX_COMMAND_LENGTH} characters, the most this hook checks")
     check_raw(command)
     for simple in split_commands(tokenize(command)):
         check_simple(simple)
@@ -997,10 +1010,27 @@ def main() -> int:
     return 0
 
 
-if __name__ == "__main__":
+def _watchdog(signum: int, frame: object) -> None:
+    """Blocks a check still running WATCHDOG_SECONDS after run() armed the alarm. It writes with os.write and leaves
+    with os._exit, which work wherever the check was interrupted."""
     try:
-        status = main()
+        os.write(2, f"read-only agent: the check took more than {WATCHDOG_SECONDS} s; {ADVICE}\n".encode())
+    finally:
+        os._exit(2)
+
+
+def run() -> int:
+    """main() under the watchdog, with any error it raises turned into a refusal."""
+    signal.signal(signal.SIGALRM, _watchdog)
+    signal.alarm(WATCHDOG_SECONDS)
+    try:
+        return main()
     # Any failure must block: an exit status other than 0 or 2 would let the call through.
     except BaseException as error:
-        status = block(f"the hook failed ({type(error).__name__}: {error})")
-    sys.exit(status)
+        return block(f"the hook failed ({type(error).__name__}: {error})")
+    finally:
+        signal.alarm(0)
+
+
+if __name__ == "__main__":
+    sys.exit(run())

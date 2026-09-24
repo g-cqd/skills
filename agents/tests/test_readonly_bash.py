@@ -14,16 +14,16 @@ PREFIX = "read-only agent:"
 ADVICE = "hand the change back to your caller instead"
 
 
-def run_hook(stdin):
+def run_hook(stdin, timeout=30):
     """Runs the hook with `stdin`; returns (exit status, stderr)."""
     result = subprocess.run(
-        [sys.executable, SCRIPT], input=stdin, capture_output=True, text=True, timeout=30)
+        [sys.executable, SCRIPT], input=stdin, capture_output=True, text=True, timeout=timeout)
     return result.returncode, result.stderr
 
 
-def run_bash(command):
+def run_bash(command, timeout=30):
     """Runs the hook on a Bash call with `command`."""
-    return run_hook(json.dumps({"tool_name": "Bash", "tool_input": {"command": command}}))
+    return run_hook(json.dumps({"tool_name": "Bash", "tool_input": {"command": command}}), timeout)
 
 
 ALLOWED = [
@@ -288,6 +288,43 @@ class FailClosedTests(unittest.TestCase):
                 status, errors = run_hook(stdin)
                 self.assertEqual(status, 2)
                 self.assertTrue(errors.startswith(PREFIX), errors)
+
+
+# Loads the hook, makes its check sleep past a one-second watchdog, and runs it as the script does.
+WATCHDOG_PROBE = """
+import importlib.util, sys, time
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location("hook", sys.argv[1])
+hook = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hook)
+hook.WATCHDOG_SECONDS = 1
+hook.main = lambda: time.sleep(20) or 0
+sys.exit(hook.run())
+"""
+
+
+class BoundedWorkTests(unittest.TestCase):
+    def test_a_long_sed_script_is_checked_in_linear_time(self):
+        try:
+            refused, errors = run_bash("sed -n '" + "p ; " * 30 + "X' f", timeout=10)
+            allowed, _ = run_bash("sed -n '" + "1p ; " * 5000 + "$p' f", timeout=10)
+        except subprocess.TimeoutExpired:
+            self.fail("the sed script check did not finish")
+        self.assertEqual(refused, 2)
+        self.assertIn("does more than print lines", errors)
+        self.assertEqual(allowed, 0)
+
+    def test_a_command_over_the_size_limit_is_refused(self):
+        status, errors = run_bash("ls " + "a" * 64 * 1024)
+        self.assertEqual(status, 2)
+        self.assertIn("longer than", errors)
+
+    def test_a_check_that_runs_past_the_watchdog_is_blocked(self):
+        result = subprocess.run(
+            [sys.executable, "-c", WATCHDOG_PROBE, SCRIPT], capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 2)
+        self.assertTrue(result.stderr.startswith(PREFIX), result.stderr)
+        self.assertIn("took more than", result.stderr)
 
 
 class OtherToolTests(unittest.TestCase):
