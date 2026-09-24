@@ -700,6 +700,23 @@ class MachineGateTests(WorkTestCase):
         self.assertEqual(gauge.idle(), 0.0, "the next measures since the last")
         self.assertIsNone(work.Gauge(platform="plan9").read().idle)
 
+    def test_the_gauge_reads_again_while_the_ticks_have_not_advanced(self):
+        class Ticks(work.Gauge):
+            def __init__(self, readings):
+                super().__init__(platform="test", window=0.001)
+                self.readings, self.count = iter(readings), 0
+
+            def ticks(self):
+                self.count += 1
+                return next(self.readings)
+
+        gauge = Ticks([(100, 1000), (100, 1000), (100, 1000), (500, 1800)])
+        self.assertEqual(gauge.idle(), 50.0, "a repeat within one kernel step is read again until the ticks advance")
+        self.assertEqual(gauge.count, 4)
+        gauge = Ticks([(100, 1000)] * 5)
+        self.assertIsNone(gauge.idle(), "ticks that never advance leave idle CPU unknown")
+        self.assertEqual(gauge.count, 5, "after the first two readings and three more windows")
+
     @unittest.skipUnless(sys.platform == "darwin", "macOS signals")
     def test_macos_signals_are_read_from_the_kernel(self):
         signals = work.Gauge().read()

@@ -947,10 +947,12 @@ def read_text(path: str) -> str | None:
 class Gauge:
     """Reads the machine's signals. Idle CPU is measured between two readings of the CPU ticks: a supervisor that
     polls once a second measures over that second; a reading sooner than `window` after the last waits out the
-    rest of the window. `prime` takes the first reading early, so that the first measure need not wait."""
+    rest of the window. `prime` takes the first reading early, so that the first measure need not wait. The kernel
+    updates the ticks in steps (about a second on macOS), so two readings can fall within one step: then the gauge
+    reads again, up to `retries` more windows, before it reports idle CPU as unknown."""
 
-    def __init__(self, platform: str = sys.platform, window: float = 0.5):
-        self.platform, self.window = platform, window
+    def __init__(self, platform: str = sys.platform, window: float = 0.5, retries: int = 3):
+        self.platform, self.window, self.retries = platform, window, retries
         self.last: tuple[float, tuple[int, int]] | None = None
 
     def ticks(self) -> tuple[int, int] | None:
@@ -985,6 +987,13 @@ class Gauge:
                 return None
         else:
             before = self.last[1]
+        for _ in range(self.retries):
+            if ticks[1] != before[1]:
+                break
+            time.sleep(self.window)
+            now, ticks = time.monotonic(), self.ticks()
+            if ticks is None:
+                return None
         self.last = (now, ticks)
         idle, total = ticks[0] - before[0], ticks[1] - before[1]
         return 100.0 * idle / total if total > 0 else None
