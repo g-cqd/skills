@@ -222,6 +222,10 @@ BLOCKED = [
     "swift package describe",
     "swift package describe --type json",
     "swift package dump-package",
+    # xargs appends several words of its input, and uniq and xxd write their second operand.
+    "ls | xargs -n2 uniq",
+    "ls | xargs -n2 xxd",
+    "ls | xargs uniq",
 ]
 
 # (command, text the refusal must name)

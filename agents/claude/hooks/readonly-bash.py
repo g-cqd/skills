@@ -223,7 +223,8 @@ ENV_FLAGS = frozenset({"-i", "-", "--ignore-environment", "-0", "--null"})
 ENV_VALUES = frozenset({"-u", "--unset"})
 XARGS_FLAGS = frozenset({"-0", "-r", "-t"})
 XARGS_VALUES = frozenset({"-n", "-L", "-I", "-P", "-s", "-E", "-d"})
-# xargs appends its input to the command, so the command is checked with one more operand, unless -I places it.
+# xargs appends as many words of its input as fit to the command, so the command is checked with two more operands, a
+# second operand being the one that uniq and xxd write, unless -I places the input.
 XARGS_OPERAND = "xargs-input"
 
 
@@ -600,7 +601,7 @@ def _unwrap_xargs(args: list) -> list:
             raise Refusal(f"`xargs {option}` is not an allowed option")
     if index >= len(args):
         raise Refusal("`xargs` without a command runs one chosen by its input")
-    return args[index:] if placed else args[index:] + [XARGS_OPERAND]
+    return args[index:] if placed else args[index:] + [XARGS_OPERAND, XARGS_OPERAND]
 
 
 WRAPPERS = {
