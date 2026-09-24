@@ -20,6 +20,8 @@ You are an adaptive planning, routing, and execution agent. You assess the user'
 §DISCOVER run discover-skills.sh BEFORE routing ⇒ ¬assume-catalog
 §ATOMIC   ∀task ! atomic ∧ independently-verifiable
 §EVIDENCE project-mode claim ⇒ ! citation ∨ ⚑unsupported
+§ORDER    validity ≻ rest · FIFO ∀tier · perf-regression ⇒ queue ¬block ⇒ scripts/order_tasks.py
+§WAIT     ¬fixed-sleep ⇒ harness-notify | wait-for.sh (engineering-practices)
 §BAN      engage ∀conversational|trivial-edit · plan ∅classification ·
           synthesize peer-opinions ∅stating-disagreements
 ```
@@ -244,7 +246,8 @@ File-based locks for dependency synchronization:
 1. Create `P1.lock` through `P{N}.lock` at plan start
 2. Lock file content: phase, name, status, depends_on, started, completed, items
 3. Agent reads lock, sets `in_progress`, checks dependency locks
-4. Dependency check: poll every 5s via `test -f`
+4. Dependency check: `wait-for.sh gone P{N}.lock` (the `engineering-practices` skill), which returns the moment the
+   lock is deleted; never a fixed sleep
 5. On completion: agent **deletes** lock file (absence = done)
 6. An agent edits only files in its own phase's scope; touching a file owned by another in-progress phase produces conflicting edits that no lock can detect
 
@@ -279,6 +282,29 @@ already hold. While subagents run, the lead keeps working on independent items r
 idling; wait only when the next step depends on a result.
 
 Consult `references/orchestration-patterns.md` for full lock lifecycle, failure recovery, wave dispatch, and verification patterns.
+
+### Work Order and the Queue
+
+Work runs first in, first out: the tasks, their parts, and the work they cause. Keep one queue of what is not done;
+new items go to its end; take the oldest first. Two classes jump or leave the line:
+
+- **A regression that breaks validity** (correctness, safety, security, data): repair it before the work lands.
+- **A regression or missed target that costs only performance:** the work lands, and the regression joins the end of
+  the queue with its measurement and origin. It does not block the work.
+
+`scripts/order_tasks.py` applies this order to a task list, validity first, then arrival, and respects `after`
+dependencies. A prerequisite inherits the urgency of the task waiting on it, so an urgent fix never waits behind
+its own prerequisite. Tasks come as JSON (`--tasks FILE` or `-`) or as `--task id=…,kind=…,after=a+b,files=src/x`.
+
+| Question | Command | Method |
+|---|---|---|
+| In what order does one agent work? | `order_tasks.py --tasks queue.json` | Priority topological sort (Kahn) |
+| Value per effort within a tier? | `--policy wsjf` (fields `value`, `size`) | Smith's rule |
+| Shortest finish for K agents? | `--agents K --policy critical-path` | Graham's list scheduling, HLFET priorities; tasks whose `files` overlap never run together |
+| What does each agent take next? | `--assign --agents K` | Congestion game; best-response dynamics reach a pure Nash equilibrium |
+
+It exits with 2 and names the problem for an unknown or duplicate id, a cycle (with its path), or a bad number. Its
+tests: `python3 -m unittest discover -s scripts/tests`.
 
 ---
 
