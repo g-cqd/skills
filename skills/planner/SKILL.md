@@ -322,7 +322,7 @@ agents, a project or a conversation. `--scope S` means S and every scope under i
 | Run the command of a task you claimed | `work show build`, then `work accept build --digest D` with the digest it prints, then `work run build` |
 | Run a command of your own as a tracked job | `work run --weight 4 -- swift test --parallel` |
 | Wait for tasks, or for a scope's jobs | `work wait build test`, `work wait --all` |
-| Close a task that has no command | `work done ID`, `work fail ID`, `work cancel ID` |
+| Close a task you claimed, or queued and nobody claimed | `work done ID`, `work fail ID` (no command), `work cancel ID` |
 | See the scopes, jobs, CPU, memory, load, history | `work status`, `work log` |
 | See or set the capacity and limits all jobs share | `work settings`, `work settings --capacity 6` |
 

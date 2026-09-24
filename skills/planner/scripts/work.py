@@ -1435,7 +1435,8 @@ def describe_queued(row: sqlite3.Row, moved_up_for: str | None, waits: list[tupl
 
 def cmd_order(ctx: Context, args: argparse.Namespace, command: list[str] | None) -> int:
     scope = ctx.scope(args.scope)
-    view = queue(ctx.conn, scope)
+    with reading(ctx.conn):
+        view = queue(ctx.conn, scope)
     ordered = order_tasks.order(view.graph, args.policy)
     _, source = order_tasks.priorities(view.graph, args.policy)
     if args.json:
@@ -1454,7 +1455,8 @@ def cmd_order(ctx: Context, args: argparse.Namespace, command: list[str] | None)
 
 def cmd_plan(ctx: Context, args: argparse.Namespace, command: list[str] | None) -> int:
     scope = ctx.scope(args.scope)
-    view = queue(ctx.conn, scope)
+    with reading(ctx.conn):
+        view = queue(ctx.conn, scope)
     outside = {task_id: [(item, state) for item, state in waits if item not in view.rows]
                for task_id, waits in view.waits.items()}
     outside = {task_id: waits for task_id, waits in outside.items() if waits}
@@ -1721,6 +1723,11 @@ def cmd_close(ctx: Context, args: argparse.Namespace, command: list[str] | None)
         if row["state"] == "running":
             raise refusal(f"task {task_id} runs as process {row['pid']}, and its supervisor records how it ends; to "
                           f"stop it, `kill -TERM -- -{row['pid']}`")
+        if row["state"] == "queued" and row["author"] != agent:
+            raise refusal(f"task {task_id} was queued by {row['author']}; until an agent claims it, only "
+                          f"{row['author']} closes it")
+        if row["state"] == "claimed" and row["agent"] != agent:
+            raise refusal(f"task {task_id} is claimed by {row['agent']}; only that agent closes it")
         if row["command"] is not None and state != "cancelled":
             raise refusal(f"task {task_id} has a command: run it with `work run {task_id}`, or cancel it")
         conn.execute("UPDATE tasks SET state = ?, ended = ?, note = ? WHERE id = ?",
@@ -1920,9 +1927,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_argument("--timeout", type=duration, default=DEFAULT_TIMEOUT, help="default 570 s; then exit 124")
     sub.add_argument("--tail", type=counting(0), default=5, help="log lines to print for each job (default 5)")
 
-    for name, help_text in (("done", "close a task without a command as done"),
-                            ("fail", "close a task without a command as failed"),
-                            ("cancel", "cancel a task that does not run")):
+    mine = "one you claimed, or queued and nobody claimed"
+    for name, help_text in (("done", f"close a task without a command as done: {mine}"),
+                            ("fail", f"close a task without a command as failed: {mine}"),
+                            ("cancel", f"cancel a task that does not run: {mine}")):
         sub = command(name, cmd_close, help_text, agent=True)
         sub.add_argument("id")
         sub.add_argument("--note", help="why")
