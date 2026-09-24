@@ -29,7 +29,8 @@ one is `planner`.
 §GREEN    ∀refactor-step tests-green · ∅tests ⇒ characterize-first
 §SMALL    PR ≤ ~15-min-review · slice-by-behavior ¬by-file-type
 §SCOPE    boy-scout ∈ scope-only ⇒ rest ⇒ follow-up-ticket
-§CLOSE    ¬report-done BEFORE §6 gate ∀5-steps
+§CLOSE    ¬report-done BEFORE §5 gate ∀5-steps
+§WAIT     long-work ⇒ harness-notify | scripts/wait-for.sh ⇒ ¬fixed-sleep
 §DEPS     add-dependency ∷ architectural-decision ¬convenience
 §BAN      big-bang-rewrite · drive-by-churn · flag ∅removal-ticket ·
           "tests pass" as done-evidence
@@ -112,7 +113,35 @@ Before reporting **any** task as done:
 
 Step 1 catches the most expensive class of failure: a correct implementation of the wrong thing.
 
-## 6. Rationalizations
+## 6. Waiting on long-running work
+
+A fixed `sleep` before checking a build, a test run or a delegated job either wastes the difference or checks
+too early, and a loop of long sleeps compounds both. Wait on the event, not the clock:
+
+1. **Let the harness tell you.** When the harness runs a command in the background and reports its end, as
+   Claude Code does for background commands and subagents, start it that way and carry on with other work, or
+   end the turn. The notice arrives the moment it finishes.
+2. **Otherwise wait on the condition.** `scripts/wait-for.sh` returns as soon as its condition holds, and stops at
+   a limit under the tool call's own (570 s by default):
+   ```sh
+   wait-for.sh run tests.status tests.log -- swift test --jobs 2   # start it, then wait for it
+   wait-for.sh file tests.status                                   # exited 124, still running: wait again
+   wait-for.sh pid 4242                                            # a process you started elsewhere
+   wait-for.sh log build.log 'Build complete'                      # a line in a log
+   wait-for.sh gone P2.lock                                        # a lock file its phase deletes
+   ```
+   It exits with the command's own status, or 124 when the limit passes first. Call it again; never lengthen a
+   sleep instead.
+3. **Keep the output whole and the status true.** Never pipe a command into `tail`, `head` or `grep` when you need
+   its result: the pipe reports the last command's status, so a failed build reads as success, and a cut output hides
+   the result lines. `wait-for.sh run` keeps the full output in its log, prints the last lines (`--tail N`) and exits
+   with the command's own status: 127 when the command is missing, 128 plus the signal when a signal killed it. If
+   the command must be a pipeline, run it as `bash -c 'set -o pipefail; …'`.
+4. **Prefer the exit to a log line.** Some tools buffer output sent to a file, Swift's test runner among them, so a
+   `log` wait can lag the work; `run` and `pid` wait on the process itself.
+5. **Report the time the work took,** from the line `wait-for.sh` prints, not the time you waited.
+
+## 7. Rationalizations
 
 | If you think… | Reality |
 |---|---|
@@ -122,6 +151,7 @@ Step 1 catches the most expensive class of failure: a correct implementation of 
 | "One big PR is more efficient" | Review quality collapses; defects hide in bulk |
 | "We'll remove the feature flag later" | Without a ticket, later is never |
 | "A quick library will save time" | You just adopted its bugs, CVEs, and upgrade train |
+| "I'll sleep ten minutes, it should be done by then" | It was done in two, or it needs twelve. Wait on the event |
 
 ## Boundaries
 
