@@ -74,8 +74,10 @@ class WorkTestCase(unittest.TestCase):
         os.makedirs(self.project)
         self.env = {key: value for key, value in os.environ.items() if not key.startswith("WORK_")}
         self.env["AGENT_WORK_HOME"] = self.home
-        # A fixed capacity and a load limit no machine reaches keep the tests independent of the machine's load.
-        self.assertEqual(self.call("settings", "--capacity", "16", "--load-factor", "1000").status, 0)
+        # A fixed capacity and machine gates that hold nothing keep the tests independent of the machine's state;
+        # the tests of the gates themselves feed them fake signals.
+        lenient = ("--load-factor", "1000", "--idle-min", "0", "--memory-limit", "off")
+        self.assertEqual(self.call("settings", "--capacity", "16", *lenient).status, 0)
 
     def tearDown(self):
         self.stop_jobs()
@@ -543,54 +545,6 @@ class CapacityTests(WorkTestCase):
         started, ended = self.started(), self.database("SELECT ended FROM tasks WHERE id = 'heavy'")[0]["ended"]
         self.assertGreaterEqual(started["second"], ended)
 
-    def test_outside_load_holds_a_job_back_and_fails_it_after_the_load_wait(self):
-        self.call("settings", "--load-factor", "1.5", "--load-wait", "0.5")
-        for task_id in ("heavy", "light"):
-            self.work("add", "--id", task_id, "--", "true", agent="a")
-            self.work("claim", task_id, agent="a")
-            self.accept(task_id, "a")
-        ctx = work.Context(self.env)
-        self.addCleanup(ctx.close)
-        busy, idle = os.cpu_count() * 1.5, 0.0
-        for task_id, load in (("heavy", busy), ("light", idle)):
-            with work.writing(ctx.conn):
-                work.reserve(ctx.conn, work.get_task(ctx.conn, task_id), "a", os.getpid(), "unused.log")
-            outcome = self.wait_for_capacity(task_id, load)
-            if task_id == "heavy":
-                self.assertIsNone(outcome)
-            else:
-                self.assertEqual(outcome["state"], "running")
-        heavy = self.task("heavy")
-        self.assertEqual((heavy["state"], heavy["started"], heavy["status"]), ("failed", None, None))
-        self.assertIn(f"the load average {busy:.2f} is at or above {busy:.2f}", heavy["note"])
-        self.assertIn("the longest a job waits on the machine's load", heavy["note"])
-
-    def wait_for_capacity(self, task_id, load):
-        """Plays the supervisor of a job this process owns, with a fake load average for the machine's, in a thread
-        with its own connection, so that a wait that never ends fails the test instead of hanging it."""
-        outcome = []
-
-        def supervise():
-            ctx = work.Context(self.env)
-            try:
-                outcome.append(work.Supervisor(ctx, task_id, load=lambda: load).wait_for_capacity(ctx.conn))
-            finally:
-                ctx.close()
-
-        thread = threading.Thread(target=supervise, daemon=True)
-        thread.start()
-        thread.join(timeout=20)
-        self.assertFalse(thread.is_alive(), f"the wait of job {task_id} ended")
-        return outcome[0]
-
-    def test_admission(self):
-        self.assertIsNone(work.admission(2, 3, 6, 1.0, 12.0))
-        self.assertEqual(work.admission(2, 5, 6, 1.0, 12.0),
-                         ("capacity", "5 of 6 cores are taken and this job needs 2"))
-        self.assertIsNone(work.admission(8, 0, 6, 1.0, 12.0), "a job heavier than the capacity runs alone")
-        self.assertEqual(work.admission(1, 0, 6, 12.0, 12.0)[0], "load")
-        self.assertIsNone(work.admission(1, 0, 6, None, 12.0), "an unknown load does not block")
-
     def test_settings_hold_the_capacity_and_limits_for_every_agent(self):
         self.assertEqual(self.json("settings")[1]["capacity"], 16)
         cpus = os.cpu_count() or 1
@@ -604,6 +558,162 @@ class CapacityTests(WorkTestCase):
                 self.assertEqual(self.work("settings", *arguments).status, 2)
         self.assertEqual(self.work("add", "--weight", str(cpus + 1), agent="a").status, 2)
         self.assertEqual(self.work("run", "--weight", str(cpus + 1), "--", "true", agent="a").status, 2)
+
+
+class FakeGauge:
+    """The machine's signals as a test sets them; a test can change them while a supervisor polls."""
+
+    def __init__(self, idle=50.0, memory="normal", load=None, load_gate=False):
+        self.signals = work.Signals(idle, memory, load, load_gate)
+
+    def read(self, idle=True):
+        return self.signals
+
+    def prime(self):
+        pass
+
+
+class MachineGateTests(WorkTestCase):
+    def setUp(self):
+        super().setUp()
+        self.call("settings", "--idle-min", "15", "--memory-limit", "warning", "--load-factor", "1.5")
+        self.limit = (os.cpu_count() or 1) * 1.5
+
+    def own_job(self, task_id):
+        """A job reserved by this process, which then plays its supervisor."""
+        self.call("add", "--id", task_id, "--", "true", agent="a")
+        self.call("claim", task_id, agent="a")
+        self.accept(task_id, "a")
+        ctx = work.Context(self.env)
+        try:
+            with work.writing(ctx.conn):
+                work.reserve(ctx.conn, work.get_task(ctx.conn, task_id), "a", os.getpid(), "unused.log")
+        finally:
+            ctx.close()
+
+    def supervise(self, task_id, gauge):
+        """Runs the wait for capacity of an own job in a thread with its own connection; returns the thread and the
+        list that receives its outcome."""
+        outcome = []
+
+        def run():
+            ctx = work.Context(self.env)
+            try:
+                outcome.append(work.Supervisor(ctx, task_id, gauge=gauge).wait_for_capacity(ctx.conn))
+            finally:
+                ctx.close()
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        return thread, outcome
+
+    def finished(self, thread, outcome):
+        thread.join(timeout=30)
+        self.assertFalse(thread.is_alive(), "the wait for capacity ended")
+        return outcome[0]
+
+    def held_with(self, task_id, reason):
+        """Waits until the job is held with `reason`, and checks that status shows it."""
+        self.until(lambda: self.state(task_id) == "waiting", f"job {task_id} to wait")
+        self.assertEqual(self.task(task_id)["note"], reason)
+        self.assertIn(f"{task_id}: ", self.work("status").out)
+        self.assertIn(reason, self.work("status").out)
+
+    def test_a_loaded_but_idle_macos_machine_starts_jobs(self):
+        # The incident: a load of 92.8 on 8 CPUs, from threads waiting on memory and disk, with half the CPU idle.
+        self.own_job("build")
+        started = self.finished(*self.supervise("build", FakeGauge(idle=50.6, memory="normal", load=92.8)))
+        self.assertEqual(started["state"], "running")
+
+    def test_on_linux_the_load_average_still_holds_jobs(self):
+        self.own_job("build")
+        gauge = FakeGauge(idle=50.6, memory="normal", load=92.8, load_gate=True)
+        thread, outcome = self.supervise("build", gauge)
+        self.held_with("build", f"the load average 92.80 is at or above {self.limit:.2f}")
+        gauge.signals = work.Signals(50.6, "normal", 1.0, True)
+        self.assertEqual(self.finished(thread, outcome)["state"], "running")
+
+    def test_a_memory_pressure_warning_holds_jobs_until_it_passes(self):
+        self.own_job("build")
+        gauge = FakeGauge(idle=60.0, memory="warning")
+        thread, outcome = self.supervise("build", gauge)
+        self.held_with("build", "memory pressure is warning; jobs start below warning")
+        gauge.signals = work.Signals(60.0, "normal", None, False)
+        self.assertEqual(self.finished(thread, outcome)["state"], "running")
+
+    def test_idle_cpu_below_the_minimum_holds_jobs(self):
+        self.own_job("build")
+        gauge = FakeGauge(idle=8.0)
+        thread, outcome = self.supervise("build", gauge)
+        self.held_with("build", "the CPU is 8% idle; jobs start at 15% idle or more")
+        gauge.signals = work.Signals(40.0, "normal", None, False)
+        self.assertEqual(self.finished(thread, outcome)["state"], "running")
+
+    def test_the_memory_limit_setting_moves_or_removes_the_memory_gate(self):
+        settings = work.settings_of(work.Context(self.env).conn)
+        for limit, level, held in (("warning", "warning", True), ("critical", "warning", False),
+                                   ("critical", "critical", True), ("off", "critical", False)):
+            with self.subTest(limit=limit, level=level):
+                settings.memory_limit = limit
+                box = work.machine(settings, work.Signals(90.0, level, None, False))
+                self.assertEqual(work.pressure(box) is not None, held)
+
+    def test_unknown_signals_hold_nothing(self):
+        settings = work.settings_of(work.Context(self.env).conn)
+        self.assertIsNone(work.pressure(work.machine(settings, work.Signals(None, None, None, False))))
+        self.assertIsNone(work.pressure(work.machine(settings, work.Signals(None, None, None, True))))
+
+    def test_pressure_held_past_the_load_wait_fails_the_job(self):
+        self.call("settings", "--load-wait", "0.5")
+        self.own_job("heavy")
+        self.assertIsNone(self.finished(*self.supervise("heavy", FakeGauge(memory="critical"))))
+        heavy = self.task("heavy")
+        self.assertEqual((heavy["state"], heavy["started"], heavy["status"]), ("failed", None, None))
+        self.assertIn("memory pressure is critical; jobs start below warning", heavy["note"])
+        self.assertIn("the longest a job waits on the machine's pressure", heavy["note"])
+
+    def test_fits_counts_the_capacity(self):
+        self.assertIsNone(work.fits(2, 3, 6))
+        self.assertEqual(work.fits(2, 5, 6), ("capacity", "5 of 6 cores are taken and this job needs 2"))
+        self.assertIsNone(work.fits(8, 0, 6), "a job heavier than the capacity runs alone")
+
+    def test_linux_signals_are_read_from_proc(self):
+        self.assertEqual(work.linux_cpu_ticks("cpu  100 5 50 800 45 0 0 0 0 0\ncpu0 1 2 3 4\n"), (845, 1000))
+        self.assertIsNone(work.linux_cpu_ticks("intr 1 2 3\n"))
+        meminfo = "MemTotal:       16000000 kB\nMemFree:  100 kB\nMemAvailable:   {} kB\n"
+        levels = [work.linux_memory_level(meminfo.format(available)) for available in (4000000, 1200000, 700000)]
+        self.assertEqual(levels, ["normal", "warning", "critical"])
+        self.assertIsNone(work.linux_memory_level("MemTotal: 10 kB\n"))
+
+    def test_the_gauge_measures_idle_cpu_between_two_readings(self):
+        class Ticks(work.Gauge):
+            def __init__(self, readings):
+                super().__init__(platform="test", window=0.01)
+                self.readings = iter(readings)
+
+            def ticks(self):
+                return next(self.readings)
+
+        gauge = Ticks([(100, 1000), (150, 1100), (150, 1200)])
+        self.assertEqual(gauge.idle(), 50.0, "a first reading takes its own sample")
+        time.sleep(0.02)
+        self.assertEqual(gauge.idle(), 0.0, "the next measures since the last")
+        self.assertIsNone(work.Gauge(platform="plan9").read().idle)
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS signals")
+    def test_macos_signals_are_read_from_the_kernel(self):
+        signals = work.Gauge().read()
+        self.assertTrue(0 <= signals.idle <= 100)
+        self.assertIn(signals.memory, work.MEMORY_LEVELS)
+        self.assertFalse(signals.load_gate)
+
+    def test_status_and_settings_show_the_thresholds(self):
+        self.assertIn("jobs start at 15% or more", self.work("status").out)
+        shown = self.work("settings", "--idle-min", "20", "--memory-limit", "critical").out
+        self.assertIn("idle min: 20%", shown)
+        self.assertIn("memory limit: critical", shown)
+        self.assertEqual(self.work("settings", "--idle-min", "100").status, 2)
+        self.assertEqual(self.work("settings", "--memory-limit", "high").status, 2)
 
 
 class WaitTests(WorkTestCase):
@@ -1028,7 +1138,7 @@ class SetupTests(WorkTestCase):
         bare["HOME"] = home
         # One shell runs work twice, so both calls share the default name agent-<that shell's pid>.
         shell = subprocess.Popen(
-            ["sh", "-c", '"$0" "$1" settings --load-factor 1000 >/dev/null && '
+            ["sh", "-c", '"$0" "$1" settings --load-factor 1000 --idle-min 0 --memory-limit off >/dev/null && '
              '"$0" "$1" run --timeout 0 --id bare -- sh -c "$2"; echo $$',
              sys.executable, SCRIPT, self.gate("bare")[2]],
             cwd=self.project, env=bare, stdout=subprocess.PIPE, text=True)

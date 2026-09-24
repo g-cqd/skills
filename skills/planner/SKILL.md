@@ -336,10 +336,13 @@ changes with each new shell, so set `WORK_AGENT` to claim a task in one call and
   yourself. A command typed inline with `work run -- ...` needs no acceptance. Commands are stored as argument
   lists and run without a shell, with stdin closed.
 - **Capacity.** A job weighs the cores it uses (`--weight`, default 1, at most the CPU count). It starts while the
-  running jobs' weights plus its own fit the capacity (default the CPU count minus 2) and the one-minute load
-  average is below the CPU count times the load factor (default 1.5). Otherwise it waits, and waiting jobs start in
-  work order. A job heavier than the capacity runs alone; a job that the load alone holds back longer than the load
-  wait (30 min) fails. These values live in the database, so every agent's jobs share them: `work settings`.
+  running jobs' weights plus its own fit the capacity (default the CPU count minus 2) and the machine is not under
+  pressure: the CPU at least 15% idle (`--idle-min`) and memory pressure below warning (`--memory-limit`). The load
+  average gates only on Linux (`--load-factor`, default 1.5 per CPU): macOS counts threads waiting on memory and
+  disk in it, so a machine at load 90 can be half idle. Otherwise it waits, and waiting jobs start in work order.
+  A job heavier than the capacity runs alone; a job that the machine's pressure alone holds back longer than the
+  load wait (30 min) fails. These values live in the database, so every agent's jobs share them: `work settings`.
+  `work status` shows the signals and the thresholds, and each waiting job's reason names what holds it.
 - **Limits.** A job whose log passes the log limit (256 MiB) is stopped. `status` and `run` delete events, and the
   logs of ended tasks, older than 14 days.
 - **Waiting.** `work run` and `work wait` return the moment the job ends, with its own exit status (127 for a
