@@ -658,6 +658,22 @@ class MachineGateTests(WorkTestCase):
                 box = work.machine(settings, work.Signals(90.0, level, None, False))
                 self.assertEqual(work.pressure(box) is not None, held)
 
+    def test_a_job_as_heavy_as_the_cpus_runs_alone_whatever_the_capacity(self):
+        settings = work.settings_of(work.Context(self.env).conn)
+        settings.capacity = 12
+        box = work.Machine(8, 12, settings, work.Signals(90.0, "normal", None, False))
+        self.assertEqual(work.claimed(2, box), 2)
+        self.assertEqual(work.claimed(8, box), 12, "a job of the CPU count holds the whole capacity")
+        self.assertIsNone(work.admission(8, 0, box), "it starts on an empty machine")
+        self.assertEqual(work.admission(8, 2, box), ("capacity", "2 of 12 cores are taken and this job needs 12"),
+                         "it waits for every running job to end")
+        self.assertEqual(work.admission(2, work.claimed(8, box), box),
+                         ("capacity", "12 of 12 cores are taken and this job needs 2"),
+                         "nothing starts beside it")
+        self.assertIsNone(work.admission(2, 8, box), "lighter jobs overlap past the CPU count")
+        below = work.Machine(8, 6, settings, work.Signals(90.0, "normal", None, False))
+        self.assertEqual(work.claimed(8, below), 8, "a capacity under the CPU count already makes it run alone")
+
     def test_unknown_signals_hold_nothing(self):
         settings = work.settings_of(work.Context(self.env).conn)
         self.assertIsNone(work.pressure(work.machine(settings, work.Signals(None, None, None, False))))

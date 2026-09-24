@@ -19,7 +19,8 @@ Rules:
     has read it (`work show`, which prints its digest) and accepted it (`work accept ID --digest D`), whoever queued
     it: agent names are self-declared, so no name proves who wrote a command. Only a command typed inline with
     `work run -- ...` needs no acceptance. Commands are stored as argument lists and run without a shell.
-  - Capacity: a job weighs the cores it uses (default 1, at most the CPU count). It starts only while the running
+  - Capacity: a job weighs the cores it uses (default 1, at most the CPU count); a job as heavy as the CPU count
+    holds the whole capacity, so it runs alone whatever the capacity. A job starts only while the running
     jobs' weights plus its own fit the capacity, or when no job runs, and while the machine is not under pressure:
     the CPU at least idle-min idle (15%, measured over the supervisor's last poll), memory pressure below the memory
     limit (warning, from the kernel), and, on Linux only, the load average below the CPU count times the load factor
@@ -1034,6 +1035,13 @@ def check_weight(weight: float) -> float:
     return weight
 
 
+def claimed(weight: float, box: Machine) -> float:
+    """The cores a job holds against the capacity: its weight, except that a job as heavy as the CPU count holds the
+    whole capacity, so it runs alone and nothing starts beside it, whatever the capacity. A capacity above the CPU
+    count lets jobs, which use less than they weigh, overlap; a quiet-machine measurement still gets the machine."""
+    return max(box.capacity, weight) if weight >= box.cpus else weight
+
+
 def fits(weight: float, used: float, capacity: float) -> tuple[str, str] | None:
     """Why a job of `weight` cores does not fit beside the running jobs' weights `used`, or None when it does. A job
     heavier than the capacity fits when no job runs, so that it runs alone rather than never."""
@@ -1062,7 +1070,7 @@ def pressure(box: Machine) -> tuple[str, str] | None:
 def admission(weight: float, used: float, box: Machine) -> tuple[str, str] | None:
     """Why a job of `weight` cores cannot start now, as (cause, reason), or None when it can: it must fit the
     capacity, and the machine must not be under pressure."""
-    return fits(weight, used, box.capacity) or pressure(box)
+    return fits(claimed(weight, box), used, box.capacity) or pressure(box)
 
 
 def describe_machine(box: Machine) -> str:
@@ -1091,25 +1099,26 @@ def backfill(row: sqlite3.Row, ahead: list[sqlite3.Row], running: list[sqlite3.R
         until the head has waited backfill_wait.
     Once the head has waited backfill_wait, nothing starts before it, so no job starves. O(R + A) for R running and
     A waiting jobs ahead."""
-    head, settings, weight = ahead[0], box.settings, row["weight"]
+    head, settings, weight = ahead[0], box.settings, claimed(row["weight"], box)
+    head_weight = claimed(head["weight"], box)
     waited = now - head["requested"]
     if waited >= settings.backfill_wait:
         return "ahead", (f"job {head['id']} has waited {span(waited)}, past the backfill limit of "
                          f"{span(settings.backfill_wait)}, so no job starts before it")
-    used = sum(item["weight"] for item in running)
-    if fits(head["weight"], used, box.capacity) is None:
+    used = sum(claimed(item["weight"], box) for item in running)
+    if fits(head_weight, used, box.capacity) is None:
         return "ahead", f"job {head['id']} is ahead of it, and there is room for it"
     if used + weight > box.capacity + 1e-9:
         return "capacity", f"{used:g} of {box.capacity:g} cores are taken and this job needs {weight:g}"
-    since = sum(item["weight"] for item in running if item["started"] is not None
+    since = sum(claimed(item["weight"], box) for item in running if item["started"] is not None
                 and item["started"] >= head["requested"])
-    spare = box.capacity - head["weight"] - since
+    spare = box.capacity - head_weight - since
     if weight <= spare + 1e-9:
         return None
     validity = next((item for item in ahead if item["kind"].lower() in order_tasks.VALIDITY_KINDS), None)
     if weight <= settings.small_weight + 1e-9 and validity is None:
         return None
-    reason = (f"job {head['id']} is ahead of it and needs {head['weight']:g} of the {box.capacity:g} cores, which "
+    reason = (f"job {head['id']} is ahead of it and needs {head_weight:g} of the {box.capacity:g} cores, which "
               f"leaves {max(0.0, spare):g} for jobs behind it; this job needs {weight:g}")
     if validity is not None and weight <= settings.small_weight + 1e-9:
         reason += f", and job {validity['id']}, validity work, keeps its place"
@@ -1235,7 +1244,7 @@ class Supervisor:
                                "WHERE state = 'claimed' AND requested IS NOT NULL").fetchall()
         line = sorted((item for item in waiting if item["id"] == row["id"] or exists(item["owner"])), key=waiting_order)
         running = conn.execute("SELECT weight, started FROM tasks WHERE state = 'running'").fetchall()
-        used = sum(item["weight"] for item in running)
+        used = sum(claimed(item["weight"], box) for item in running)
         if line[0]["id"] != row["id"]:
             ahead = line[:[item["id"] for item in line].index(row["id"])]
             held = backfill(row, ahead, running, box, time.time())
@@ -2216,8 +2225,8 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
                               "ORDER BY seq", {"scope": scope}).fetchall()
         totals = dict(conn.execute(f"SELECT state, COUNT(*) FROM tasks WHERE {in_scope('scope')} GROUP BY state",
                                    {"scope": scope}).fetchall())
-        used, jobs = conn.execute("SELECT COALESCE(SUM(weight), 0), COUNT(*) FROM tasks "
-                                  "WHERE state = 'running'").fetchone()
+        weights = [row[0] for row in conn.execute("SELECT weight FROM tasks WHERE state = 'running'")]
+        used, jobs = sum(claimed(weight, box) for weight in weights), len(weights)
         view = queue(conn, scope)
     running = [row for row in active if row["state"] == "running"]
     waiting = [row for row in active if row["state"] == "claimed" and row["requested"] is not None]
