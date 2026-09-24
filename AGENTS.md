@@ -1,7 +1,7 @@
 # LOCAL CODEX MODEL PREFERENCE
 For general coding and text work in Codex, use only these default model choices:
 
-- `gpt-5.6-sol`: routine implementation, tests, exploration, and documentation.
+- `gpt-6-sol`: routine implementation, tests, exploration, and documentation.
 - `gpt-6-astra`: orchestration, difficult reasoning, code review, and security review.
 
 This user preference overrides generic model recommendations in skills, including managed skill references.

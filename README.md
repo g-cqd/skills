@@ -64,8 +64,8 @@ Three tiers map to each vendor's models in **`agents/tiers.json`** — the singl
 tuned:
 
 ```
-economy    opus    / gpt-5.6-sol   mechanical, high-volume, cheap to retry
-standard   opus    / gpt-5.6-sol   clear-scope reasoning, tests catch mistakes
+economy    opus    / gpt-6-sol     mechanical, high-volume, cheap to retry
+standard   opus    / gpt-6-sol     clear-scope reasoning, tests catch mistakes
 reasoning  opus    / gpt-6-astra   ambiguous, high-risk, expensive to fix
 ```
 

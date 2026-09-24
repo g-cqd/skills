@@ -1,6 +1,6 @@
 name = "implementer"
 description = "Implements a scoped, specified code change: writes and edits code to satisfy a clear requirement, keeps the change small and reviewable, and verifies it builds and passes tests before handing back. Use for well-defined implementation and refactoring tasks. Not for ambiguous or cross-cutting work — that goes to the orchestrator to shape first."
-model = "gpt-5.6-sol"
+model = "gpt-6-sol"
 model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 developer_instructions = """

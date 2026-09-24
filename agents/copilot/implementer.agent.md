@@ -5,7 +5,7 @@ description: >
   requirement, keeps the change small and reviewable, and verifies it builds and passes tests
   before handing back. Use for well-defined implementation and refactoring tasks. Not for
   ambiguous or cross-cutting work — that goes to the orchestrator to shape first.
-model: claude-opus-5.5
+model: Claude Opus 5.5
 tools: ["readfile", "code_search", "edit", "shell"]
 ---
 

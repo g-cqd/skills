@@ -4,8 +4,8 @@
 One source of truth (src/<name>.md, frontmatter: name, tier, tools, description +
 body) -> three outputs, because each harness reads a different format:
 
-  claude/<name>.md          Markdown + YAML frontmatter (model: haiku|sonnet|opus, tools CSV)
-  copilot/<name>.agent.md   Markdown + YAML frontmatter (model: <id>, tools: [array])
+  claude/<name>.md          Markdown + YAML frontmatter (model: opus|fable|sonnet|haiku or a full id, tools CSV)
+  copilot/<name>.agent.md   Markdown + YAML frontmatter (model: <display name>, tools: [array])
   codex/<name>.toml         TOML (model, model_reasoning_effort, sandbox_mode, developer_instructions)
 
 The tier -> model mapping lives in tiers.json (the cost dial). Tools map from a
