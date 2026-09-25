@@ -550,6 +550,22 @@ class CapacityTests(WorkTestCase):
         started, ended = self.started(), self.database("SELECT ended FROM tasks WHERE id = 'heavy'")[0]["ended"]
         self.assertGreaterEqual(started["second"], ended)
 
+    def test_a_job_predicted_shorter_starts_first(self):
+        for command, seconds in ((["true", "long"], 600), (["true", "short"], 5)):
+            self.call("add", "--id", f"past-{command[1]}", "--cwd", self.project, "--", *command, agent="a")
+            ended = time.time() - 100
+            self.database("UPDATE tasks SET state = 'done', started = ?, ended = ?, cpu_time = ?, status = 0 "
+                          "WHERE id = ?", ended - seconds, ended, seconds, f"past-{command[1]}")
+        self.queue_behind(("busy", []))
+        self.request("long", command=["true", "long"])
+        self.request("short", command=["true", "short"])
+        self.assertEqual(self.task("long")["predicted"]["duration"], 600)
+        self.assertEqual(self.task("short")["predicted"]["duration"], 5)
+        self.open_gate("busy")
+        self.assertEqual(self.work("wait", "busy", "long", "short").status, 0)
+        started = self.started()
+        self.assertLess(started["short"], started["long"], "shortest predicted first, whatever the arrival")
+
     @unittest.skipIf((os.cpu_count() or 1) < 2, "a weight of 2 needs two CPUs")
     def test_five_jobs_of_weight_2_that_each_use_one_core_run_together_in_a_budget_of_8(self):
         self.call("settings", "--cpu-budget", "8")
@@ -565,7 +581,7 @@ class CapacityTests(WorkTestCase):
         self.until(lambda: all(self.state(task_id) == "running" for task_id in ids), "the five jobs to run together")
         status = self.work("status").out
         self.assertIn("cores: predicted 5 of the CPU budget of 8 taken by 5 job(s); declared 10 (no cap)", status)
-        self.assertIn("predicted 1 core and - at peak (1 run of the same command)", status)
+        self.assertIn("predicted 1 core, - at peak, 1 min 0 s (1 run of the same command)", status)
         self.open_gate("five")
         self.assertEqual(self.work("wait", *ids).status, 0)
 
@@ -592,6 +608,8 @@ class CapacityTests(WorkTestCase):
         self.open_gate("busy")
         self.until(lambda: self.state("first") == "running", "the first exclusive job to start")
         self.request("late", *exclusive)
+        # Equal predicted run times, so that the order in which they asked decides between the two.
+        self.database("UPDATE tasks SET pred_duration = 30 WHERE id IN ('between', 'late')")
         status = self.work("status").out
         self.assertIn("exclusive batch: first running\n", status)
         self.open_gate("first")
@@ -878,6 +896,45 @@ class MachineGateTests(WorkTestCase):
         self.assertIn("memory limit: critical", shown)
         self.assertEqual(self.work("settings", "--idle-min", "100").status, 2)
         self.assertEqual(self.work("settings", "--memory-limit", "high").status, 2)
+
+
+class OrderingTests(WorkTestCase):
+    @staticmethod
+    def line(rows, aging=1.0, batch=None):
+        return [row["id"] for row in sorted(rows, key=lambda row: work.waiting_order(row, batch, aging))]
+
+    @staticmethod
+    def job(task_id, requested, duration, kind="other", batch=None, seq=0):
+        return {"id": task_id, "kind": kind, "requested": requested, "pred_duration": duration, "batch": batch,
+                "seq": seq}
+
+    def test_the_shortest_predicted_job_goes_first_less_what_it_waited(self):
+        long, short = self.job("long", 0.0, 600.0), self.job("short", 100.0, 30.0)
+        self.assertEqual(self.line([long, short]), ["short", "long"])
+        self.assertEqual(self.line([long, self.job("late", 580.0, 30.0)]), ["long", "late"],
+                         "after 580 s of waiting, the long job has aged past a 30 s job that just asked")
+
+    def test_aging_bounds_the_wait_of_a_long_job_under_a_stream_of_short_ones(self):
+        long = self.job("long", 0.0, 600.0)
+        for aging, bound in ((1.0, 570.0), (0.5, 1140.0)):
+            with self.subTest(aging=aging):
+                ahead = [t for t in range(0, 5000, 10)
+                         if self.line([long, self.job("short", float(t), 30.0)], aging)[0] == "short"]
+                self.assertTrue(ahead and max(ahead) <= bound, "no short job asking later goes ahead of it")
+        passed = [t for t in range(0, 20000, 10)
+                  if self.line([long, self.job("short", float(t), 30.0)], 0.0)[0] == "long"]
+        self.assertEqual(passed, [], "without aging, every shorter job goes first: the long job starves")
+
+    def test_validity_and_the_open_batch_come_before_the_predicted_order(self):
+        rows = [self.job("short", 50.0, 1.0), self.job("fix", 60.0, 900.0, kind="validity"),
+                self.job("batch", 70.0, 900.0, batch="b")]
+        self.assertEqual(self.line(rows, batch="b"), ["fix", "batch", "short"])
+
+    def test_a_job_without_a_prediction_counts_as_the_default_run_time(self):
+        rows = [self.job("unknown", 0.0, None), self.job("known", 0.0, 60.0, seq=1)]
+        self.assertEqual(self.line(rows), ["unknown", "known"])
+        self.assertEqual(self.line([self.job("unknown", 0.0, None), self.job("known", 0.0, 10.0, seq=1)]),
+                         ["known", "unknown"])
 
 
 class BackfillTests(WorkTestCase):
