@@ -337,8 +337,10 @@ changes with each new shell, so set `WORK_AGENT` to claim a task in one call and
   lists and run without a shell, with stdin closed.
 - **Capacity.** A job weighs the cores it really uses (`--weight`, default 1, at most the CPU count): a build with
   `--jobs N`, or an ordinary test run on N workers, weighs N, and a single-threaded benchmark 1 or 2. A heavier
-  weight leaves cores idle, and a job as heavy as the CPU count drains the machine before it starts: keep that for
-  the final numbers a report states, once per task (`performance-engineering`). A job starts while the
+  weight leaves cores idle, and an exclusive run, a job as heavy as the CPU count, drains the machine before it
+  starts. Keep it for a task's final numbers only: one job per task, holding every measurement the report states
+  (`performance-engineering`). Iterate with interleaved A and B runs at weight 2 or 3. A repository-wide check that
+  needs a quiet machine is run by the coordinator once per landing, not by each agent. A job starts while the
   running jobs' weights plus its own fit the capacity (default the CPU count minus 2) and the machine is not under
   pressure: the CPU at least 15% idle (`--idle-min`) and memory pressure below warning (`--memory-limit`). The load
   average gates only on Linux (`--load-factor`, default 1.5 per CPU): macOS counts threads waiting on memory and
@@ -347,7 +349,9 @@ changes with each new shell, so set `WORK_AGENT` to claim a task in one call and
   the head leaves free, or if it is small (`--small-weight`, 1 core) while no validity job is ahead of it. Once the
   head has waited `--backfill-wait` (5 min), nothing starts before it, so no job starves.
   A job as heavy as the CPU count, or heavier than the capacity, runs alone: nothing starts beside it, even when the
-  capacity is set above the CPU count so that lighter jobs, which use less than they weigh, can overlap. A job that
+  capacity is set above the CPU count so that lighter jobs, which use less than they weigh, can overlap. Exclusive
+  jobs queued together run as one batch: those waiting when the first starts run next, back to back, ahead of all
+  but validity work, so the machine drains once for them. A job that
   the machine's pressure alone holds back longer than the
   load wait (30 min) fails. These values live in the database, so every agent's jobs share them: `work settings`.
   `work status` shows the signals and the thresholds, and each waiting job's reason names what holds it.
