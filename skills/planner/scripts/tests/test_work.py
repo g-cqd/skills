@@ -283,7 +283,7 @@ class ClaimTests(WorkTestCase):
                 self.assertTrue(status == 0 or f"prize-{round_number} is claimed by" in errors, errors)
 
     def test_next_skips_a_task_whose_files_overlap_a_running_one(self):
-        self.work("add", "--id", "edit-app", "--files", "src/app", "--", "sleep", "30", agent="alice")
+        self.work("add", "--id", "edit-app", "--files", "src/app", "--", *self.gate("edit-app"), agent="alice")
         self.work("add", "--id", "edit-view", "--files", "src/app/view.swift", agent="alice")
         self.work("add", "--id", "docs", "--files", "docs", agent="alice")
         self.assertEqual(self.json("next", agent="alice")[1]["claimed"]["id"], "edit-app")
@@ -299,8 +299,8 @@ class ClaimTests(WorkTestCase):
         self.assertEqual(refused.status, 1)
         self.assertIn("edit-app", refused.err)
         # Once the job ends, its files are free.
-        os.killpg(self.task("edit-app")["pid"], signal.SIGTERM)
-        self.assertEqual(self.work("wait", "edit-app").status, 128 + signal.SIGTERM)
+        self.open_gate("edit-app")
+        self.assertEqual(self.work("wait", "edit-app").status, 0)
         self.assertEqual(self.json("next", agent="carol")[1]["claimed"]["id"], "edit-view")
 
     def test_claim_refuses_a_task_whose_prerequisites_are_not_done(self):
