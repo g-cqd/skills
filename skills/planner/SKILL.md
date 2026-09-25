@@ -330,7 +330,7 @@ changes with each new shell, so set `WORK_AGENT` to claim a task in one call and
 | Wait for a process, a file, a removal, a log line | `work wait --pid 4242`, `--file tests.status`, `--gone P2.lock`, `--log build.log 'Build complete'` |
 | Close a task you claimed, or queued and nobody claimed | `work done ID`, `work fail ID` (no command), `work cancel ID` |
 | See the scopes, jobs, CPU, memory, load, history | `work status`, `work log` |
-| See or set the capacity and limits all jobs share | `work settings`, `work settings --capacity 6` |
+| See or set the budgets and limits all jobs share | `work settings`, `work settings --cpu-budget 8` |
 
 - **Claim, then accept.** Nothing runs on its own. A queued command runs only after the agent that claimed its
   task reads it with `work show` and accepts it with `work accept ID --digest D`, the digest that `show` prints,
@@ -338,26 +338,28 @@ changes with each new shell, so set `WORK_AGENT` to claim a task in one call and
   agent names are self-declared, and a subagent inherits its parent's. Accept only a command you would run
   yourself. A command typed inline with `work run -- ...` needs no acceptance. Commands are stored as argument
   lists and run without a shell, with stdin closed.
-- **Capacity.** A job weighs the cores it really uses (`--weight`, default 1, at most the CPU count): a build with
-  `--jobs N`, or an ordinary test run on N workers, weighs N, and a single-threaded benchmark 1 or 2. A heavier
-  weight leaves cores idle, and an exclusive run, a job as heavy as the CPU count, drains the machine before it
-  starts. Keep it for a task's final numbers only: one job per task, holding every measurement the report states
-  (`performance-engineering`). Iterate with interleaved A and B runs at weight 2 or 3. A repository-wide check that
-  needs a quiet machine is run by the coordinator once per landing, not by each agent. A job starts while the
-  running jobs' weights plus its own fit the capacity (default the CPU count minus 2) and the machine is not under
-  pressure: the CPU at least 15% idle (`--idle-min`) and memory pressure below warning (`--memory-limit`). The load
-  average gates only on Linux (`--load-factor`, default 1.5 per CPU): macOS counts threads waiting on memory and
-  disk in it, so a machine at load 90 can be half idle. Otherwise it waits, and waiting jobs start in work order,
-  with backfill: when the head of the line lacks cores, a later job may start first if it fits now and in the cores
-  the head leaves free, or if it is small (`--small-weight`, 1 core) while no validity job is ahead of it. Once the
-  head has waited `--backfill-wait` (5 min), nothing starts before it, so no job starves.
-  A job as heavy as the CPU count, or heavier than the capacity, runs alone: nothing starts beside it, even when the
-  capacity is set above the CPU count so that lighter jobs, which use less than they weigh, can overlap. Exclusive
-  jobs queued together run as one batch: those waiting when the first starts run next, back to back, ahead of all
-  but validity work, so the machine drains once for them. A job that
-  the machine's pressure alone holds back longer than the
-  load wait (30 min) fails. These values live in the database, so every agent's jobs share them: `work settings`.
-  `work status` shows the signals and the thresholds, and each waiting job's reason names what holds it.
+- **Capacity.** A job's weight (`--weight`, default 1, at most the CPU count) is a cap and a cold-start estimate,
+  not a booking: `work` admits a job on the cores its command used in its recent runs, the median of the last 5 runs
+  of the same command signature, which worktrees of one repository share, capped by the weight. The weight counts
+  whole only until that history exists. So declare the most a job may use: a build with `--jobs N` or a test run on N
+  workers weighs N. A job starts while the running jobs' predicted cores plus its own fit the CPU budget
+  (`--cpu-budget`, default the CPU count), used memory is at or below the memory budget (`--memory-budget`, default
+  the memory minus 2 GiB), the CPU is at least 10% idle (`--idle-min`), and memory pressure is below warning
+  (`--memory-limit`). The load average gates only on Linux (`--load-factor`, default 1.5 per CPU): macOS counts
+  threads waiting on memory and disk in it, so a machine at load 90 can be half idle. `--capacity`, off by default,
+  also caps the declared weights. Waiting jobs start validity work first, then the shortest predicted run time less
+  the time waited (`--aging`, 1), so short jobs pass long ones and none waits forever, with backfill in predicted
+  cores; once the head of the line has waited `--backfill-wait` (5 min), nothing starts before it. Jobs run at the
+  utility QoS (`--job-qos`), their children too, so the user's own work comes first under contention.
+  Exclusive runs are for final timing only. A job as heavy as the CPU count holds the whole budget whatever its
+  history, runs at the default QoS, and drains the machine before it starts, which caused most of the waiting on
+  this machine. Keep it for a task's final numbers: one job per task, holding every measurement the report states
+  (`performance-engineering`), and iterate with interleaved A and B runs at weight 2 or 3. A repository-wide check
+  that needs a quiet machine is run by the coordinator once per landing, not by each agent. Exclusive jobs queued
+  together run as one batch, so the machine drains once for them. A job that the machine's pressure alone holds back
+  longer than the load wait (30 min) fails. These values live in the database, so every agent's jobs share them:
+  `work settings`. `work status` shows each job's prediction, the budgets and the signals, and each waiting job's
+  reason names the rule that holds it. The evidence: `references/work-scheduling.md`.
 - **Limits.** A job whose log passes the log limit (256 MiB) is stopped. `status` and `run` delete events, and the
   logs of ended tasks, older than 14 days.
 - **Waiting.** `work run` and `work wait` return the moment the job ends, with its own exit status (127 for a
@@ -464,5 +466,6 @@ Use the format that fits the content:
 - `references/execution-templates/` — typed XML execution contracts
 - `references/orchestration-patterns.md` — lock, log, wave strategy details
 - `references/routing-matrix.md` — skill routing rules and composition
+- `references/work-scheduling.md` — why `work` admits jobs on predicted use: the simulation and its sources
 - `scripts/discover-skills.sh` — dynamic skill discovery across all tool directories
 - `scripts/request_opinions.py` — queries peer AI CLIs for second opinions

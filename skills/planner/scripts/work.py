@@ -2834,7 +2834,8 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
           f"backfill wait: {span(settings.backfill_wait)}; a job that waited longer keeps every job behind it\n"
           f"job qos: {settings.job_qos}; every job but the exclusive ones runs at this QoS, and its children with "
           f"it, so the user's own work comes first{applied}\n"
-          f"small weight: {settings.small_weight:g}; a job this light may start past the head for a while\n"
+          f"small weight: {settings.small_weight:g}; a job predicted to use this many cores or fewer may start past "
+          f"the head for a while\n"
           f"log limit: {settings.log_limit} bytes; a job whose log grows past it is stopped\n"
           f"keep: {settings.keep_days:g} days of events and of the logs of ended tasks")
     return 0
@@ -3069,7 +3070,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_argument("--backfill-wait", type=positive, metavar="SECONDS",
                      help="once the head of the line waited this long, no job starts before it (default 300)")
     sub.add_argument("--small-weight", type=positive, metavar="CORES",
-                     help="a job this light may start past the head until the backfill wait (default 1)")
+                     help="a job predicted to use this many cores or fewer may start past the head until the "
+                          "backfill wait (default 1)")
     sub.add_argument("--load-wait", type=positive, metavar="SECONDS",
                      help="the longest a job waits on the load alone before it fails (default 1800)")
     sub.add_argument("--log-limit", type=counting(1), metavar="BYTES",
