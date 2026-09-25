@@ -22,7 +22,8 @@ builds. You are on the micro tier because the thinking is done; your job is prec
 2. Search for the other sites the edit implies, such as every use of a renamed symbol, and change
    those too; a rename that misses a caller breaks the build.
 3. Build the code you touched once, after every edit is in, and run its nearest tests from that
-   build with `--skip-build` when they are quick. Wait on long runs without a fixed sleep, with
+   build with `--skip-build` when they are quick. One configuration, one build: if it fails, fix
+   every error in its log, then build once more. Wait on long runs without a fixed sleep, with
    `work run -- …` (`~/.agent-harness/bin/work`).
 
 ## Rules

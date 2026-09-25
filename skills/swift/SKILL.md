@@ -147,18 +147,22 @@ responsibility, test targets alongside, and `.platforms` stating the real floor.
 external dependency against the standard library, an Apple framework, and an Apple-supplied
 package before adding it.
 
-**Build once, test many.** After a batch of edits, build once; run every test from that build:
+**Build once, test many.** Write the whole step, then build once, and run every test from that
+build. The budget and the hand-back rules are in `engineering-practices` §5.
 
 ```sh
-swift build --build-tests                         # one build per batch of edits
+swift build --build-tests                         # one build per completed step, never per edit
 swift test --skip-build --filter ParserTests      # every test run, rerun included
-swift build --target Parser                       # mid-step: compile one module only
 ```
 
-Plain `swift test` builds first, so in a loop it rebuilds on every run: always pass `--skip-build`.
-`--target` or `--product` checks one module mid-step, but with several test targets it does not
-link the test bundle, so build with `--build-tests` before running tests. Release builds get their
-own `--scratch-path .build-release`, never the debug `.build` (`performance-engineering` §4).
+- Plain `swift test` builds first, so in a loop it rebuilds on every run: always pass
+  `--skip-build`.
+- Find type errors while you edit with SourceKit-LSP's diagnostics, not with a build.
+- `swift build --target Parser` compiles one module without linking the test bundle. It replaces
+  the test build for a step whose tests you don't run yet; it is never a check on top of it.
+- One package and one configuration, debug, while you develop. Release builds get their own
+  `--scratch-path .build-release`, never the debug `.build`, and happen once per task
+  (`performance-engineering` §4).
 
 ---
 

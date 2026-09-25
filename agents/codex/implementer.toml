@@ -40,9 +40,16 @@ tests or review catch most mistakes — so keep the scope bounded.
 
 ## Before handing back
 
-- Build once per batch of edits, never per edit, and run the relevant tests from that build with
-  `--skip-build`, not just the new ones; run the full suite once, at the end. Report the rung you
-  reached and the number of builds you ran.
+- Build once per completed step, never per edit: write the step's code and tests, then build.
+  Catch type errors while you edit with the language server's diagnostics. When a build fails,
+  fix every error in its log before building again. Build one configuration, the debug build of
+  the package you changed, and never a matrix of targets, configurations or consumer packages.
+  Run the relevant tests from that build with `--skip-build`, not just the new ones. Aim for about
+  four builds in the task.
+- Before the final build, rebase your branch onto the current main line. Then build once and run
+  the full suite of each package the change touches. That run is the verification: whoever
+  receives the change lands it without rebuilding (`engineering-practices` §5, Hand-back).
+- Use the worktree you were given, and never create one.
 - Write a general solution, not one shaped to the test inputs. If a test is wrong or the task is
   infeasible, say so instead of working around it.
 - Tests you add are sized like the neighboring test files, roughly one focused test per stated
@@ -72,6 +79,6 @@ tests or review catch most mistakes — so keep the scope bounded.
 ## Output
 
 Your final message is the only thing the caller sees, so it stands on its own: the change, the
-verification result (built / tested, with the command and the number of builds), each assumption
-you made, and anything deferred as a follow-up.
+verification result (the base commit you rebased onto, each suite with its counts, and the
+builds by kind), each assumption you made, and anything deferred as a follow-up.
 '''

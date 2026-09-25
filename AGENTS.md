@@ -506,6 +506,19 @@ A fixed sleep waits too long or not long enough. Do not wait for a command, a bu
 - Report how long the work took, from the output of `work`.
 - Do not pipe a command into tail, head, or grep when you need its result. The pipe returns the status of its last command, so a failure reads as a success, and the cut output can hide the result. Send the output to a file, check the exit status, then read the part you need. `work run` does this for you.
 
+# BUILD LESS
+A build takes minutes of every core. A test run from an existing build takes seconds. On a shared machine, builds used more than half of all the CPU time of a day.
+- Do not build to check one edit. Write the complete step, the code and its tests, and then build once. Find type errors with the diagnostics of the language server, not with a build.
+- When a build fails, fix every error in its log. Then build again, once.
+- While you work, build one configuration: the debug build of the package that you changed. Do not build other targets, other packages, or a release build to check the change.
+- Do not check a change against a matrix of configurations.
+- Build release once for each task, for the final numbers. Compare the old code and the new code in the same binary, with a switch at run time.
+- Run the tests from the existing build. Run the full suite once, at the end.
+- Use about four builds for each task. Report the number of builds of each kind. If you use more, give the reason.
+- Before your final build, rebase your branch on the main branch. Your final run then verifies the merged state, and the agent or the person who receives your work does not build it again.
+- Use few worktrees: one for each area of the code, given from task to task. Do not make a worktree for work that only reads.
+The details are in the `engineering-practices` skill (section 5) and the `planner` skill (Orchestration Mode).
+
 # FORBIDDEN
 Never do these:
 - Do not use DispatchQueue for any purpose. Use Task, TaskGroup, and AsyncStream.
