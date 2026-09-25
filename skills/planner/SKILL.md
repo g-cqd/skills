@@ -23,6 +23,8 @@ You are an adaptive planning, routing, and execution agent. You assess the user'
 §ORDER    validity ≻ rest · FIFO ∀tier · perf-regression ⇒ queue ¬block ⇒ scripts/order_tasks.py
           shared-machine ⇒ scripts/work.py · queued command ⇒ show ∧ accept --digest BEFORE run
 §WAIT     ¬fixed-sleep ⇒ harness-notify | work run|wait (scripts/work.py)
+§LANES    building-agents ≤ cores ÷ build-cores · worktree ∷ per-area ∧ long-lived ¬per-task ·
+          read-only ⇒ ∅worktree · land ⇐ agent's-final-run ⇒ lead ¬rebuilds
 §BAN      engage ∀conversational|trivial-edit · plan ∅classification ·
           synthesize peer-opinions ∅stating-disagreements
 ```
@@ -272,7 +274,11 @@ hard-to-reconstruct specifics — names, numbers, paths, exact wording.
 
 1. **Wave 1**: All phases with zero dependencies (parallel background agents)
 2. **Wave N**: Phases whose dependencies are all in prior waves
-3. Maximize parallelism within each wave
+3. **Parallelize up to what the machine can build.** On one machine, every agent that builds competes
+   for the same cores, so a wave runs at most as many of them as the machine sustains: about the
+   core count divided by one build's cores, two or three on an 8-core laptop. More agents do not
+   finish sooner; they make every build slower. Agents that only read, research, review or plan
+   do not count against that limit.
 
 Each agent receives: phase plan, file scope, lock/log protocol, depends_on list, recommended agent type.
 
@@ -282,8 +288,35 @@ steps, do it directly: spawning an agent is slower than a direct grep and loses 
 already hold. While subagents run, the lead keeps working on independent items rather than
 idling; wait only when the next step depends on a result.
 
-Reuse worktrees. A fresh worktree's first build starts from scratch, so give a sequence of tasks in
-the same package area one worktree, passed from task to task, rather than a new one each.
+### Worktrees
+
+A worktree gives an agent that edits code its own checkout, and with it its own build directory:
+- its first build starts from scratch;
+- every catch-up with the main line rebuilds what the main line changed;
+- its build products take gigabytes.
+
+With many worktrees, that cost is larger than the work itself.
+
+- **Few and long-lived.** Keep one worktree per package area, not one per task, and no more than
+  the agents that build at once. Pass a worktree from task to task within its area, rebasing it onto
+  the main line between tasks, so its build stays warm.
+- **None where none is needed.** Agents that read, research, review or plan work in the main
+  checkout and write nothing there. A small change that needs no long build is made on the main
+  checkout, one at a time.
+- **One agent per worktree at a time.** Remove a worktree, with its build directory, once its area
+  has no queued work.
+
+### Landing
+
+- **The agent's last run is the verification** (`engineering-practices` §5, Hand-back). It rebased
+  onto the main line, built once, and ran the suites of the packages the change touches, so the
+  lead lands the change without building it again.
+- **Land by fast-forward.** If the main line moved since the agent's run, rebase. The change needs
+  a new run only if the main line changed the same packages, and then the agent reruns from its
+  warm build.
+- **A repository-wide quiet check,** such as a main-thread or timing budget, runs once per landing,
+  and only when the change can affect it. Fold it into the agent's final suite run where the check
+  runs the suite itself.
 
 Consult `references/orchestration-patterns.md` for full lock lifecycle, failure recovery, wave dispatch, and verification patterns.
 

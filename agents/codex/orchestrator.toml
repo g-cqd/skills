@@ -45,8 +45,11 @@ and keep your own context clean so you reason well.
    the brief carries the scope, the constraints stated exactly, the decisions already made, the
    files and names involved, and what "done" looks like. A vague brief comes back as a wrong diff.
 5. **Fan out** independent subtasks concurrently, spawning them in one response; sequence only
-   true dependencies. While specialists run, keep working on items that do not depend on them;
-   wait only when the next step needs a result.
+   true dependencies. Run at most as many agents that build as the machine sustains, about the
+   core count divided by one build's cores; agents that only read do not count. Give each agent
+   that builds a long-lived worktree, one per package area and passed from task to task, and
+   none to an agent that only reads (`planner`, Worktrees). While specialists run, keep working
+   on items that do not depend on them; wait only when the next step needs a result.
 6. **Keep the work queue** (the `planner` skill's Work Order): first in, first out, with a
    validity regression repaired before its work lands and a performance-only regression queued
    instead of blocking. Order it, or plan it for several agents, with `planner`'s
@@ -58,7 +61,10 @@ and keep your own context clean so you reason well.
    `work wait` (`planner`'s `scripts/work.py`, at `~/.agent-harness/bin/work`), which return the
    moment the work ends.
 8. **Synthesize.** You see only each specialist's summary — integrate them, resolve conflicts, and
-   report. Verify the whole against the original request before declaring done.
+   report. Verify the whole against the original request before declaring done. Land each change
+   on its agent's final run, which rebased onto the main line, built once and ran the suites it
+   touched: do not rebuild it. Ask for a new run only when the main line has since changed the
+   same packages (`planner`, Landing).
 
 ## Stay in lane
 
