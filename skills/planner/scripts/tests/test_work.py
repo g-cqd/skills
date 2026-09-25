@@ -749,7 +749,8 @@ class MachineGateTests(WorkTestCase):
                          ("cores", "predicted 0.5 of 12 cores are taken and this job needs 12"),
                          "it waits for every running job to end")
         self.assertEqual(work.admission(light, [exclusive], box),
-                         ("cores", "predicted 12 of 12 cores are taken and this job needs 0.5"), "nothing starts beside it")
+                         ("cores", "predicted 12 of 12 cores are taken and this job needs 0.5"),
+                         "nothing starts beside it")
         self.assertEqual(work.cores(exclusive, self.box(budget=6)), 8, "a budget under the CPU count: it runs alone")
 
     def test_unknown_signals_hold_nothing(self):
@@ -775,7 +776,8 @@ class MachineGateTests(WorkTestCase):
                                         box), ("cores", "predicted 7.4 of 8 cores are taken and this job needs 2"),
                          "without a prediction, the declared weight counts")
         self.assertIsNone(work.admission({"weight": 6, "pred_cores": 9.0}, [], box), "alone, any job fits")
-        self.assertEqual(work.cores({"weight": 2, "pred_cores": 3.0}, box), 2, "the declared weight caps the prediction")
+        self.assertEqual(work.cores({"weight": 2, "pred_cores": 3.0}, box), 2,
+                         "the declared weight caps the prediction")
 
     def test_the_capacity_caps_the_declared_weights_when_set(self):
         running = [{"weight": 3, "pred_cores": 0.5}]
