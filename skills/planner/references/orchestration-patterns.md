@@ -92,6 +92,9 @@ Master log at `logs/master.log`:
 1. Identify all phases with zero dependencies -> Wave 1
 2. For each subsequent wave, include phases whose dependencies are ALL in prior waves
 3. Continue until all phases are assigned a wave
+4. Cap each wave's agents that build at what the machine sustains (about the core count divided by one
+   build's cores); a phase past the cap waits for the next free build lane, in the same worktree as
+   the phase it follows when they share a package area (SKILL.md, Worktrees)
 
 ### Wave Dispatch Pattern
 
@@ -112,10 +115,14 @@ Each agent launch includes:
 - **Log protocol**: Path to log file, entry format
 - **Scope boundaries**: List of files this phase may modify (no others)
 
-### Parallelism Maximization
+### Parallelism, within the build cap
 
-- Always launch Wave 1 phases in parallel — they have no dependencies
-- Within a wave, all phases are independent by construction — launch all concurrently
+- Launch Wave 1 phases in parallel — they have no dependencies — up to the machine's build cap
+- Within a wave, all phases are independent by construction — launch them concurrently, but no more
+  phases that build than the machine sustains (about the core count divided by one build's cores);
+  read-only phases do not count against the cap
+- Phases in one package area share that area's long-lived worktree, one after another, rather than a
+  new worktree each (SKILL.md, Worktrees)
 - Use `run_in_background: true` for agent launches to avoid blocking
 - Monitor completions via lock file deletion notifications
 
@@ -202,10 +209,13 @@ in_progress -> blocked -> in_progress -> completed (if blocker discovered mid-wo
 
 ## Verification Strategy Template
 
-After all phases complete, run these checks:
+Each phase's agent verifies its own change before handing it back: it rebases onto the main line, builds
+once, and runs the suites of the packages it touched (`engineering-practices` §5, Hand-back). The lead does
+not rebuild a phase to check it. After all phases complete:
 
-1. **Build validation**: Full project build succeeds
-2. **Test suite**: All existing + new tests pass
+1. **Integration run, only where phases met**: when two phases changed the same package, the phase that
+   landed last reran that package's suite after rebasing onto the other; no other build is needed
+2. **Test suite**: every phase reported its suites green, with counts, on its final base
 3. **Lint/format**: All modified files pass linting
 4. **Grep assertions**: Verify removed patterns are gone (e.g., `grep -r "deprecated_api"` returns nothing)
 5. **Lock cleanup**: All lock files deleted (all phases completed)
