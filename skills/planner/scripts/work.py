@@ -1032,6 +1032,25 @@ def predict(conn: sqlite3.Connection, signed, weight: float) -> Prediction:
     return Prediction(weight, None, median(recent) if recent else DEFAULT_DURATION, "none", 0)
 
 
+def estimated(conn: sqlite3.Connection, rows) -> list[dict]:
+    """The running jobs `rows` as dicts, each with a prediction of its cores. A job that started before predictions
+    were recorded, as when the schema moved while it ran, has none, and its declared weight would count whole: it gets
+    its signature's history, else its last CPU sample (ps averages it over the recent past), else nothing, so that
+    its weight counts. The rows need the sig_ columns, weight, cpu and pred_cores."""
+    result = []
+    for row in rows:
+        item = dict(row)
+        if item["pred_cores"] is None:
+            guess = predict(conn, row, row["weight"])
+            if guess.level != "none":
+                item["pred_cores"], item["pred_from"] = guess.cores, f"estimated as it ran, {guess.basis}"
+            elif row["cpu"] is not None:
+                item["pred_cores"] = min(row["weight"], max(MIN_CORES, row["cpu"] / 100))
+                item["pred_from"] = "estimated as it ran, from its last CPU sample"
+        result.append(item)
+    return result
+
+
 def describe_hold(row: sqlite3.Row, box) -> str:
     """What a job holds or will hold against the budget, and its predicted memory, for status."""
     if exclusive(row["weight"], box):
@@ -1778,8 +1797,9 @@ class Supervisor:
     def lines(self, conn: sqlite3.Connection, row: sqlite3.Row) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
         """The running jobs in the order they started, and the waiting jobs whose supervisor lives, with this one, in
         the order they asked."""
-        running = conn.execute("SELECT id, weight, pred_cores, started, batch FROM tasks WHERE state = 'running' "
-                               "ORDER BY started, seq").fetchall()
+        running = estimated(conn, conn.execute(
+            "SELECT id, weight, pred_cores, cpu, started, batch, sig_full, sig_head, sig_prog, sig_tool FROM tasks "
+            "WHERE state = 'running' ORDER BY started, seq").fetchall())
         waiting = conn.execute("SELECT id, kind, requested, seq, owner, weight, pred_cores, pred_duration, batch "
                                "FROM tasks WHERE state = 'claimed' AND requested IS NOT NULL "
                                "ORDER BY requested, seq").fetchall()
@@ -2857,15 +2877,16 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
                                    {"scope": scope}).fetchall())
         view = queue(conn, scope)
         # The budget and the open exclusive batch are the machine's, whatever the scope.
-        every_running = conn.execute("SELECT id, weight, pred_cores, batch FROM tasks WHERE state = 'running' "
-                                     "ORDER BY started, seq").fetchall()
+        every_running = estimated(conn, conn.execute(
+            "SELECT id, weight, pred_cores, cpu, batch, sig_full, sig_head, sig_prog, sig_tool FROM tasks "
+            "WHERE state = 'running' ORDER BY started, seq").fetchall())
         every_waiting = [row for row in conn.execute("SELECT id, kind, requested, seq, owner, weight, pred_cores, "
                                                      "pred_duration, batch FROM tasks WHERE state = 'claimed' AND "
                                                      "requested IS NOT NULL ORDER BY requested, seq")
                          if exists(row["owner"])]
     used, jobs = sum(cores(row, box) for row in every_running), len(every_running)
     declared = sum(row["weight"] for row in every_running)
-    running = [row for row in active if row["state"] == "running"]
+    running = estimated(conn, [row for row in active if row["state"] == "running"])
     waiting = [row for row in active if row["state"] == "claimed" and row["requested"] is not None]
     batch = open_batch(every_running, every_waiting)
     every_waiting.sort(key=lambda row: waiting_order(row, batch, box.settings.aging))

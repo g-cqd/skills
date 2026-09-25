@@ -939,9 +939,10 @@ class OrderingTests(WorkTestCase):
 
 
 class BackfillTests(WorkTestCase):
-    def job(self, task_id, weight, state, since=None, kind="other"):
+    def job(self, task_id, weight, state, since=None, kind="other", command=("true",)):
         """A job in a given state, `since` seconds ago: running since then, or waiting for capacity since then."""
-        self.call("add", "--id", task_id, "--weight", str(weight), "--kind", kind, "--", "true", agent="a")
+        self.call("add", "--id", task_id, "--weight", str(weight), "--kind", kind, "--cwd", self.project, "--",
+                  *command, agent="a")
         self.call("claim", task_id, agent="a")
         self.accept(task_id, "a")
         stamp = time.time() - (since or 0)
@@ -1037,6 +1038,27 @@ class BackfillTests(WorkTestCase):
         gone.wait()
         self.database("UPDATE tasks SET owner = ? WHERE id = 'second'", gone.pid)
         self.assertEqual(self.why("other")[0], "cores", "only the running batch job holds it now")
+
+    def test_a_running_job_without_a_prediction_counts_its_history_then_its_samples_then_its_weight(self):
+        # Jobs that were running when the schema moved have no stored prediction.
+        self.call("settings", "--cpu-budget", "8")
+        self.call("add", "--id", "past", "--cwd", self.project, "--", "make", "known", agent="a")
+        ended = time.time() - 100
+        self.database("UPDATE tasks SET state = 'done', started = ?, ended = ?, cpu_time = 60, status = 0 "
+                      "WHERE id = 'past'", ended - 60, ended)
+        self.job("known", 4, "running", since=30, command=("make", "known"))
+        self.job("sampled", 4, "running", since=30, command=("make", "sampled"))
+        self.job("unknown", 4, "running", since=30, command=("make", "unknown"))
+        self.database("UPDATE tasks SET cpu = 150 WHERE id = 'sampled'")
+        ctx = work.Context(self.env)
+        self.addCleanup(ctx.close)
+        rows = ctx.conn.execute("SELECT * FROM tasks WHERE state = 'running' ORDER BY id").fetchall()
+        estimated = {row["id"]: row["pred_cores"] for row in work.estimated(ctx.conn, rows)}
+        self.assertEqual(estimated, {"known": 1.0, "sampled": 1.5, "unknown": None},
+                         "the history, else the last sample, else nothing: the weight counts")
+        self.job("next", 1.5, "waiting", since=5, command=("make", "next"))
+        self.assertIsNone(self.why("next"), "1 + 1.5 + 4 predicted cores leave room for 1.5 in a budget of 8")
+        self.assertIn("cores: predicted 6.5 of the CPU budget of 8", self.work("status").out)
 
     def test_backfill_never_takes_the_heads_turn(self):
         self.call("settings", "--cpu-budget", "2")
