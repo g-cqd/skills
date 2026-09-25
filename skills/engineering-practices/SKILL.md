@@ -30,6 +30,8 @@ one is `planner`.
 §SMALL    PR ≤ ~15-min-review · slice-by-behavior ¬by-file-type
 §SCOPE    boy-scout ∈ scope-only ⇒ rest ⇒ follow-up-ticket
 §CLOSE    ¬report-done BEFORE §5 gate ∀5-steps
+§BUILD    batch-edits ⇒ 1 build ⇒ fix ∀diagnostics · build ∷ what-step-needs ·
+          rerun ⇒ ¬rebuild · full-suite ×1 at-end · report ∋ build-count
 §WAIT     long-work ⇒ harness-notify | work run|wait (planner) ⇒ ¬fixed-sleep
 §DEPS     add-dependency ∷ architectural-decision ¬convenience
 §BAN      big-bang-rewrite · drive-by-churn · flag ∅removal-ticket ·
@@ -103,7 +105,8 @@ adopting its bugs, its CVEs, and its upgrade treadmill.
 Before reporting **any** task as done:
 
 1. **Re-read the original request.** Was *this* what was asked? Anything quietly dropped?
-2. **Build and run the full test suite** — not just the new tests.
+2. **Run the full test suite** — not just the new tests — once, from the build you already have
+   (Builds, below).
 3. **Exercise the change once like a user.** Run it. For UI, use the validation loop in `xcode`.
 4. **Review your own diff**: leftovers, debug prints, dead code, unrelated edits, commented-out
    experiments. Remove any scratch script or helper file you created for iteration; verifying
@@ -112,6 +115,21 @@ Before reporting **any** task as done:
    almost never true.
 
 Step 1 catches the most expensive class of failure: a correct implementation of the wrong thing.
+
+### Builds
+
+A build costs minutes; a test run from an existing build costs seconds. On one shared machine,
+builds took two thirds of all job time, and single agents ran up to 59 of them in one task.
+
+- **Batch edits, then build once.** Finish a coherent step, every edit it needs, then build. Never
+  build to check one small edit. Fix everything that build's diagnostics report in one pass.
+- **Build only what the step needs:** the module it touches and its tests, not the whole project
+  (`swift` §6, `xcode`). The full build waits for the end.
+- **Test from the build.** During the task, run the filtered tests the change touches; at the end,
+  run the full suite once. Never let a test command build implicitly in a loop.
+- **Don't rebuild to rerun.** Rerunning a test or a benchmark reuses the existing build, unless
+  sources changed since.
+- **Count your builds.** The task report states how many builds it ran, so waste is visible.
 
 ## 6. Waiting on long-running work
 
@@ -160,6 +178,7 @@ too early, and a loop of long sleeps compounds both. Wait on the event, not the 
 | "One big PR is more efficient" | Review quality collapses; defects hide in bulk |
 | "We'll remove the feature flag later" | Without a ticket, later is never |
 | "A quick library will save time" | You just adopted its bugs, CVEs, and upgrade train |
+| "I'll build after this edit, just to check" | Each build costs minutes, and one reports every error. Finish the step, then build |
 | "I'll sleep ten minutes, it should be done by then" | It was done in two, or it needs twelve. Wait on the event |
 
 ## Boundaries

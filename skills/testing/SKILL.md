@@ -90,6 +90,10 @@ The laws:
 4. Tests are executable documentation.
 5. The loop runs in milliseconds, or it will not be run.
 
+Keep the build out of the loop: build once per batch of edits, then run only the filtered tests
+the change touches from that build, never a test command that builds first (SwiftPM: `swift`
+§6); run the full suite once at the end, from the existing build.
+
 A test that passes the first time you run it has proven nothing. Confirm the red.
 
 "Minimum code to pass" means the minimum *general* code, not code special-cased to the test
@@ -227,7 +231,7 @@ this; that is why coverage is measured in behaviors, not percent.
 - [ ] Hot paths benchmarked with CI baselines
 - [ ] Parsers and validators fuzzed
 - [ ] Critical flows smoke-tested
-- [ ] Full suite green with no unexplained failure, read from the runner's report or exit status, not a log's tail
+- [ ] Full suite green with no unexplained failure, run once at the end from the existing build, and read from the runner's report or exit status, not a log's tail
 
 ---
 

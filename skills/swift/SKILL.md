@@ -147,6 +147,19 @@ responsibility, test targets alongside, and `.platforms` stating the real floor.
 external dependency against the standard library, an Apple framework, and an Apple-supplied
 package before adding it.
 
+**Build once, test many.** After a batch of edits, build once; run every test from that build:
+
+```sh
+swift build --build-tests                         # one build per batch of edits
+swift test --skip-build --filter ParserTests      # every test run, rerun included
+swift build --target Parser                       # mid-step: compile one module only
+```
+
+Plain `swift test` builds first, so in a loop it rebuilds on every run: always pass `--skip-build`.
+`--target` or `--product` checks one module mid-step, but with several test targets it does not
+link the test bundle, so build with `--build-tests` before running tests. Release builds get their
+own `--scratch-path .build-release`, never the debug `.build` (`performance-engineering` §4).
+
 ---
 
 ## 7. Concurrency
