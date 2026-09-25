@@ -84,14 +84,13 @@ import shlex
 import signal
 import sqlite3
 import stat
-import statistics
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
+from functools import lru_cache
 from datetime import datetime
 
 import order_tasks
@@ -789,7 +788,7 @@ HEX_ID = re.compile(r"\b(?=[0-9a-f]*\d)[0-9a-f]{7,}\b")
 LONG_NUMBER = re.compile(r"\d{3,}")
 DIGITS = re.compile(r"\d+")
 SCRATCH = tuple(sorted({"/tmp", "/private/tmp", "/var/folders", "/private/var/folders",
-                        os.path.realpath(tempfile.gettempdir())}))
+                        os.path.realpath(os.environ.get("TMPDIR") or "/tmp").rstrip(os.sep) or "/tmp"}))
 
 
 def scrub(text: str) -> str:
@@ -982,6 +981,12 @@ RAN = ("status IS NOT NULL AND status NOT IN (126, 127) AND started IS NOT NULL 
        "AND cpu_time IS NOT NULL")
 
 
+def median(values) -> float:
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    return ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+
+
 @dataclass
 class Prediction:
     """What a job is expected to use, from the last runs of its most specific signature that has enough of them:
@@ -1014,13 +1019,13 @@ def predict(conn: sqlite3.Connection, signed, weight: float) -> Prediction:
         if len(runs) < needed:
             continue
         durations = [max(row["ended"] - row["started"], 0.05) for row in runs]
-        cores = statistics.median(row["cpu_time"] / length for row, length in zip(runs, durations))
+        cores = median(row["cpu_time"] / length for row, length in zip(runs, durations))
         peaks = [row["rss_peak"] for row in runs if row["rss_peak"] is not None]
         return Prediction(min(weight, max(MIN_CORES, cores)), max(peaks) if peaks else None,
-                          statistics.median(durations), level, len(runs))
+                          median(durations), level, len(runs))
     recent = [row[0] for row in conn.execute(f"SELECT ended - started FROM tasks WHERE {RAN} ORDER BY ended DESC "
                                              "LIMIT ?", (RECENT,))]
-    return Prediction(weight, None, statistics.median(recent) if recent else DEFAULT_DURATION, "none", 0)
+    return Prediction(weight, None, median(recent) if recent else DEFAULT_DURATION, "none", 0)
 
 
 def describe_hold(row: sqlite3.Row, box) -> str:
@@ -1234,7 +1239,9 @@ class Signals:
     memory_used: int | None = None
 
 
+@lru_cache(maxsize=1)
 def macos_libc():
+    """ctypes and the C library, loaded once: every poll of every supervisor reads the kernel through them."""
     import ctypes
     import ctypes.util
     libc = ctypes.CDLL(ctypes.util.find_library("c"))
