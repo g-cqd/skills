@@ -1040,6 +1040,44 @@ class BackfillTests(WorkTestCase):
         self.assertEqual(self.why("second"), ("quiet", "job first, exclusive too, is ahead of it: one quiet window "
                                                         "at a time"))
 
+    def tiny(self, task_id, predicted, since=5):
+        self.job(task_id, 1, "waiting", since=since, command=("git", task_id))
+        self.database("UPDATE tasks SET pred_cores = ? WHERE id = ?", predicted, task_id)
+
+    def test_a_tiny_job_starts_at_the_budgets_edge_while_the_gates_are_open(self):
+        self.call("settings", "--cpu-budget", "8")
+        self.job("busy", 7.9, "running", since=60, command=("make", "busy"))
+        self.tiny("status", 0.2)
+        self.tiny("check", 0.6)
+        self.assertIsNone(self.why("status"), "predicted 0.2 cores: the budget sum does not hold it")
+        self.assertEqual(self.why("check"), ("cores", "predicted 7.9 of 8 cores are taken and this job needs 0.6"))
+        self.call("settings", "--idle-min", "10")
+        ctx = work.Context(self.env)
+        self.addCleanup(ctx.close)
+        row = work.get_task(ctx.conn, "status")
+        busy = work.machine(work.settings_of(ctx.conn), FakeGauge(idle=5.0).read())
+        self.assertEqual(work.Supervisor(ctx, "status", gauge=FakeGauge()).blocker(ctx.conn, row, busy)[0], "idle",
+                         "the idle gate still holds it")
+
+    def test_a_tiny_job_keeps_no_place_in_line(self):
+        self.call("settings", "--cpu-budget", "3")
+        self.job("busy", 1, "running", since=600, command=("make", "busy"))
+        self.job("head", 3, "waiting", since=400, command=("make", "head"))
+        self.tiny("small", 0.3, since=5)
+        self.assertEqual(self.why("head"), ("cores", "predicted 1 of 3 cores are taken and this job needs 3"))
+        self.assertIsNone(self.why("small"), "the head's wait past the backfill limit does not hold a tiny job")
+        self.job("next", 1, "waiting", since=4, command=("make", "next"))
+        self.database("UPDATE tasks SET state = 'done', ended = ? WHERE id = 'busy'", time.time())
+        self.tiny("first", 0.3, since=500)
+        self.assertIsNone(self.why("head"), "a tiny job waiting longer is not ahead of it")
+
+    def test_a_tiny_job_still_waits_out_a_quiet_window_when_the_small_weight_is_below_it(self):
+        self.call("settings", "--cpu-budget", "8", "--small-weight", "0.1")
+        self.job("timing", os.cpu_count() or 1, "running", since=10, command=("bench", "timing"))
+        self.database("UPDATE tasks SET pred_cores = 1, quiet_until = ? WHERE id = 'timing'", time.time() + 100)
+        self.tiny("status", 0.2)
+        self.assertEqual(self.why("status")[0], "quiet")
+
     def test_backfill_never_takes_the_heads_turn(self):
         self.call("settings", "--cpu-budget", "2")
         self.job("head", 1, "waiting", since=10)

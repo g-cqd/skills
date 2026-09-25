@@ -26,28 +26,29 @@ Rules:
     last component and ids masked, and its directory counts as its repository and the path inside it, so worktrees
     share history. A job starts only while the running jobs' predicted cores plus its own fit the CPU budget (default
     the CPU count), and their declared weights plus its own fit the capacity when one is set (off by default), or when
-    no job runs, and while the machine is not under pressure: the CPU at least idle-min idle (10%, measured over the
-    supervisor's last poll), used memory at or below the memory budget (the memory minus 2 GiB; on macOS the active,
-    wired and compressed pages, on Linux MemTotal minus MemAvailable), memory pressure below the memory limit
+    no job runs, or when the job is tiny, predicted at half a core or less, as unit tests of scripts, git commands and
+    small checks are, and while the machine is not under pressure: the CPU at least idle-min idle (10%, measured over
+    the supervisor's last poll), used memory at or below the memory budget (the memory minus 2 GiB; on macOS the
+    active, wired and compressed pages, on Linux MemTotal minus MemAvailable), memory pressure below the memory limit
     (warning, from the kernel), and, on Linux only, the load average below the CPU count times the load factor (1.5).
-    macOS counts threads that wait on memory and disk in its load average, so there it is shown, not used. Jobs that
-    wait for room start in work order: validity first, then the shortest predicted run time (the median of the same
-    runs) less the aging (1) times the time waited, then the order in which they asked, with backfill in predicted
-    cores: a job behind the head may start first if it fits now and in the cores the head leaves free, or if it is
-    small (small weight, 1 predicted core) while the head has waited less than the backfill wait (300 s) and no
-    validity job is ahead of it. A head past the backfill wait keeps every job behind it, so none starves. Exclusive
-    jobs, as heavy as the CPU count, are timing measurements, and they no longer drain the machine: one counts its
-    predicted cores as any job does. While it waits it holds new jobs predicted above the small weight, for the quiet
-    drain (60 s) at most, then starts even if such jobs still run; while it runs, no new job predicted above the small
-    weight starts, for the quiet max (180 s) at most, after which it runs on as an ordinary job. Light jobs start
-    throughout, and one quiet window is open at a time: a second exclusive job waits for the first window to close.
-    Its log records, as it starts and as it ends, the load average, the idle CPU and the other running jobs with their
-    predicted cores, so that its timings carry their context. A job that the machine's pressure alone holds back past
-    the load wait fails. `work settings` shows and sets these values, kept in the database so that every agent's jobs
-    are admitted alike: CPU budget, capacity, memory budget, idle min, memory limit, load factor, aging, job QoS,
-    quiet drain, quiet max, backfill wait, small weight, load wait (1800 s), log limit, and how long events and logs
-    are kept; `work status` shows the signals beside them and each job's prediction, and a waiting job's reason names
-    the rule that holds it.
+    macOS counts threads that wait on memory and disk in its load average, so there it is shown, not used. Tiny jobs
+    keep no place in line. The other jobs that wait for room start in work order: validity first, then the shortest
+    predicted run time (the median of the same runs) less the aging (1) times the time waited, then the order in which
+    they asked, with backfill in predicted cores: a job behind the head may start first if it fits now and in the
+    cores the head leaves free, or if it is small (small weight, 1 predicted core) while the head has waited less than
+    the backfill wait (300 s) and no validity job is ahead of it. A head past the backfill wait keeps every job behind
+    it, so none starves. Exclusive jobs, as heavy as the CPU count, are timing measurements, and they no longer drain
+    the machine: one counts its predicted cores as any job does. While it waits it holds new jobs predicted above the
+    small weight, for the quiet drain (60 s) at most, then starts even if such jobs still run; while it runs, no new
+    job predicted above the small weight starts, for the quiet max (180 s) at most, after which it runs on as an
+    ordinary job. Light jobs start throughout, and one quiet window is open at a time: a second exclusive job waits
+    for the first window to close. Its log records, as it starts and as it ends, the load average, the idle CPU and
+    the other running jobs with their predicted cores, so that its timings carry their context. A job that the
+    machine's pressure alone holds back past the load wait fails. `work settings` shows and sets these values, kept in
+    the database so that every agent's jobs are admitted alike: CPU budget, capacity, memory budget, idle min, memory
+    limit, load factor, aging, job QoS, quiet drain, quiet max, backfill wait, small weight, load wait (1800 s), log
+    limit, and how long events and logs are kept; `work status` shows the signals beside them and each job's
+    prediction, and a waiting job's reason names the rule that holds it.
   - Jobs: a detached supervisor starts the command in its own process group with stdin closed, at the job QoS
     (utility, on macOS through taskpolicy -c, which its children inherit, so the user's own work comes first under
     contention; an exclusive job at the default QoS, so its timings are not distorted), writes its output whole to a
@@ -1556,6 +1557,15 @@ def cores(row, box: Machine) -> float:
     return weight if row["pred_cores"] is None else min(weight, row["pred_cores"])
 
 
+TINY_CORES = 0.5  # A job predicted at this or less starts whenever the machine's gates are open.
+
+
+def tiny(row, box: Machine) -> bool:
+    """Whether a job is predicted to use half a core or less, as unit tests of scripts, git commands and small checks
+    do: it starts whenever the idle and memory gates are open, whatever the budget sum, and keeps no place in line."""
+    return cores(row, box) <= TINY_CORES + 1e-9
+
+
 def heavy(row, box: Machine) -> bool:
     """Whether a job is predicted to use more than the small weight: a quiet drain or window holds it."""
     return cores(row, box) > box.settings.small_weight + 1e-9
@@ -1618,10 +1628,10 @@ def pressure(box: Machine) -> tuple[str, str] | None:
 
 def admission(row, running: list, box: Machine) -> tuple[str, str] | None:
     """Why a job cannot start now beside the `running` jobs, as (cause, reason), or None when it can: its predicted
-    cores must fit the CPU budget beside theirs, its declared weight the capacity, when one is set, beside theirs,
-    and the machine must not be under pressure."""
+    cores must fit the CPU budget beside theirs, unless it is tiny, its declared weight the capacity, when one is set,
+    beside theirs, and the machine must not be under pressure."""
     need, used = cores(row, box), sum(cores(item, box) for item in running)
-    if over(need, used, box.budget):
+    if over(need, used, box.budget) and not (tiny(row, box) and not exclusive(row["weight"], box)):
         return taken(need, used, box)
     declared = sum(item["weight"] for item in running)
     if box.capacity is not None and over(row["weight"], declared, box.capacity):
@@ -1872,11 +1882,12 @@ class Supervisor:
             if end is not None and now < end:
                 return "quiet", (f"job {quiet[0]['id']} waits to run exclusive, and for {span(end - now)} more no "
                                  f"job predicted above {small} starts; this job needs {number(cores(row, box))}")
-        # The line holds the other jobs; while a quiet window or drain holds the heavy ones, only the light ones.
+        # The line holds the other jobs but the tiny ones, which keep no place in it; while a quiet window or drain
+        # holds the heavy jobs, only the light ones.
         holding = window is not None or (end is not None and now < end)
-        line = sorted((item for item in line if not exclusive(item["weight"], box)
+        line = sorted((item for item in line if not exclusive(item["weight"], box) and not tiny(item, box)
                        and not (holding and heavy(item, box))), key=order)
-        if line[0]["id"] != row["id"]:
+        if not tiny(row, box) and line[0]["id"] != row["id"]:
             ahead = line[:[item["id"] for item in line].index(row["id"])]
             held = backfill(row, ahead, running, box, now)
             if held is not None:
