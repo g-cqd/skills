@@ -969,6 +969,81 @@ class SignatureTests(WorkTestCase):
                          "tasks_by_sig_tool"} <= indexes)
 
 
+class PredictionTests(WorkTestCase):
+    def ran(self, command, cores, seconds, rss=None, status=0, ago=1000.0):
+        """A finished job of `command` that used `cores` on average over `seconds`, ended `ago` seconds ago."""
+        task_id = f"past-{len(self.database('SELECT seq FROM tasks'))}"
+        self.call("add", "--id", task_id, "--cwd", self.project, "--", *command, agent="a")
+        ended = time.time() - ago
+        self.database("UPDATE tasks SET state = 'done', started = ?, ended = ?, cpu_time = ?, rss_peak = ?, "
+                      "status = ? WHERE id = ?", ended - seconds, ended, cores * seconds, rss, status, task_id)
+
+    def predict(self, command, weight=8.0):
+        ctx = work.Context(self.env)
+        try:
+            return work.predict(ctx.conn, work.signatures(command, self.project), weight)
+        finally:
+            ctx.close()
+
+    def test_without_history_the_declared_weight_is_the_estimate(self):
+        guess = self.predict(["swift", "build"], weight=3)
+        self.assertEqual((guess.cores, guess.rss_kib, guess.duration, guess.level), (3, None, 30.0, "none"))
+        self.assertEqual(guess.basis, "no history: the declared weight")
+        self.ran(["make"], 1, 90)
+        self.ran(["make"], 1, 10)
+        self.ran(["make"], 1, 20)
+        self.assertEqual(self.predict(["swift", "build"]).duration, 20, "the median run time of recent jobs")
+
+    def test_the_last_five_runs_give_the_median_cores_the_peak_memory_and_the_median_time(self):
+        command = ["swift", "test", "--parallel"]
+        self.ran(command, 7, 500, rss=9_000_000, ago=6000)  # The sixth run back is forgotten.
+        for index, (cores, seconds, rss) in enumerate(((1.0, 60, 400_000), (1.5, 80, 900_000), (0.8, 50, 300_000),
+                                                       (3.0, 70, 500_000), (1.2, 65, 450_000))):
+            self.ran(command, cores, seconds, rss=rss, ago=5000 - index * 100)
+        guess = self.predict(command)
+        self.assertAlmostEqual(guess.cores, 1.2)
+        self.assertEqual((guess.rss_kib, guess.duration, guess.level, guess.runs), (900_000, 65, "full", 5))
+        self.assertEqual(guess.basis, "5 runs of the same command")
+
+    def test_the_declared_weight_caps_the_cores_and_a_tenth_of_a_core_is_the_floor(self):
+        self.ran(["swift", "build"], 6, 100)
+        self.assertEqual(self.predict(["swift", "build"], weight=2).cores, 2)
+        self.ran(["sleep", "60"], 0.0, 60)
+        self.assertEqual(self.predict(["sleep", "60"]).cores, 0.1)
+
+    def test_a_prediction_falls_back_from_the_command_to_its_program(self):
+        self.ran(["swift", "build", "--product", "App"], 4, 100)
+        self.assertEqual(self.predict(["swift", "build", "--product", "Tool"]).level, "none",
+                         "one run of the same flags is not enough")
+        self.ran(["swift", "build", "--product", "Kit"], 2, 50)
+        guess = self.predict(["swift", "build", "--product", "Tool"])
+        self.assertEqual((guess.level, guess.cores, guess.basis), ("head", 3.0, "2 runs of the same program and flags"))
+        for _ in range(3):
+            self.ran(["swift", "build", "-v"], 1, 10)
+        self.assertEqual(self.predict(["swift", "build", "--verbose"]).level, "prog",
+                         "three runs of the program in this place")
+        elsewhere = os.path.join(self.root, "elsewhere")
+        os.makedirs(os.path.join(elsewhere, ".git"))  # A repository of its own: another place.
+        ctx = work.Context(self.env)
+        self.addCleanup(ctx.close)
+        self.assertEqual(work.predict(ctx.conn, work.signatures(["swift", "build"], elsewhere), 8).level, "tool")
+
+    def test_jobs_that_never_ran_teach_nothing(self):
+        for status in (126, 127):
+            self.ran(["missing-tool"], 0, 0.01, status=status)
+        self.assertEqual(self.predict(["missing-tool"]).level, "none")
+
+    def test_a_job_records_its_prediction_when_it_asks_for_capacity(self):
+        self.assertEqual(self.work("run", "--id", "first", "--weight", "2", "--", "true", agent="a").status, 0)
+        first = self.task("first")["predicted"]
+        self.assertEqual((first["cores"], first["from"]), (2, "no history: the declared weight"))
+        self.assertEqual(self.work("run", "--id", "second", "--weight", "2", "--", "true", agent="a").status, 0)
+        second = self.task("second")["predicted"]
+        self.assertEqual(second["from"], "1 run of the same command")
+        self.assertLess(second["cores"], 2)
+        self.assertIn("predicted: ", self.work("show", "second").out)
+
+
 class WaitTests(WorkTestCase):
     def test_wait_any_returns_at_the_first_end_and_all_waits_for_the_scope(self):
         self.work("scope", "set", "proj")
