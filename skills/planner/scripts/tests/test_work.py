@@ -646,6 +646,7 @@ class CapacityTests(WorkTestCase):
         for word in ("off", "auto"):
             self.assertIsNone(self.json("settings", "--capacity", word)[1]["capacity"])
         for arguments in (("--capacity", "0"), ("--capacity", "lots"), ("--cpu-budget", "0"), ("--cpu-budget", "off"),
+                          ("--job-qos", "maintenance"), ("--aging", "-1"),
                           ("--load-factor", "-1"), ("--load-wait", "nan"), ("--log-limit", "0"),
                           ("--keep-days", "inf")):
             with self.subTest(arguments=arguments):
@@ -1183,6 +1184,44 @@ class PredictionTests(WorkTestCase):
         self.assertEqual(second["from"], "1 run of the same command")
         self.assertLess(second["cores"], 2)
         self.assertIn("predicted: ", self.work("show", "second").out)
+
+
+@unittest.skipUnless(sys.platform == "darwin" and os.access(work.TASKPOLICY, os.X_OK), "macOS QoS clamps")
+class QosTests(WorkTestCase):
+    # The job prints its own scheduling priority, then a child process prints its own: 31 at the default QoS, 20 at
+    # utility, 4 at background. `; true` keeps the shell from running its last command in its own process.
+    PROBE = ["sh", "-c", "ps -o pri= -p $$; sh -c 'ps -o pri= -p $$'; true"]
+
+    def priorities(self, task_id, *extra):
+        result = self.work("run", "--id", task_id, *extra, "--", *self.PROBE, agent="a")
+        self.assertEqual(result.status, 0, result.out + result.err)
+        with open(self.task(task_id)["log"]) as handle:
+            return [int(line) for line in handle.read().split() if line.isdigit()]
+
+    def test_jobs_run_at_the_job_qos_and_their_children_inherit_it(self):
+        own = int(subprocess.run(["sh", "-c", "ps -o pri= -p $$"], capture_output=True, text=True).stdout)
+        self.assertEqual(self.json("settings")[1]["job_qos"], "utility", "utility by default")
+        utility = self.priorities("utility")
+        self.assertEqual(len(utility), 2)
+        self.assertTrue(all(value <= min(own, 20) for value in utility), (own, utility))
+        self.assertEqual(self.task("utility")["qos"], "utility")
+        self.call("settings", "--job-qos", "background")
+        self.assertEqual(self.priorities("background"), [4, 4])
+        self.call("settings", "--job-qos", "default")
+        self.assertEqual(self.priorities("default"), [own, own], "the default QoS is the supervisor's own")
+
+    @unittest.skipIf((os.cpu_count() or 1) < 2, "an exclusive job must be heavier than an ordinary one")
+    def test_exclusive_jobs_run_at_the_default_qos_so_their_timings_are_not_distorted(self):
+        own = int(subprocess.run(["sh", "-c", "ps -o pri= -p $$"], capture_output=True, text=True).stdout)
+        self.assertEqual(self.priorities("timing", "--weight", str(os.cpu_count())), [own, own])
+        self.assertEqual(self.task("timing")["qos"], "default")
+
+    def test_a_missing_or_unrunnable_command_keeps_its_status_through_the_wrapper(self):
+        script = os.path.join(self.root, "not-executable")
+        open(script, "w").close()
+        self.assertEqual(self.work("run", "--", "no-such-command-anywhere", agent="a").status, 127)
+        self.assertEqual(self.work("run", "--", script, agent="a").status, 126)
+        self.assertEqual(self.work("run", "--", self.root, agent="a").status, 126, "a directory cannot run")
 
 
 class WaitTests(WorkTestCase):
