@@ -31,7 +31,8 @@ Rules:
     wired and compressed pages, on Linux MemTotal minus MemAvailable), memory pressure below the memory limit
     (warning, from the kernel), and, on Linux only, the load average below the CPU count times the load factor (1.5).
     macOS counts threads that wait on memory and disk in its load average, so there it is shown, not used. Jobs that
-    wait for room start in work order: validity first, then the order in which they asked, with backfill in predicted
+    wait for room start in work order: validity first, then the shortest predicted run time (the median of the same
+    runs) less the aging (1) times the time waited, then the order in which they asked, with backfill in predicted
     cores: a job behind the head may start first if it fits now and in the cores the head leaves free, or if it is
     small (small weight, 1 predicted core) while the head has waited less than the backfill wait (300 s) and no
     validity job is ahead of it. A head past the backfill wait keeps every job behind it, so none starves. Exclusive
@@ -41,9 +42,9 @@ Rules:
     batch. An exclusive job that asks later waits for the next batch; a batch job whose supervisor is gone keeps no
     place, as any waiting job. A job that the machine's pressure alone holds back past the load wait fails. `work
     settings` shows and sets these values, kept in the database so that every agent's jobs are admitted alike: CPU
-    budget, capacity, memory budget, idle min, memory limit, load factor, backfill wait, small weight, load wait (1800
-    s), log limit, and how long events and logs are kept; `work status` shows the signals beside them and each job's
-    prediction, and a waiting job's reason names the rule that holds it.
+    budget, capacity, memory budget, idle min, memory limit, load factor, aging, backfill wait, small weight, load
+    wait (1800 s), log limit, and how long events and logs are kept; `work status` shows the signals beside them and
+    each job's prediction, and a waiting job's reason names the rule that holds it.
   - Jobs: a detached supervisor starts the command in its own process group with stdin closed, writes its output
     whole to a log, stops it if the log passes the log limit (256 MiB), samples the CPU and memory of its process
     tree every 2 s with ps, and records its true exit status: 127 when the command is missing, 126 when it cannot
@@ -214,6 +215,9 @@ MIGRATIONS = ((
     # The memory budget, in KiB, that measured used memory must not pass for a job to start: NULL for the memory
     # minus 2 GiB, 0 for no gate.
     "ALTER TABLE settings ADD COLUMN memory_budget INTEGER CHECK (memory_budget IS NULL OR memory_budget >= 0)",
+), (
+    # Waiting jobs go shortest predicted run time first, less `aging` seconds for each second waited.
+    "ALTER TABLE settings ADD COLUMN aging REAL NOT NULL DEFAULT 1 CHECK (aging >= 0)",
 ))
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -1020,7 +1024,8 @@ def describe_hold(row: sqlite3.Row, box) -> str:
         return f"holds {number(row['weight'])} cores, its weight (no prediction)"
     need = number(cores(row, box))
     unit = "core" if need == "1" else "cores"
-    return f"predicted {need} {unit} and {memory(row['pred_rss'])} at peak ({row['pred_from']})"
+    return (f"predicted {need} {unit}, {memory(row['pred_rss'])} at peak, {span(row['pred_duration'])} "
+            f"({row['pred_from']})")
 
 
 def describe_prediction(row: sqlite3.Row) -> str:
@@ -1190,13 +1195,14 @@ class Settings:
     small_weight: float = 1.0
     cpu_budget: float | None = None  # the running jobs' predicted cores; None: the CPU count
     memory_budget: int | None = None  # KiB of used memory; None: the memory minus 2 GiB; 0: no gate
+    aging: float = 1.0  # seconds of predicted run time forgiven for each second a job waits
 
 
 def settings_of(conn: sqlite3.Connection) -> Settings:
     row = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
     return Settings(row["capacity"], row["load_factor"], row["load_wait"], row["log_limit"], row["keep_days"],
                     row["pruned"], row["idle_min"], row["memory_limit"], row["backfill_wait"], row["small_weight"],
-                    row["cpu_budget"], row["memory_budget"])
+                    row["cpu_budget"], row["memory_budget"], row["aging"])
 
 
 MEMORY_LEVELS = ("normal", "warning", "critical")
@@ -1588,11 +1594,17 @@ def backfill(row: sqlite3.Row, ahead: list[sqlite3.Row], running: list[sqlite3.R
     return "ahead", reason
 
 
-def waiting_order(row: sqlite3.Row, batch: str | None = None) -> tuple:
-    """A waiting job's place in line, in order_tasks' work order: validity first, then the jobs of the open exclusive
-    batch `batch`, then the order in which the jobs asked for capacity."""
+def waiting_order(row, batch: str | None = None, aging: float = 1.0) -> tuple:
+    """A waiting job's place in line: validity first, as in order_tasks' work order, then the jobs of the open
+    exclusive batch `batch`, then the shortest predicted run time less `aging` times the time waited, then the order
+    in which the jobs asked. Shortest first cuts the total wait; aging bounds each job's: a job predicted to run P
+    seconds goes ahead of every job that asks more than P / aging seconds after it. The time waited is the same
+    for every job at one moment, so the key is the predicted run time plus aging times the request time, and the
+    order changes only when a job asks or leaves. A job without a prediction counts as the default run time."""
+    duration = row["pred_duration"] if row["pred_duration"] is not None else DEFAULT_DURATION
     return (0 if row["kind"].lower() in order_tasks.VALIDITY_KINDS else 1,
-            0 if batch is not None and row["batch"] == batch else 1, row["requested"], row["seq"])
+            0 if batch is not None and row["batch"] == batch else 1, duration + aging * row["requested"],
+            row["requested"], row["seq"])
 
 
 def open_batch(running: list[sqlite3.Row], waiting: list[sqlite3.Row]) -> str | None:
@@ -1734,7 +1746,7 @@ class Supervisor:
         the open batch, so that the machine, once drained for the batch, runs its jobs back to back."""
         running, line = self.lines(conn, row)
         batch = open_batch(running, line)
-        line.sort(key=lambda item: waiting_order(item, batch))
+        line.sort(key=lambda item: waiting_order(item, batch, box.settings.aging))
         if line[0]["id"] != row["id"]:
             ahead = line[:[item["id"] for item in line].index(row["id"])]
             if row["batch"] != batch and any(item["batch"] == batch for item in ahead):
@@ -2700,7 +2712,8 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
                                              ("memory_limit", args.memory_limit),
                                              ("memory_budget", args.memory_budget),
                                              ("backfill_wait", args.backfill_wait),
-                                             ("small_weight", args.small_weight)) if value is not None}
+                                             ("small_weight", args.small_weight),
+                                             ("aging", args.aging)) if value is not None}
     if changes:
         with writing(conn):
             for key, value in changes.items():
@@ -2721,7 +2734,8 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
               "memory_budget_kib": box.memory_budget, "memory_budget_is_default": settings.memory_budget is None,
               "load_factor": settings.load_factor, "load_limit": box.load_limit, "load_wait": settings.load_wait,
               "log_limit": settings.log_limit, "keep_days": settings.keep_days,
-              "backfill_wait": settings.backfill_wait, "small_weight": settings.small_weight})
+              "backfill_wait": settings.backfill_wait, "small_weight": settings.small_weight,
+              "aging": settings.aging})
         return 0
     budget_default = " (the default: the CPU count)" if settings.cpu_budget is None else ""
     capacity = "off (the default): no cap on declared weights" if box.capacity is None else \
@@ -2743,6 +2757,8 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
           f"load factor: {settings.load_factor:g}; on Linux only, jobs start below load {box.load_limit:.2f} on "
           f"{box.cpus} CPUs\n"
           f"load wait: {span(settings.load_wait)}; a job that the machine's pressure alone holds back longer fails\n"
+          f"aging: {settings.aging:g}; waiting jobs go shortest predicted run time first, less this many seconds "
+          f"for each second waited\n"
           f"backfill wait: {span(settings.backfill_wait)}; a job that waited longer keeps every job behind it\n"
           f"small weight: {settings.small_weight:g}; a job this light may start past the head for a while\n"
           f"log limit: {settings.log_limit} bytes; a job whose log grows past it is stopped\n"
@@ -2777,7 +2793,7 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
     running = [row for row in active if row["state"] == "running"]
     waiting = [row for row in active if row["state"] == "claimed" and row["requested"] is not None]
     batch = open_batch(every_running, every_waiting)
-    every_waiting.sort(key=lambda row: waiting_order(row, batch))
+    every_waiting.sort(key=lambda row: waiting_order(row, batch, box.settings.aging))
     batch_json = None if batch is None else {
         "id": batch, "running": [row["id"] for row in every_running if row["batch"] == batch],
         "next": [row["id"] for row in every_waiting if row["batch"] == batch]}
@@ -2969,6 +2985,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="jobs start below this memory pressure (default warning)")
     sub.add_argument("--load-factor", type=positive,
                      help="on Linux, jobs start below this load per CPU (default 1.5)")
+    sub.add_argument("--aging", type=duration, metavar="RATE",
+                     help="waiting jobs go shortest predicted run time first, less this many seconds for each second "
+                          "they waited, so that none starves; 0 for shortest first alone (default 1)")
     sub.add_argument("--backfill-wait", type=positive, metavar="SECONDS",
                      help="once the head of the line waited this long, no job starts before it (default 300)")
     sub.add_argument("--small-weight", type=positive, metavar="CORES",
