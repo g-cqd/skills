@@ -19,31 +19,31 @@ Rules:
     has read it (`work show`, which prints its digest) and accepted it (`work accept ID --digest D`), whoever queued
     it: agent names are self-declared, so no name proves who wrote a command. Only a command typed inline with
     `work run -- ...` needs no acceptance. Commands are stored as argument lists and run without a shell.
-  - Capacity: a job declares a weight, the cores it may use (default 1, at most the CPU count), but it is admitted
-    on the cores it is predicted to use, from the history of its command: the median average cores (CPU time over
-    run time) of the last 5 runs of the most specific signature that has enough of them, capped by the declared
-    weight, which is the estimate while there is no history. A signature normalizes the command, with paths reduced
-    to their last component and ids masked, and its directory counts as its repository and the path inside it, so
-    worktrees share history. A job starts only while the running jobs' predicted cores plus its own fit the CPU
-    budget (default the CPU count), and their declared weights plus its own fit the capacity when one is set (off
-    by default), or when no job runs, and while the machine is not under pressure: the CPU at least idle-min idle
-    (15%, measured over the supervisor's last poll), memory pressure below the memory limit (warning, from the
-    kernel), and, on Linux only, the load average below the CPU count times the load factor (1.5). macOS counts
-    threads that wait on memory and disk in its load average, so there it is shown, not used.
-    Jobs that wait for room start in work order: validity first, then the order in which they asked, with backfill in
-    predicted cores: a job behind the head may start first if it fits now and in the cores the head leaves free, or
-    if it is small (small weight, 1 predicted core) while the head has waited less than the backfill wait (300 s)
-    and no validity job is ahead of it. A head past the backfill wait keeps every job behind it, so none starves.
-    Exclusive jobs, as heavy as the CPU count, are timing measurements: they hold the whole budget, whatever their
-    history, and run in batches: when one starts, the exclusive jobs already waiting join its batch, and while the
-    batch is open they start next, one at a time, ahead of every waiting job but validity work, so the machine
-    drains once for the batch. An exclusive job that asks later waits for the next batch; a batch job whose
-    supervisor is gone keeps no place, as any waiting job. A job that the machine's pressure
-    alone holds back past the load wait fails. `work settings` shows and sets these values, kept
-    in the database so that every agent's jobs are admitted alike: CPU budget, capacity, idle min, memory limit,
-    load factor, backfill wait, small weight, load wait (1800 s), log limit, and how long events and logs are kept;
-    `work status` shows the signals beside them and each job's prediction, and a waiting job's reason names the rule
-    that holds it.
+  - Capacity: a job declares a weight, the cores it may use (default 1, at most the CPU count), but it is admitted on
+    the cores it is predicted to use, from the history of its command: the median average cores (CPU time over run
+    time) of the last 5 runs of the most specific signature that has enough of them, capped by the declared weight,
+    which is the estimate while there is no history. A signature normalizes the command, with paths reduced to their
+    last component and ids masked, and its directory counts as its repository and the path inside it, so worktrees
+    share history. A job starts only while the running jobs' predicted cores plus its own fit the CPU budget (default
+    the CPU count), and their declared weights plus its own fit the capacity when one is set (off by default), or when
+    no job runs, and while the machine is not under pressure: the CPU at least idle-min idle (15%, measured over the
+    supervisor's last poll), used memory at or below the memory budget (the memory minus 2 GiB; on macOS the active,
+    wired and compressed pages, on Linux MemTotal minus MemAvailable), memory pressure below the memory limit
+    (warning, from the kernel), and, on Linux only, the load average below the CPU count times the load factor (1.5).
+    macOS counts threads that wait on memory and disk in its load average, so there it is shown, not used. Jobs that
+    wait for room start in work order: validity first, then the order in which they asked, with backfill in predicted
+    cores: a job behind the head may start first if it fits now and in the cores the head leaves free, or if it is
+    small (small weight, 1 predicted core) while the head has waited less than the backfill wait (300 s) and no
+    validity job is ahead of it. A head past the backfill wait keeps every job behind it, so none starves. Exclusive
+    jobs, as heavy as the CPU count, are timing measurements: they hold the whole budget, whatever their history, and
+    run in batches: when one starts, the exclusive jobs already waiting join its batch, and while the batch is open
+    they start next, one at a time, ahead of every waiting job but validity work, so the machine drains once for the
+    batch. An exclusive job that asks later waits for the next batch; a batch job whose supervisor is gone keeps no
+    place, as any waiting job. A job that the machine's pressure alone holds back past the load wait fails. `work
+    settings` shows and sets these values, kept in the database so that every agent's jobs are admitted alike: CPU
+    budget, capacity, memory budget, idle min, memory limit, load factor, backfill wait, small weight, load wait (1800
+    s), log limit, and how long events and logs are kept; `work status` shows the signals beside them and each job's
+    prediction, and a waiting job's reason names the rule that holds it.
   - Jobs: a detached supervisor starts the command in its own process group with stdin closed, writes its output
     whole to a log, stops it if the log passes the log limit (256 MiB), samples the CPU and memory of its process
     tree every 2 s with ps, and records its true exit status: 127 when the command is missing, 126 when it cannot
@@ -210,6 +210,10 @@ MIGRATIONS = ((
     # Admission counts predicted cores against the CPU budget (NULL: the CPU count). The capacity becomes an optional
     # cap on declared weights: NULL, which meant the CPU count minus 2, now means no cap; a value set is kept.
     "ALTER TABLE settings ADD COLUMN cpu_budget REAL CHECK (cpu_budget IS NULL OR cpu_budget > 0)",
+), (
+    # The memory budget, in KiB, that measured used memory must not pass for a job to start: NULL for the memory
+    # minus 2 GiB, 0 for no gate.
+    "ALTER TABLE settings ADD COLUMN memory_budget INTEGER CHECK (memory_budget IS NULL OR memory_budget >= 0)",
 ))
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -291,6 +295,22 @@ def capacity_setting(text: str) -> float | str:
 
 def budget_setting(text: str) -> float | str:
     return "auto" if text == "auto" else positive(text)
+
+
+SIZE = re.compile(r"(\d+(?:\.\d+)?)\s*([KMGT])(?:i?B)?", re.IGNORECASE)
+
+
+def memory_setting(text: str) -> int | str:
+    """A size in KiB from 14G, 14GiB or 14336M (binary units), or auto, or off."""
+    if text in ("auto", "off"):
+        return text
+    match = SIZE.fullmatch(text.strip())
+    if match is None:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a size with its unit, as 14G or 14336M, nor auto or off")
+    kib = round(float(match.group(1)) * 1024 ** "KMGT".index(match.group(2).upper()))
+    if kib <= 0:
+        raise argparse.ArgumentTypeError(f"{text!r} is not greater than zero")
+    return kib
 
 
 def counting(minimum: int):
@@ -1169,13 +1189,14 @@ class Settings:
     backfill_wait: float = 300.0
     small_weight: float = 1.0
     cpu_budget: float | None = None  # the running jobs' predicted cores; None: the CPU count
+    memory_budget: int | None = None  # KiB of used memory; None: the memory minus 2 GiB; 0: no gate
 
 
 def settings_of(conn: sqlite3.Connection) -> Settings:
     row = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
     return Settings(row["capacity"], row["load_factor"], row["load_wait"], row["log_limit"], row["keep_days"],
                     row["pruned"], row["idle_min"], row["memory_limit"], row["backfill_wait"], row["small_weight"],
-                    row["cpu_budget"])
+                    row["cpu_budget"], row["memory_budget"])
 
 
 MEMORY_LEVELS = ("normal", "warning", "critical")
@@ -1189,12 +1210,14 @@ class Signals:
     idle is the share of CPU time spent idle over the last sample, in percent: the CPU that a new job can have.
     memory is the kernel's memory pressure, normal, warning or critical. load is the one-minute load average, which
     gates only where it measures CPU demand (`load_gate`): on Linux. macOS counts threads that wait on memory and
-    disk in it too, so a machine can show a load of 90 while half its CPU is idle."""
+    disk in it too, so a machine can show a load of 90 while half its CPU is idle. memory_used is the memory in use,
+    in KiB: on macOS the active, wired and compressed pages, on Linux MemTotal minus MemAvailable."""
 
     idle: float | None
     memory: str | None
     load: float | None
     load_gate: bool
+    memory_used: int | None = None
 
 
 def macos_libc():
@@ -1230,6 +1253,43 @@ def macos_memory_level() -> str | None:
     return {1: "normal", 2: "warning", 4: "critical"}.get(value.value)
 
 
+def macos_memory_used() -> int | None:
+    """The memory in use, in KiB: the active, wired and compressed pages, from host_statistics64(HOST_VM_INFO64)."""
+    try:
+        ctypes, libc = macos_libc()
+        u32, u64 = ctypes.c_uint32, ctypes.c_uint64
+
+        class VMStatistics64(ctypes.Structure):  # vm_statistics64 in <mach/vm_statistics.h>
+            _fields_ = [("free_count", u32), ("active_count", u32), ("inactive_count", u32), ("wire_count", u32),
+                        ("zero_fill_count", u64), ("reactivations", u64), ("pageins", u64), ("pageouts", u64),
+                        ("faults", u64), ("cow_faults", u64), ("lookups", u64), ("hits", u64), ("purges", u64),
+                        ("purgeable_count", u32), ("speculative_count", u32), ("decompressions", u64),
+                        ("compressions", u64), ("swapins", u64), ("swapouts", u64), ("compressor_page_count", u32),
+                        ("throttled_count", u32), ("external_page_count", u32), ("internal_page_count", u32),
+                        ("total_uncompressed_pages_in_compressor", u64)]
+
+        host, info = libc.mach_host_self(), VMStatistics64()
+        count, page = ctypes.c_uint(ctypes.sizeof(info) // 4), ctypes.c_size_t(0)  # HOST_VM_INFO64_COUNT
+        if libc.host_statistics64(host, 4, ctypes.byref(info), ctypes.byref(count)) != 0 \
+                or libc.host_page_size(host, ctypes.byref(page)) != 0 or not page.value:
+            return None
+    except (OSError, AttributeError):
+        return None
+    return (info.active_count + info.wire_count + info.compressor_page_count) * page.value // 1024
+
+
+def macos_total_memory() -> int | None:
+    """The machine's memory in KiB, from the hw.memsize sysctl."""
+    try:
+        ctypes, libc = macos_libc()
+        value, size = ctypes.c_uint64(0), ctypes.c_size_t(8)
+        if libc.sysctlbyname(b"hw.memsize", ctypes.byref(value), ctypes.byref(size), None, 0) != 0:
+            return None
+    except (OSError, AttributeError):
+        return None
+    return value.value // 1024 or None
+
+
 def linux_cpu_ticks(stat: str) -> tuple[int, int] | None:
     """(idle ticks, all ticks) from /proc/stat's first line; waiting on I/O counts as idle CPU."""
     fields = stat.split("\n", 1)[0].split()
@@ -1242,14 +1302,37 @@ def linux_cpu_ticks(stat: str) -> tuple[int, int] | None:
     return ticks[3] + (ticks[4] if len(ticks) > 4 else 0), sum(ticks)
 
 
-def linux_memory_level(meminfo: str) -> str | None:
-    """From /proc/meminfo: warning below 10% of memory available, critical below 5%."""
+def meminfo_values(meminfo: str) -> dict[str, int]:
+    """The KiB values of /proc/meminfo, by name."""
     values = {}
     for line in meminfo.splitlines():
         name, _, rest = line.partition(":")
         parts = rest.split()
         if parts and parts[0].isdigit():
             values[name] = int(parts[0])
+    return values
+
+
+def linux_memory_used(meminfo: str) -> int | None:
+    """From /proc/meminfo: MemTotal minus MemAvailable, in KiB."""
+    values = meminfo_values(meminfo)
+    total, available = values.get("MemTotal"), values.get("MemAvailable")
+    return None if total is None or available is None else max(0, total - available)
+
+
+def total_memory(platform: str = sys.platform) -> int | None:
+    """The machine's memory in KiB, or None when unknown."""
+    if platform == "darwin":
+        return macos_total_memory()
+    if platform.startswith("linux"):
+        meminfo = read_text("/proc/meminfo")
+        return meminfo_values(meminfo).get("MemTotal") if meminfo else None
+    return None
+
+
+def linux_memory_level(meminfo: str) -> str | None:
+    """From /proc/meminfo: warning below 10% of memory available, critical below 5%."""
+    values = meminfo_values(meminfo)
     total, available = values.get("MemTotal"), values.get("MemAvailable")
     if not total or available is None:
         return None
@@ -1292,6 +1375,14 @@ class Gauge:
             return linux_memory_level(meminfo) if meminfo else None
         return None
 
+    def memory_used(self) -> int | None:
+        if self.platform == "darwin":
+            return macos_memory_used()
+        if self.platform.startswith("linux"):
+            meminfo = read_text("/proc/meminfo")
+            return linux_memory_used(meminfo) if meminfo else None
+        return None
+
     def prime(self) -> None:
         ticks = self.ticks()
         if ticks is not None:
@@ -1321,7 +1412,8 @@ class Gauge:
 
     def read(self, idle: bool = True) -> Signals:
         """The signals now; without `idle`, idle CPU is not measured, as when no threshold reads it."""
-        return Signals(self.idle() if idle else None, self.memory(), load_average(), self.platform.startswith("linux"))
+        return Signals(self.idle() if idle else None, self.memory(), load_average(), self.platform.startswith("linux"),
+                       self.memory_used())
 
 
 @dataclass
@@ -1331,6 +1423,7 @@ class Machine:
     capacity: float | None  # the declared cores that running jobs may take together; None: no cap
     settings: Settings
     signals: Signals | None
+    memory_budget: int | None = None  # KiB of used memory above which no job starts; None: no gate or unknown
 
     @property
     def load_limit(self) -> float:
@@ -1346,7 +1439,21 @@ def load_average() -> float | None:
 
 def machine(settings: Settings, signals: Signals | None = None) -> Machine:
     cpus = os.cpu_count() or 1
-    return Machine(cpus, settings.cpu_budget or float(cpus), settings.capacity, settings, signals)
+    return Machine(cpus, settings.cpu_budget or float(cpus), settings.capacity, settings, signals,
+                   memory_budget(settings))
+
+
+RESERVE_KIB = 2 * 1024 * 1024  # The memory the default budget leaves to the user's own work.
+
+
+def memory_budget(settings: Settings) -> int | None:
+    """The memory budget in KiB: the setting, or the machine's memory minus 2 GiB; None when off or unknown."""
+    if settings.memory_budget == 0:
+        return None
+    if settings.memory_budget is not None:
+        return settings.memory_budget
+    total = total_memory()
+    return None if total is None or total <= RESERVE_KIB else total - RESERVE_KIB
 
 
 def check_weight(weight: float) -> float:
@@ -1389,14 +1496,18 @@ def taken(need: float, used: float, box: Machine) -> tuple[str, str]:
 
 def pressure(box: Machine) -> tuple[str, str] | None:
     """Why the machine itself holds jobs back, as (cause, reason) naming the signal, or None. Memory pressure at or
-    above the settings' memory_limit holds them; so does idle CPU below idle_min; so does, on Linux only, a load
-    average at or above the CPU count times load_factor. An unknown signal holds nothing."""
+    above the settings' memory_limit holds them; so does used memory above the memory budget; so does idle CPU below
+    idle_min; so does, on Linux only, a load average at or above the CPU count times load_factor. An unknown signal
+    holds nothing."""
     signals, settings = box.signals, box.settings
     if signals is None:
         return None
     if settings.memory_limit != "off" and signals.memory in MEMORY_LEVELS \
             and MEMORY_LEVELS.index(signals.memory) >= MEMORY_LEVELS.index(settings.memory_limit):
         return "memory", f"memory pressure is {signals.memory}; jobs start below {settings.memory_limit}"
+    if box.memory_budget is not None and signals.memory_used is not None and signals.memory_used > box.memory_budget:
+        return "memory", (f"used memory is {gib(signals.memory_used)}, above the memory budget of "
+                          f"{gib(box.memory_budget)}")
     if signals.idle is not None and signals.idle < settings.idle_min:
         return "idle", f"the CPU is {signals.idle:.0f}% idle; jobs start at {settings.idle_min:g}% idle or more"
     if signals.load_gate and signals.load is not None and signals.load >= box.load_limit:
@@ -1418,9 +1529,16 @@ def admission(row, running: list, box: Machine) -> tuple[str, str] | None:
     return pressure(box)
 
 
+def gib(kib: int) -> str:
+    return f"{kib / 1024 / 1024:.1f} GiB"
+
+
 def describe_machine(box: Machine) -> str:
     """The machine's signals and the thresholds that gate jobs, for status."""
     signals, settings = box.signals, box.settings
+    used = gib(signals.memory_used) if signals and signals.memory_used is not None else "unknown"
+    budget_rule = "no budget" if box.memory_budget is None else \
+        f"jobs start at or below the budget of {gib(box.memory_budget)}"
     idle = f"{signals.idle:.0f}%" if signals and signals.idle is not None else "unknown"
     memory = signals.memory if signals and signals.memory else "unknown"
     load = f"{signals.load:.2f}" if signals and signals.load is not None else "unknown"
@@ -1428,7 +1546,7 @@ def describe_machine(box: Machine) -> str:
     load_rule = f"jobs start below {box.load_limit:.2f}" if signals and signals.load_gate else \
         "not a gate here: it counts threads waiting on memory and disk"
     return (f"machine: {box.cpus} CPUs; CPU {idle} idle (jobs start at {settings.idle_min:g}% or more); "
-            f"memory pressure {memory} ({memory_rule}); load {load} ({load_rule})")
+            f"memory used {used} ({budget_rule}); memory pressure {memory} ({memory_rule}); load {load} ({load_rule})")
 
 
 def backfill(row: sqlite3.Row, ahead: list[sqlite3.Row], running: list[sqlite3.Row], box: Machine,
@@ -2580,14 +2698,18 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
                                              ("load_wait", args.load_wait), ("log_limit", args.log_limit),
                                              ("keep_days", args.keep_days), ("idle_min", args.idle_min),
                                              ("memory_limit", args.memory_limit),
+                                             ("memory_budget", args.memory_budget),
                                              ("backfill_wait", args.backfill_wait),
                                              ("small_weight", args.small_weight)) if value is not None}
     if changes:
         with writing(conn):
             for key, value in changes.items():
                 # `key` comes from the fixed list above, never from input.
-                # The CPU budget's auto and the capacity's off are stored as NULL, their default.
-                default = key in ("cpu_budget", "capacity") and value in ("auto", "off")
+                # The CPU budget's and memory budget's auto and the capacity's off are stored as NULL, their
+                # default; the memory budget's off as 0.
+                if key == "memory_budget" and value == "off":
+                    value = 0
+                default = key in ("cpu_budget", "capacity", "memory_budget") and value in ("auto", "off")
                 conn.execute(f"UPDATE settings SET {key} = ? WHERE id = 1", (None if default else value,))
             record(conn, "settings", agent=agent, detail=", ".join(f"{key} {value}" for key, value in changes.items()))
     settings = settings_of(conn)
@@ -2596,6 +2718,7 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
         emit({"cpu_budget": box.budget, "cpu_budget_is_default": settings.cpu_budget is None,
               "capacity": box.capacity, "capacity_is_default": settings.capacity is None, "cpus": box.cpus,
               "idle_min": settings.idle_min, "memory_limit": settings.memory_limit,
+              "memory_budget_kib": box.memory_budget, "memory_budget_is_default": settings.memory_budget is None,
               "load_factor": settings.load_factor, "load_limit": box.load_limit, "load_wait": settings.load_wait,
               "log_limit": settings.log_limit, "keep_days": settings.keep_days,
               "backfill_wait": settings.backfill_wait, "small_weight": settings.small_weight})
@@ -2604,8 +2727,17 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
     capacity = "off (the default): no cap on declared weights" if box.capacity is None else \
         f"{box.capacity:g} cores; the running jobs' declared weights fit it"
     memory_rule = "not a gate" if settings.memory_limit == "off" else f"jobs start below {settings.memory_limit}"
+    if settings.memory_budget == 0:
+        memory_budget_text = "off; used memory is not a gate"
+    elif box.memory_budget is None:
+        memory_budget_text = "unknown here: the machine's memory cannot be read, so used memory is not a gate"
+    else:
+        memory_budget_text = (f"{gib(box.memory_budget)}"
+                              + (" (the default: the memory minus 2 GiB)" if settings.memory_budget is None else "")
+                              + "; jobs start while used memory (active, wired and compressed) is at or below it")
     print(f"cpu budget: {box.budget:g} cores{budget_default}; the running jobs' predicted cores fit it\n"
           f"capacity: {capacity}\n"
+          f"memory budget: {memory_budget_text}\n"
           f"idle min: {settings.idle_min:g}%; jobs start while the CPU is at least this idle\n"
           f"memory limit: {settings.memory_limit}; {memory_rule} memory pressure\n"
           f"load factor: {settings.load_factor:g}; on Linux only, jobs start below load {box.load_limit:.2f} on "
@@ -2653,6 +2785,7 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
     tally["ready"] = sum(1 for waits in view.waits.values() if not waits)
     signals, settings = box.signals, box.settings
     host = {"cpus": box.cpus, "idle": signals.idle, "idle_min": settings.idle_min, "memory": signals.memory,
+            "memory_used_kib": signals.memory_used, "memory_budget_kib": box.memory_budget,
             "memory_limit": settings.memory_limit, "load": signals.load, "load_gate": signals.load_gate,
             "load_limit": box.load_limit, "cpu_budget": box.budget, "used": used, "capacity": box.capacity,
             "declared": declared, "jobs": jobs,
@@ -2829,6 +2962,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="a cap on the declared cores that running jobs may take together, or off (the default)")
     sub.add_argument("--idle-min", type=percent, metavar="PERCENT",
                      help="jobs start while the CPU is at least this idle (default 15)")
+    sub.add_argument("--memory-budget", type=memory_setting, metavar="SIZE",
+                     help="jobs start while used memory is at or below this, as 14G; auto for the memory minus 2 GiB "
+                          "(the default), or off")
     sub.add_argument("--memory-limit", choices=("warning", "critical", "off"),
                      help="jobs start below this memory pressure (default warning)")
     sub.add_argument("--load-factor", type=positive,
