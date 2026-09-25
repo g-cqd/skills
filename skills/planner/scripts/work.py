@@ -846,7 +846,8 @@ def flag_key(flag: str) -> str:
     if cut < 0:
         return flag
     path = flag[cut:]
-    return f"{flag[:cut]}{path_tag(path)[:-1]}~{hashlib.sha256(path.encode('utf-8', 'surrogateescape')).hexdigest()[:6]}>"
+    digest_of = hashlib.sha256(path.encode("utf-8", "surrogateescape")).hexdigest()[:6]
+    return f"{flag[:cut]}{path_tag(path)[:-1]}~{digest_of}>"
 
 
 def place(cwd: str | None) -> str:
@@ -998,7 +999,8 @@ def describe_hold(row: sqlite3.Row, box) -> str:
     if row["pred_cores"] is None:
         return f"holds {number(row['weight'])} cores, its weight (no prediction)"
     need = number(cores(row, box))
-    return f"predicted {need} core{'' if need == '1' else 's'} and {memory(row['pred_rss'])} at peak ({row['pred_from']})"
+    unit = "core" if need == "1" else "cores"
+    return f"predicted {need} {unit} and {memory(row['pred_rss'])} at peak ({row['pred_from']})"
 
 
 def describe_prediction(row: sqlite3.Row) -> str:
@@ -1381,7 +1383,8 @@ def over(need: float, used: float, limit: float) -> bool:
 
 
 def taken(need: float, used: float, box: Machine) -> tuple[str, str]:
-    return "cores", f"predicted {number(used)} of {number(box.budget)} cores are taken and this job needs {number(need)}"
+    return "cores", (f"predicted {number(used)} of {number(box.budget)} cores are taken and this job needs "
+                     f"{number(need)}")
 
 
 def pressure(box: Machine) -> tuple[str, str] | None:
@@ -2683,7 +2686,8 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
         print("waiting for capacity:")
         for row in waiting:
             print(f"  {row['id']}: {span(waited_of(row, now))}, weight {row['weight']:g}, {describe_hold(row, box)}, "
-                  f"{row['agent']}, scope {row['scope'] or '-'}" + (f": {printable(row['note'])}" if row["note"] else ""))
+                  f"{row['agent']}, scope {row['scope'] or '-'}"
+                  + (f": {printable(row['note'])}" if row["note"] else ""))
     print(f"tasks: {tally['queued']} queued ({tally['ready']} ready), {tally['claimed']} claimed, "
           f"{tally['running']} running, {tally['done']} done, {tally['failed']} failed, {tally['cancelled']} cancelled")
     for change in swept:
