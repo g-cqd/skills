@@ -508,15 +508,20 @@ class CapacityTests(WorkTestCase):
         self.assertAlmostEqual(self.task("second")["waited"], times["second"]["started"] - times["second"]["requested"],
                                places=2)
 
-    def queue_behind(self, busy, *jobs, capacity="1"):
+    def queue_behind(self, busy, *jobs, capacity="1", gated=()):
         """Sets the capacity, starts a job that holds it until its gate opens, then queues `jobs`, (id, extra
-        arguments) pairs, one after the other, each once the one before waits."""
+        arguments) pairs, one after the other, each once the one before waits. A job named in `gated` runs until its
+        own gate opens; the others run `true`."""
         self.call("settings", "--capacity", capacity)
         self.work("run", "--id", busy[0], *busy[1], "--timeout", "0", "--", *self.gate(busy[0]), agent="a")
         self.until(lambda: self.state(busy[0]) == "running", "the first job to start")
         for task_id, extra in jobs:
-            self.work("run", "--id", task_id, *extra, "--timeout", "0", "--", "true", agent="b")
-            self.until(lambda: self.state(task_id) == "waiting", f"job {task_id} to wait")
+            self.request(task_id, *extra, command=self.gate(task_id) if task_id in gated else ["true"])
+
+    def request(self, task_id, *extra, command=("true",)):
+        """Asks for capacity for a job, and returns once it waits."""
+        self.work("run", "--id", task_id, *extra, "--timeout", "0", "--", *command, agent="b")
+        self.until(lambda: self.state(task_id) == "waiting", f"job {task_id} to wait")
 
     def started(self):
         return {row["id"]: row["started"] for row in self.database("SELECT id, started FROM tasks")}
@@ -544,6 +549,48 @@ class CapacityTests(WorkTestCase):
         self.assertEqual(self.work("wait", "heavy", "second").status, 0)
         started, ended = self.started(), self.database("SELECT ended FROM tasks WHERE id = 'heavy'")[0]["ended"]
         self.assertGreaterEqual(started["second"], ended)
+
+    @unittest.skipIf((os.cpu_count() or 1) < 2, "an exclusive job must be heavier than an ordinary one")
+    def test_exclusive_jobs_waiting_together_run_back_to_back_as_one_batch(self):
+        exclusive = ["--weight", str(os.cpu_count())]
+        self.queue_behind(("busy", []), ("first", exclusive), ("between", []), ("second", exclusive), gated={"first"})
+        self.open_gate("busy")
+        self.until(lambda: self.state("first") == "running", "the first exclusive job to start")
+        self.assertIn("exclusive batch: first running, second next", self.work("status").out)
+        self.until(lambda: "exclusive batch" in self.task("between")["note"], "the waiting job to name the batch")
+        self.assertEqual(self.task("between")["note"], "the exclusive batch runs first: first running, second next")
+        self.open_gate("first")
+        self.assertEqual(self.work("wait", "busy", "first", "between", "second").status, 0)
+        times = {row["id"]: row for row in self.database("SELECT id, started, ended FROM tasks")}
+        self.assertGreaterEqual(times["second"]["started"], times["first"]["ended"])
+        self.assertGreaterEqual(times["between"]["started"], times["second"]["ended"],
+                                "the machine drains once for the batch, whatever the order in which the jobs asked")
+
+    @unittest.skipIf((os.cpu_count() or 1) < 2, "an exclusive job must be heavier than an ordinary one")
+    def test_an_exclusive_job_that_asks_once_the_batch_started_waits_for_the_jobs_already_waiting(self):
+        exclusive = ["--weight", str(os.cpu_count())]
+        self.queue_behind(("busy", []), ("first", exclusive), ("between", []), gated={"first"})
+        self.open_gate("busy")
+        self.until(lambda: self.state("first") == "running", "the first exclusive job to start")
+        self.request("late", *exclusive)
+        status = self.work("status").out
+        self.assertIn("exclusive batch: first running\n", status)
+        self.open_gate("first")
+        self.assertEqual(self.work("wait", "busy", "first", "between", "late").status, 0)
+        started = self.started()
+        self.assertLess(started["between"], started["late"], "the batch is bounded: it does not starve other jobs")
+
+    @unittest.skipIf((os.cpu_count() or 1) < 2, "an exclusive job must be heavier than an ordinary one")
+    def test_validity_work_goes_ahead_of_the_exclusive_batch(self):
+        exclusive = ["--weight", str(os.cpu_count())]
+        self.queue_behind(("busy", []), ("first", exclusive), ("second", exclusive), gated={"first"})
+        self.open_gate("busy")
+        self.until(lambda: self.state("first") == "running", "the first exclusive job to start")
+        self.request("fix", "--kind", "validity")
+        self.open_gate("first")
+        self.assertEqual(self.work("wait", "busy", "first", "second", "fix").status, 0)
+        started = self.started()
+        self.assertLess(started["fix"], started["second"], "validity work keeps its place in the work order")
 
     def test_settings_hold_the_capacity_and_limits_for_every_agent(self):
         self.assertEqual(self.json("settings")[1]["capacity"], 16)
@@ -835,6 +882,19 @@ class BackfillTests(WorkTestCase):
         self.call("settings", "--capacity", "5")
         self.database("UPDATE tasks SET weight = 3 WHERE id = 'busy'")
         self.assertIsNone(self.why("small"), "a job that cannot delay it may still start")
+
+    def test_a_batch_job_whose_supervisor_is_gone_keeps_no_place(self):
+        cpus = os.cpu_count() or 1
+        self.call("settings", "--capacity", str(cpus))
+        self.job("first", cpus, "running", since=10)
+        self.job("second", cpus, "waiting", since=30)
+        self.job("other", 1, "waiting", since=20)
+        self.database("UPDATE tasks SET batch = 'first' WHERE id IN ('first', 'second')")
+        self.assertEqual(self.why("other"), ("batch", "the exclusive batch runs first: first running, second next"))
+        gone = subprocess.Popen(["true"])
+        gone.wait()
+        self.database("UPDATE tasks SET owner = ? WHERE id = 'second'", gone.pid)
+        self.assertEqual(self.why("other")[0], "capacity", "only the running batch job holds it now")
 
     def test_backfill_never_takes_the_heads_turn(self):
         self.call("settings", "--capacity", "2")
