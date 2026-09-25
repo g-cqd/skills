@@ -904,6 +904,71 @@ class BackfillTests(WorkTestCase):
         self.assertIsNone(self.why("head"))
 
 
+class SignatureTests(WorkTestCase):
+    def repository(self, name):
+        """A repository with a main checkout and a linked worktree, as `git worktree add` lays them out."""
+        main = os.path.join(self.root, name)
+        os.makedirs(os.path.join(main, ".git", "worktrees", "feature"))
+        os.makedirs(os.path.join(main, "Packages", "Core"))
+        linked = os.path.join(self.root, f"{name}-feature")
+        os.makedirs(os.path.join(linked, "Packages", "Core"))
+        with open(os.path.join(linked, ".git"), "w") as handle:
+            handle.write(f"gitdir: {main}/.git/worktrees/feature\n")
+        return main, linked
+
+    def test_a_signature_keeps_the_program_subcommand_flags_jobs_and_configuration(self):
+        main, _ = self.repository("app")
+        cwd = os.path.join(main, "Packages", "Core")
+        signature = work.signatures(["swift", "build", "--package-path", f"{main}/Packages/Core", "-c", "release",
+                                     "--jobs", "4", "--scratch-path", "/tmp/build-1234"], cwd)
+        self.assertEqual(signature["head"], "app/Packages/Core :: swift build --jobs --package-path "
+                                            "--scratch-path -c jobs=4 config=release")
+        self.assertEqual(signature["prog"], "app/Packages/Core :: swift build")
+        self.assertEqual(signature["tool"], "swift build")
+        self.assertNotIn(main, json.dumps(signature), "no path is kept whole")
+
+    def test_paths_ids_and_long_numbers_are_masked(self):
+        cwd = os.path.join(self.root, "scratch")
+        os.makedirs(cwd)
+        one = work.signatures(["./run-12.sh", "--id", "3f2a9c1d7e", "/a/b/out-2024.log"], cwd)
+        two = work.signatures(["./run-99.sh", "--id", "0b1c2d3e4f5a", "/c/d/out-1999.log"], cwd)
+        self.assertEqual(one, two, "digits, hex ids and paths do not tell two runs of one command apart")
+        self.assertEqual(one["tool"], "run-#.sh")
+        self.assertNotEqual(work.signatures(["swift", "test"], cwd)["full"],
+                            work.signatures(["swift", "build"], cwd)["full"])
+
+    def test_a_shell_script_is_read_for_its_main_command(self):
+        cwd = os.path.join(self.root, "scratch")
+        os.makedirs(cwd)
+        signature = work.signatures(["sh", "-c", "cd Packages && export X=1; env FOO=2 swift test --parallel "
+                                                 "2>&1 > out.log"], cwd)
+        self.assertEqual(signature["tool"], "swift test")
+        self.assertTrue(signature["head"].endswith(":: swift test --parallel"), signature["head"])
+
+    def test_worktrees_of_one_repository_share_their_signatures(self):
+        main, linked = self.repository("app")
+        command = ["swift", "test", "--package-path", "Packages/Core"]
+        here = work.signatures(command, os.path.join(main, "Packages", "Core"))
+        there = work.signatures(command, os.path.join(linked, "Packages", "Core"))
+        self.assertEqual(here, there)
+        self.assertNotEqual(here["prog"], work.signatures(command, main)["prog"], "the place in the repository counts")
+        other, _ = self.repository("tool")
+        self.assertNotEqual(here["prog"], work.signatures(command, os.path.join(other, "Packages", "Core"))["prog"])
+
+    def test_each_job_stores_its_signature_at_creation(self):
+        self.work("add", "--id", "queued", "--", "swift", "build", agent="a")
+        self.work("add", "--id", "plain", agent="a")
+        self.assertEqual(self.work("run", "--id", "inline", "--", "true", agent="a").status, 0)
+        rows = {row["id"]: row for row in self.database("SELECT id, sig_full, sig_head, sig_prog, sig_tool FROM tasks")}
+        self.assertEqual(rows["queued"]["sig_tool"], "swift build")
+        self.assertEqual(rows["inline"]["sig_tool"], "true")
+        self.assertEqual(len(rows["queued"]["sig_full"]), 32, "the whole command is kept as a digest")
+        self.assertIsNone(rows["plain"]["sig_tool"], "a task without a command has no signature")
+        indexes = {row["name"] for row in self.database("PRAGMA index_list(tasks)")}
+        self.assertTrue({"tasks_by_sig_full", "tasks_by_sig_head", "tasks_by_sig_prog",
+                         "tasks_by_sig_tool"} <= indexes)
+
+
 class WaitTests(WorkTestCase):
     def test_wait_any_returns_at_the_first_end_and_all_waits_for_the_scope(self):
         self.work("scope", "set", "proj")
@@ -1153,6 +1218,40 @@ class StatusTests(WorkTestCase):
         status, shown = self.json("settings", env={"AGENT_WORK_HOME": first})
         self.assertEqual(status, 0)
         self.assertTrue(shown["capacity_is_default"])
+
+    def old_database(self, version):
+        """A state directory whose database has the schema of `version`, with one finished job and one queued task,
+        as an older work.py left them."""
+        home = os.path.join(self.root, f"v{version}")
+        os.makedirs(home, mode=0o700)
+        path = os.path.join(home, "work.db")
+        with contextlib.closing(sqlite3.connect(path)) as conn:
+            for statements in work.MIGRATIONS[:version]:
+                for statement in statements:
+                    conn.execute(statement)
+            conn.execute(f"PRAGMA user_version = {version}")
+            now = time.time()
+            conn.execute("INSERT INTO tasks (id, author, queued, command, cwd, weight, state, agent, requested, "
+                         "started, ended, status, cpu_time, rss_peak) VALUES ('old', 'a', ?, ?, ?, 2, 'done', 'a', ?, "
+                         "?, ?, 0, 30, 2048)", (now - 100, json.dumps(["swift", "build"]), self.project, now - 90,
+                                                now - 80, now - 50))
+            conn.execute("INSERT INTO tasks (id, author, queued, command, cwd) VALUES ('later', 'a', ?, ?, ?)",
+                         (now, json.dumps(["make", "all"]), self.project))
+            conn.commit()
+        os.chmod(path, 0o600)
+        return home
+
+    def test_a_database_of_the_previous_schema_keeps_its_jobs_and_gains_their_signatures(self):
+        home = self.old_database(5)
+        status, shown = self.json("show", "old", env={"AGENT_WORK_HOME": home})
+        self.assertEqual(status, 0)
+        self.assertEqual((shown["state"], shown["status"], shown["weight"]), ("done", 0, 2))
+        path = os.path.join(home, "work.db")
+        with contextlib.closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], work.SCHEMA_VERSION)
+            rows = dict(conn.execute("SELECT id, sig_tool FROM tasks").fetchall())
+        self.assertEqual(rows, {"old": "swift build", "later": "make all"}, "the migration signs the jobs it finds")
+        self.assertEqual(self.work("claim", "later", agent="b", env={"AGENT_WORK_HOME": home}).status, 0)
 
     def test_log_records_each_state_change(self):
         self.work("scope", "set", "proj")

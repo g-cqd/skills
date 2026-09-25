@@ -77,6 +77,7 @@ import sqlite3
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from contextlib import contextmanager, suppress
@@ -179,6 +180,18 @@ MIGRATIONS = ((
 ), (
     # Exclusive batches: the batch an exclusive job belongs to, named by the batch's first job.
     "ALTER TABLE tasks ADD COLUMN batch TEXT",
+), (
+    # Command signatures, one per level from the most specific to the most general, so that a job's history is one
+    # indexed query. The jobs already recorded are signed too, so that their history counts at once.
+    "ALTER TABLE tasks ADD COLUMN sig_full TEXT",
+    "ALTER TABLE tasks ADD COLUMN sig_head TEXT",
+    "ALTER TABLE tasks ADD COLUMN sig_prog TEXT",
+    "ALTER TABLE tasks ADD COLUMN sig_tool TEXT",
+    "CREATE INDEX tasks_by_sig_full ON tasks (sig_full, ended)",
+    "CREATE INDEX tasks_by_sig_head ON tasks (sig_head, ended)",
+    "CREATE INDEX tasks_by_sig_prog ON tasks (sig_prog, ended)",
+    "CREATE INDEX tasks_by_sig_tool ON tasks (sig_tool, ended)",
+    lambda conn: sign_recorded(conn),
 ))
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -490,7 +503,8 @@ def migrate(conn: sqlite3.Connection) -> None:
     with writing(conn):
         for statements in MIGRATIONS[conn.execute("PRAGMA user_version").fetchone()[0]:]:
             for statement in statements:
-                conn.execute(statement)
+                # A step that SQL alone cannot express is a function of the connection, run in the same transaction.
+                statement(conn) if callable(statement) else conn.execute(statement)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -698,6 +712,203 @@ def next_steps(row: sqlite3.Row) -> list[str]:
                 f"if it is right, accept it with the `work accept {task_id} --digest ...` line that show prints, "
                 f"then `work run {task_id}`"]
     return [f"run it with `work run {task_id}`"]
+
+
+# MARK: - Signatures
+
+# The levels of a command signature, from the most specific to the most general, each with the number of past runs it
+# needs before a prediction uses it. The specific levels need fewer runs: they match only the same command.
+SIGNATURE_LEVELS = (("full", 1), ("head", 2), ("prog", 3), ("tool", 3))
+SHELLS = frozenset({"sh", "bash", "zsh", "dash"})
+INTERPRETERS = frozenset({"sh", "bash", "zsh", "dash", "python", "python3", "perl", "ruby", "node"})
+WRAPPERS = frozenset({"env", "xcrun", "time", "nice", "caffeinate", "command", "exec", "timeout", "gtimeout"})
+PRELUDE = frozenset({"cd", "export", "set", "true", ":", "source", ".", "ulimit", "rm", "mkdir", "echo", "unset",
+                     "trap", "sleep", "cp", "mv", "ln", "test", "[", "wait", "exit", "printf"})
+OPERATORS = frozenset({";", "&&", "||", "|", "&", "\n", "(", ")", "{", "}", "|&", ";;"})
+REDIRECT = re.compile(r"\d*[<>]+&?\d*|&>+")
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+UUID = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
+HEX_ID = re.compile(r"\b(?=[0-9a-f]*\d)[0-9a-f]{7,}\b")
+LONG_NUMBER = re.compile(r"\d{3,}")
+DIGITS = re.compile(r"\d+")
+SCRATCH = tuple(sorted({"/tmp", "/private/tmp", "/var/folders", "/private/var/folders",
+                        os.path.realpath(tempfile.gettempdir())}))
+
+
+def scrub(text: str) -> str:
+    """`text` with ids and long numbers masked, so that two runs of one command differ in none of them."""
+    return LONG_NUMBER.sub("#", HEX_ID.sub("<id>", UUID.sub("<id>", text)))
+
+
+def path_tag(token: str) -> str:
+    """A path reduced to its last component with its digits masked: /x/y/run-12.sh is <p:run-#.sh>."""
+    return f"<p:{DIGITS.sub('#', scrub(token.rstrip('/').rsplit('/', 1)[-1] or '/'))}>"
+
+
+def looks_like_path(token: str) -> bool:
+    """Whether a token names a file: it starts with /, ~, ./ or ../, or holds a / and is not a URL nor an owner/name
+    pair such as a git remote branch."""
+    if token.startswith(("/", "~", "./", "../")):
+        return True
+    return "/" in token and not token.startswith(("http://", "https://")) \
+        and not re.fullmatch(r"[\w.-]+/[\w.-]+", token)
+
+
+def normal_token(token: str) -> str:
+    if ASSIGNMENT.match(token) or (token.startswith("--") and "=" in token):
+        name, _, value = token.partition("=")
+        return f"{name}={normal_token(value) if value else ''}"
+    return path_tag(token) if looks_like_path(token) else scrub(token)
+
+
+def shell_tokens(argv: list[str]) -> list[str]:
+    """The argv, with the script of `sh -c SCRIPT` split into its own words and operators."""
+    if argv and os.path.basename(argv[0]) in SHELLS and "-c" in argv[1:3]:
+        index = argv.index("-c")
+        script = argv[index + 1] if index + 1 < len(argv) else ""
+        lexer = shlex.shlex(script, posix=True, punctuation_chars=";&|()<>")
+        lexer.whitespace_split = True
+        try:
+            return list(lexer)
+        except ValueError:
+            return script.split()
+    return list(argv)
+
+
+def simple_commands(tokens: list[str]) -> list[list[str]]:
+    """The simple commands of a token stream, split at shell operators, without redirections and their targets."""
+    commands, current, skip = [], [], False
+    for token in tokens:
+        if skip:
+            skip = False
+        elif token in OPERATORS or (token and set(token) <= set(";&|()")):
+            if current:
+                commands.append(current)
+            current = []
+        elif REDIRECT.fullmatch(token):
+            skip = not re.search(r"&\d$", token)
+        else:
+            current.append(token)
+    if current:
+        commands.append(current)
+    return commands
+
+
+def program_part(command: list[str]) -> list[str]:
+    """A simple command without its leading VAR=value assignments and wrappers (env, xcrun, time, timeout...), with
+    a wrapper's options, and timeout's duration."""
+    index = 0
+    while index < len(command):
+        token, name = command[index], os.path.basename(command[index])
+        if ASSIGNMENT.match(token):
+            index += 1
+        elif name in WRAPPERS:
+            index += 1
+            while index < len(command) and command[index].startswith("-") and name != "xcrun":
+                index += 1
+            if name in ("timeout", "gtimeout") and index < len(command):
+                index += 1
+        else:
+            break
+    return command[index:]
+
+
+def flag_key(flag: str) -> str:
+    """A flag with a path glued to it (-I/x/y) keeps its prefix, the path's tag, and a short digest that keeps two
+    paths apart without writing either."""
+    cut = flag.find("/") if "/" in flag else flag.find("~")
+    if cut < 0:
+        return flag
+    path = flag[cut:]
+    return f"{flag[:cut]}{path_tag(path)[:-1]}~{hashlib.sha256(path.encode('utf-8', 'surrogateescape')).hexdigest()[:6]}>"
+
+
+def place(cwd: str | None) -> str:
+    """The kind of directory a job runs in, alike for every checkout and worktree of one repository: the repository's
+    name and the path inside it; `tmp` for a scratch directory; else the directory's own name. Digits are masked."""
+    if not cwd:
+        return "none"
+    path = current = os.path.normpath(cwd)
+    while True:
+        marker = os.path.join(current, ".git")
+        if os.path.isdir(marker) or os.path.isfile(marker):
+            name = (main_checkout(marker) if os.path.isfile(marker) else None) or os.path.basename(current)
+            inside = os.path.relpath(path, current)
+            return DIGITS.sub("#", name if inside == "." else f"{name}/{inside}")
+        parent = os.path.dirname(current)
+        if parent == current:
+            break
+        current = parent
+    if any(path == root or path.startswith(root + os.sep) for root in SCRATCH):
+        return "tmp"
+    return DIGITS.sub("#", os.path.basename(path) or "/")
+
+
+def main_checkout(marker: str) -> str | None:
+    """The name of the main checkout of a linked worktree, from its .git file (gitdir: MAIN/.git/worktrees/NAME)."""
+    try:
+        with open(marker, encoding="utf-8", errors="replace") as handle:
+            text = handle.read(4096)
+    except OSError:
+        return None
+    target = (text.splitlines() or [""])[0].partition("gitdir:")[2].strip()
+    main, found, _ = target.partition(f"{os.sep}.git{os.sep}worktrees{os.sep}")
+    return os.path.basename(main) if found and main else None
+
+
+def compact(text: str, limit: int = 256) -> str:
+    """`text` if it is short; else its start and a digest of the whole, so that long signatures stay distinct."""
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit - 34]}~{hashlib.sha256(text.encode('utf-8', 'surrogateescape')).hexdigest()[:32]}"
+
+
+def signatures(argv: list[str], cwd: str | None) -> dict[str, str]:
+    """A command's signatures, most specific first, the same whichever agent runs it and in whichever worktree:
+      full: every word of the command, `sh -c` scripts split, normalized, with the kind of directory: a digest;
+      head: the main simple command's program, subcommand and flags, without their values, but with --jobs and the
+            build configuration, with the kind of directory;
+      prog: the program and its subcommand, with the kind of directory;
+      tool: the program and its subcommand alone.
+    Paths are reduced to their last component, and ids and long numbers are masked, so no path or id is kept whole."""
+    tokens, kind = shell_tokens(argv), place(cwd)
+    full = " ".join(normal_token(token) for token in tokens)
+    commands = [part for part in (program_part(command) for command in simple_commands(tokens)) if part]
+    main = next((part for part in commands if os.path.basename(part[0]) not in PRELUDE),
+                commands[0] if commands else [""])
+    if os.path.basename(main[0]) in INTERPRETERS:
+        script = next((token for token in main[1:] if not token.startswith("-")), None)
+        if script and (looks_like_path(script) or re.search(r"\.(sh|py|rb|js|pl)$", script)):
+            main = main[main.index(script):]
+    program = path_tag(main[0])[3:-1] if looks_like_path(main[0]) else scrub(main[0])
+    sub = next((token for token in main[1:] if not token.startswith("-") and not looks_like_path(token)), "")
+    sub = scrub(sub) if re.fullmatch(r"[a-z][a-z0-9-]*", sub or "-") else ""
+    flags = sorted({flag_key(token.split("=", 1)[0]) for token in main[1:] if token.startswith("-")})
+    jobs = next((main[index + 1] for index, token in enumerate(main[:-1]) if token in ("--jobs", "-j")), None)
+    config = next((main[index + 1] for index, token in enumerate(main[:-1])
+                   if token in ("-c", "--configuration")), None)
+    head = " ".join([program, sub, *flags] + ([f"jobs={jobs}"] if jobs and jobs.isdigit() else [])
+                    + ([f"config={config}"] if config in ("debug", "release") else []))
+    tool = f"{program} {sub}".rstrip()
+    digest_of = hashlib.sha256(f"{kind} :: {full}".encode("utf-8", "surrogateescape")).hexdigest()[:32]
+    return {"full": digest_of, "head": compact(f"{kind} :: {' '.join(head.split())}"),
+            "prog": compact(f"{kind} :: {tool}"), "tool": compact(tool)}
+
+
+def sign_recorded(conn: sqlite3.Connection) -> None:
+    """Signs the tasks already recorded, as the migration that adds signatures runs. A command that cannot be read is
+    left unsigned: it has no history, which predicts nothing."""
+    rows = conn.execute("SELECT seq, command, cwd FROM tasks WHERE command IS NOT NULL").fetchall()
+    for seq, command, cwd in rows:
+        try:
+            argv = json.loads(command)
+            if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
+                continue
+            signed = signatures(argv, cwd)
+        except (ValueError, TypeError, OSError):
+            continue
+        conn.execute("UPDATE tasks SET sig_full = ?, sig_head = ?, sig_prog = ?, sig_tool = ? WHERE seq = ?",
+                     (*(signed[level] for level, _ in SIGNATURE_LEVELS), seq))
 
 
 # MARK: - Processes
@@ -1895,10 +2106,13 @@ def insert_task(conn: sqlite3.Connection, task_id: str, title: str, kind: str, s
     # A job typed inline with `work run -- ...` is claimed and accepted by its author as it is created: the caller
     # typed the command itself. A queued command waits for its claimant's acceptance.
     inline = (author, now, author) if state == "claimed" else (None, None, None)
+    signed = signatures(command, cwd) if command is not None else {}
     conn.execute("INSERT INTO tasks (id, title, kind, scope, author, queued, after, size, value, files, command, cwd, "
-                 "weight, state, agent, claimed, accepted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 "weight, state, agent, claimed, accepted, sig_full, sig_head, sig_prog, sig_tool) "
+                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                  (task_id, title, kind, scope, author, now, json.dumps(after), size, value, json.dumps(files),
-                  json.dumps(command) if command is not None else None, cwd, weight, state, *inline))
+                  json.dumps(command) if command is not None else None, cwd, weight, state, *inline,
+                  *(signed.get(level) for level, _ in SIGNATURE_LEVELS)))
     record(conn, "added", task=task_id, scope=scope, agent=author,
            detail=(title or "") + (f" [{display(command)}]" if command else ""))
     if state == "claimed":
