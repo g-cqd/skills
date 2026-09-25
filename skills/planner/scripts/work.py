@@ -28,7 +28,11 @@ Rules:
     Jobs that wait for room start in work order: validity first, then the order in which they asked, with backfill:
     a job behind the head may start first if it fits now and in the cores the head leaves free, or if it is small
     (small weight, 1) while the head has waited less than the backfill wait (300 s) and no validity job is ahead of
-    it. A head past the backfill wait keeps every job behind it, so none starves. A job that the machine's pressure
+    it. A head past the backfill wait keeps every job behind it, so none starves. Exclusive jobs, as heavy as the
+    CPU count, run in batches: when one starts, the exclusive jobs already waiting join its batch, and while the
+    batch is open they start next, one at a time, ahead of every waiting job but validity work, so the machine
+    drains once for the batch. An exclusive job that asks later waits for the next batch; a batch job whose
+    supervisor is gone keeps no place, as any waiting job. A job that the machine's pressure
     alone holds back past the load wait fails. `work settings` shows and sets these values, kept
     in the database so that every agent's jobs are admitted alike: capacity (default the CPU count minus 2, at least
     1), idle min, memory limit, load factor, backfill wait, small weight, load wait (1800 s), log limit, and how
@@ -172,6 +176,9 @@ MIGRATIONS = ((
     # Backfill: a later job may start past a waiting head that cannot, within these bounds.
     "ALTER TABLE settings ADD COLUMN backfill_wait REAL NOT NULL DEFAULT 300 CHECK (backfill_wait > 0)",
     "ALTER TABLE settings ADD COLUMN small_weight REAL NOT NULL DEFAULT 1 CHECK (small_weight > 0)",
+), (
+    # Exclusive batches: the batch an exclusive job belongs to, named by the batch's first job.
+    "ALTER TABLE tasks ADD COLUMN batch TEXT",
 ))
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -625,6 +632,7 @@ def task_json(row: sqlite3.Row, now: float | None = None) -> dict:
         "started": iso(row["started"]), "ended": iso(row["ended"]),
         "waited": rounded(waited_of(row, now)), "ran": rounded(ran_of(row, now)),
         "status": row["status"], "pid": row["pid"], "supervisor": row["owner"], "log": row["log"],
+        "batch": row["batch"],
         "cpu_percent": row["cpu"], "rss_kib": row["rss"], "rss_peak_kib": row["rss_peak"],
         "cpu_seconds": rounded(row["cpu_time"]), "sampled": iso(row["sampled"]), "note": row["note"],
     }
@@ -1125,10 +1133,36 @@ def backfill(row: sqlite3.Row, ahead: list[sqlite3.Row], running: list[sqlite3.R
     return "ahead", reason
 
 
-def waiting_order(row: sqlite3.Row) -> tuple:
-    """A waiting job's place in line, in order_tasks' work order: validity first, then the order in which the jobs
-    asked for capacity."""
-    return 0 if row["kind"].lower() in order_tasks.VALIDITY_KINDS else 1, row["requested"], row["seq"]
+def waiting_order(row: sqlite3.Row, batch: str | None = None) -> tuple:
+    """A waiting job's place in line, in order_tasks' work order: validity first, then the jobs of the open exclusive
+    batch `batch`, then the order in which the jobs asked for capacity."""
+    return (0 if row["kind"].lower() in order_tasks.VALIDITY_KINDS else 1,
+            0 if batch is not None and row["batch"] == batch else 1, row["requested"], row["seq"])
+
+
+def exclusive(weight: float, box: Machine) -> bool:
+    """Whether a job is as heavy as the CPU count: it holds the whole capacity, so the machine drains before it."""
+    return weight >= box.cpus
+
+
+def open_batch(running: list[sqlite3.Row], waiting: list[sqlite3.Row]) -> str | None:
+    """The open exclusive batch: the batch of a running job, else of a waiting job, or None. `waiting` holds only the
+    jobs whose supervisor lives, so a batch none of whose jobs runs or waits alive is closed."""
+    return next((item["batch"] for item in [*running, *waiting] if item["batch"]), None)
+
+
+def enumerate_ids(ids: list[str]) -> str:
+    return ids[0] if len(ids) == 1 else f"{', '.join(ids[:-1])} and {ids[-1]}"
+
+
+def describe_batch(batch: str, running: list[sqlite3.Row], line: list[sqlite3.Row]) -> str:
+    """The open batch's jobs, running and then next in line order: "job-12 running, job-15 and job-18 next"."""
+    parts = []
+    for ids, what in (([item["id"] for item in running if item["batch"] == batch], "running"),
+                      ([item["id"] for item in line if item["batch"] == batch], "next")):
+        if ids:
+            parts.append(f"{enumerate_ids(ids)} {what}")
+    return ", ".join(parts)
 
 
 def prune(ctx: Context, now: float | None = None) -> None:
@@ -1214,8 +1248,11 @@ class Supervisor:
                 if row is None or row["state"] != "claimed" or row["owner"] != self.me:
                     return None
                 settings = settings_of(conn)
-                blocked = self.blocker(conn, row, machine(settings, self.gauge.read(idle=settings.idle_min > 0)))
+                box = machine(settings, self.gauge.read(idle=settings.idle_min > 0))
+                blocked = self.blocker(conn, row, box)
                 if blocked is None:
+                    if exclusive(row["weight"], box):
+                        self.form_batch(conn, row, box)
                     conn.execute("UPDATE tasks SET state = 'running', started = ?, note = '' WHERE id = ?",
                                  (time.time(), self.task_id))
                     return get_task(conn, self.task_id)
@@ -1237,20 +1274,43 @@ class Supervisor:
                 last_sweep = time.monotonic()
 
     def blocker(self, conn: sqlite3.Connection, row: sqlite3.Row, box: Machine) -> tuple[str, str] | None:
-        """Why the job cannot start now, as (cause, reason), or None. Waiting jobs start in work order; a waiting job
-        whose supervisor is gone keeps no place. A job behind the head of the line may start before it only as
-        `backfill` allows."""
-        waiting = conn.execute("SELECT id, kind, requested, seq, owner, weight FROM tasks "
-                               "WHERE state = 'claimed' AND requested IS NOT NULL").fetchall()
-        line = sorted((item for item in waiting if item["id"] == row["id"] or exists(item["owner"])), key=waiting_order)
-        running = conn.execute("SELECT weight, started FROM tasks WHERE state = 'running'").fetchall()
+        """Why the job cannot start now, as (cause, reason), or None. Waiting jobs start in work order, with the jobs
+        of the open exclusive batch right after validity work; a waiting job whose supervisor is gone keeps no place.
+        A job behind the head of the line may start before it only as `backfill` allows, and never before a job of
+        the open batch, so that the machine, once drained for the batch, runs its jobs back to back."""
+        running, line = self.lines(conn, row)
+        batch = open_batch(running, line)
+        line.sort(key=lambda item: waiting_order(item, batch))
         used = sum(claimed(item["weight"], box) for item in running)
         if line[0]["id"] != row["id"]:
             ahead = line[:[item["id"] for item in line].index(row["id"])]
+            if row["batch"] != batch and any(item["batch"] == batch for item in ahead):
+                return "batch", f"the exclusive batch runs first: {describe_batch(batch, running, line)}"
             held = backfill(row, ahead, running, box, time.time())
             if held is not None:
                 return held
         return admission(row["weight"], used, box)
+
+    def lines(self, conn: sqlite3.Connection, row: sqlite3.Row) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
+        """The running jobs in the order they started, and the waiting jobs whose supervisor lives, with this one, in
+        the order they asked."""
+        running = conn.execute("SELECT id, weight, started, batch FROM tasks WHERE state = 'running' "
+                               "ORDER BY started, seq").fetchall()
+        waiting = conn.execute("SELECT id, kind, requested, seq, owner, weight, batch FROM tasks "
+                               "WHERE state = 'claimed' AND requested IS NOT NULL ORDER BY requested, seq").fetchall()
+        return running, [item for item in waiting if item["id"] == row["id"] or exists(item["owner"])]
+
+    def form_batch(self, conn: sqlite3.Connection, row: sqlite3.Row, box: Machine) -> None:
+        """As an exclusive job starts with no batch open, opens its batch, in the caller's transaction: it and the
+        exclusive jobs waiting now, whose supervisor lives, form the batch. A job that starts while a batch is open,
+        validity work going ahead of it, runs outside it."""
+        running, line = self.lines(conn, row)
+        if open_batch(running, [item for item in line if item["id"] != row["id"]]) is not None:
+            return
+        members = [row["id"]] + [item["id"] for item in line
+                                 if item["id"] != row["id"] and exclusive(item["weight"], box)]
+        conn.execute(f"UPDATE tasks SET batch = ? WHERE id IN ({','.join('?' * len(members))})",
+                     (row["id"], *members))
 
     def execute(self, conn: sqlite3.Connection, row: sqlite3.Row) -> int:
         argv, cwd = json.loads(row["command"]), row["cwd"]
@@ -2228,15 +2288,26 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
         weights = [row[0] for row in conn.execute("SELECT weight FROM tasks WHERE state = 'running'")]
         used, jobs = sum(claimed(weight, box) for weight in weights), len(weights)
         view = queue(conn, scope)
+        # The open exclusive batch is the machine's, whatever the scope.
+        every_running = conn.execute("SELECT id, batch FROM tasks WHERE state = 'running' ORDER BY started, seq") \
+            .fetchall()
+        every_waiting = [row for row in conn.execute("SELECT id, kind, requested, seq, owner, batch FROM tasks WHERE "
+                                                     "state = 'claimed' AND requested IS NOT NULL "
+                                                     "ORDER BY requested, seq") if exists(row["owner"])]
     running = [row for row in active if row["state"] == "running"]
     waiting = [row for row in active if row["state"] == "claimed" and row["requested"] is not None]
+    batch = open_batch(every_running, every_waiting)
+    every_waiting.sort(key=lambda row: waiting_order(row, batch))
+    batch_json = None if batch is None else {
+        "id": batch, "running": [row["id"] for row in every_running if row["batch"] == batch],
+        "next": [row["id"] for row in every_waiting if row["batch"] == batch]}
     tally = {state: totals.get(state, 0) for state in ("queued", "claimed", "running", "done", "failed", "cancelled")}
     tally["ready"] = sum(1 for waits in view.waits.values() if not waits)
     signals, settings = box.signals, box.settings
     host = {"cpus": box.cpus, "idle": signals.idle, "idle_min": settings.idle_min, "memory": signals.memory,
             "memory_limit": settings.memory_limit, "load": signals.load, "load_gate": signals.load_gate,
             "load_limit": box.load_limit, "capacity": box.capacity, "used": used, "jobs": jobs,
-            "holds": pressure(box)[1] if pressure(box) else None}
+            "holds": pressure(box)[1] if pressure(box) else None, "batch": batch_json}
     if args.json:
         emit({"time": iso(now), "scope": scope, "machine": host,
               "scopes": [scope_json(row, counts) for row in scopes],
@@ -2247,6 +2318,8 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
     held = pressure(box)
     print(f"capacity: {used:g} of {box.capacity:g} cores taken by {jobs} job(s)"
           + (f"; new jobs wait: {held[1]}" if held else ""))
+    if batch is not None:
+        print(f"exclusive batch: {describe_batch(batch, every_running, every_waiting)}")
     if scopes:
         print("scopes:")
         print("\n".join("  " + line for line in scope_tree(scopes, counts)))
