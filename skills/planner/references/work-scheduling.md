@@ -60,7 +60,10 @@ overload by 0.11 h over the whole trace.
    and it is the estimate until history exists. Predicted memory is the largest of the last 5 peaks, and predicted
    run time the median of the last 5.
 2. **Admission.** A job starts while the running jobs' predicted cores plus its own fit the CPU budget
-   (`--cpu-budget`, default the CPU count). The idle gate (10%) and the kernel's memory-pressure gate stay.
+   (`--cpu-budget`, default the CPU count). The idle gate (10%) and the kernel's memory-pressure gate stay. A job
+   predicted at half a core or less starts whenever those gates are open, whatever the budget sum, and keeps no
+   place in line: after install, one predicted at 0.2 cores waited 2 min 23 s at 7.9 of 8 cores with the CPU 34%
+   idle.
 3. **Memory on measured use.** No job starts while used memory (active, wired and compressed pages; on Linux
    MemTotal minus MemAvailable) is above the memory budget (`--memory-budget`, default the memory minus 2 GiB).
 4. **Order.** Validity first, then the smallest predicted run time minus `--aging` (1) times the seconds waited, then
