@@ -75,6 +75,7 @@ import shlex
 import signal
 import sqlite3
 import stat
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -192,6 +193,13 @@ MIGRATIONS = ((
     "CREATE INDEX tasks_by_sig_prog ON tasks (sig_prog, ended)",
     "CREATE INDEX tasks_by_sig_tool ON tasks (sig_tool, ended)",
     lambda conn: sign_recorded(conn),
+), (
+    # A job's prediction from its history, recorded as it asks for capacity: average cores, peak memory in KiB, run
+    # time in seconds, and what they come from.
+    "ALTER TABLE tasks ADD COLUMN pred_cores REAL",
+    "ALTER TABLE tasks ADD COLUMN pred_rss INTEGER",
+    "ALTER TABLE tasks ADD COLUMN pred_duration REAL",
+    "ALTER TABLE tasks ADD COLUMN pred_from TEXT",
 ))
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -647,6 +655,9 @@ def task_json(row: sqlite3.Row, now: float | None = None) -> dict:
         "waited": rounded(waited_of(row, now)), "ran": rounded(ran_of(row, now)),
         "status": row["status"], "pid": row["pid"], "supervisor": row["owner"], "log": row["log"],
         "batch": row["batch"],
+        "predicted": None if row["pred_cores"] is None else {
+            "cores": rounded(row["pred_cores"]), "rss_kib": row["pred_rss"], "duration": rounded(row["pred_duration"]),
+            "from": row["pred_from"]},
         "cpu_percent": row["cpu"], "rss_kib": row["rss"], "rss_peak_kib": row["rss_peak"],
         "cpu_seconds": rounded(row["cpu_time"]), "sampled": iso(row["sampled"]), "note": row["note"],
     }
@@ -909,6 +920,67 @@ def sign_recorded(conn: sqlite3.Connection) -> None:
             continue
         conn.execute("UPDATE tasks SET sig_full = ?, sig_head = ?, sig_prog = ?, sig_tool = ? WHERE seq = ?",
                      (*(signed[level] for level, _ in SIGNATURE_LEVELS), seq))
+
+
+# MARK: - Predictions
+
+HISTORY = 5  # The runs of a signature that a prediction reads, the most recent first.
+RECENT = 200  # The recent jobs whose median run time stands in for a job without history.
+DEFAULT_DURATION = 30.0  # The run time of a job without history when no job has run yet, in seconds.
+MIN_CORES = 0.1
+SOURCES = {"full": "the same command", "head": "the same program and flags", "prog": "the same program in this place",
+           "tool": "the same program"}
+# A run teaches something only if its command ran: 126 and 127 mean it could not start.
+RAN = ("status IS NOT NULL AND status NOT IN (126, 127) AND started IS NOT NULL AND ended IS NOT NULL "
+       "AND cpu_time IS NOT NULL")
+
+
+@dataclass
+class Prediction:
+    """What a job is expected to use, from the last runs of its most specific signature that has enough of them:
+    the median of their average cores (CPU time over run time), capped by the declared weight; the largest of their
+    memory peaks; the median of their run times. Without history, the declared weight is the estimate."""
+
+    cores: float
+    rss_kib: int | None
+    duration: float
+    level: str
+    runs: int
+
+    @property
+    def basis(self) -> str:
+        if self.level == "none":
+            return "no history: the declared weight"
+        return f"{self.runs} run{'s' if self.runs != 1 else ''} of {SOURCES[self.level]}"
+
+
+def predict(conn: sqlite3.Connection, signed, weight: float) -> Prediction:
+    """The prediction for a job of declared `weight` whose signatures are `signed` (a mapping, or a row with sig_
+    columns). One indexed query per level, at most four, plus one for the fallback run time."""
+    for level, needed in SIGNATURE_LEVELS:
+        key = signed[level] if isinstance(signed, dict) else signed[f"sig_{level}"]
+        if key is None:
+            continue
+        # `level` comes from SIGNATURE_LEVELS, never from input.
+        runs = conn.execute(f"SELECT started, ended, cpu_time, rss_peak FROM tasks WHERE sig_{level} = ? AND {RAN} "
+                            "ORDER BY ended DESC LIMIT ?", (key, HISTORY)).fetchall()
+        if len(runs) < needed:
+            continue
+        durations = [max(row["ended"] - row["started"], 0.05) for row in runs]
+        cores = statistics.median(row["cpu_time"] / length for row, length in zip(runs, durations))
+        peaks = [row["rss_peak"] for row in runs if row["rss_peak"] is not None]
+        return Prediction(min(weight, max(MIN_CORES, cores)), max(peaks) if peaks else None,
+                          statistics.median(durations), level, len(runs))
+    recent = [row[0] for row in conn.execute(f"SELECT ended - started FROM tasks WHERE {RAN} ORDER BY ended DESC "
+                                             "LIMIT ?", (RECENT,))]
+    return Prediction(weight, None, statistics.median(recent) if recent else DEFAULT_DURATION, "none", 0)
+
+
+def describe_prediction(row: sqlite3.Row) -> str:
+    if row["pred_cores"] is None:
+        return "no prediction"
+    return (f"{row['pred_cores']:.1f} cores, {memory(row['pred_rss'])} at peak, {span(row['pred_duration'])}, from "
+            f"{row['pred_from']}")
 
 
 # MARK: - Processes
@@ -1433,8 +1505,12 @@ class Supervisor:
                 print(f"work: task {self.task_id} is not waiting for this supervisor", file=sys.stderr, flush=True)
                 return 1
             # The wait for capacity, and the job's place among the waiting jobs, count from here, not from the
-            # request, so that the supervisor's own start is not reported as a wait for capacity.
-            conn.execute("UPDATE tasks SET requested = ? WHERE id = ?", (time.time(), self.task_id))
+            # request, so that the supervisor's own start is not reported as a wait for capacity. The prediction is
+            # made once, from the history known now.
+            guess = predict(conn, row, row["weight"])
+            conn.execute("UPDATE tasks SET requested = ?, pred_cores = ?, pred_rss = ?, pred_duration = ?, "
+                         "pred_from = ? WHERE id = ?", (time.time(), guess.cores, guess.rss_kib, guess.duration,
+                                                        guess.basis, self.task_id))
         row = self.wait_for_capacity(conn)
         return 0 if row is None else self.execute(conn, row)
 
@@ -2291,6 +2367,7 @@ def cmd_show(ctx: Context, args: argparse.Namespace, command: list[str] | None) 
         if row["cpu_time"] is not None:
             run += f", cpu time {span(row['cpu_time'])}"
         lines.append(run)
+        lines.append(f"predicted: {describe_prediction(row)}")
     if row["note"]:
         lines.append(f"note: {printable(row['note'])}")
     print("\n".join(lines))
