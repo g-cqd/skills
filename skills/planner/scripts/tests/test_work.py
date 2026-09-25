@@ -586,48 +586,36 @@ class CapacityTests(WorkTestCase):
         self.assertEqual(self.work("wait", *ids).status, 0)
 
     @unittest.skipIf((os.cpu_count() or 1) < 2, "an exclusive job must be heavier than an ordinary one")
-    def test_exclusive_jobs_waiting_together_run_back_to_back_as_one_batch(self):
+    def test_a_quiet_job_starts_beside_a_heavy_job_once_the_quiet_drain_passes(self):
         exclusive = ["--weight", str(os.cpu_count())]
-        self.queue_behind(("busy", []), ("first", exclusive), ("between", []), ("second", exclusive), gated={"first"})
-        self.open_gate("busy")
-        self.until(lambda: self.state("first") == "running", "the first exclusive job to start")
-        self.assertIn("exclusive batch: first running, second next", self.work("status").out)
-        self.until(lambda: "exclusive batch" in self.task("between")["note"], "the waiting job to name the batch")
-        self.assertEqual(self.task("between")["note"], "the exclusive batch runs first: first running, second next")
-        self.open_gate("first")
-        self.assertEqual(self.work("wait", "busy", "first", "between", "second").status, 0)
-        times = {row["id"]: row for row in self.database("SELECT id, started, ended FROM tasks")}
-        self.assertGreaterEqual(times["second"]["started"], times["first"]["ended"])
-        self.assertGreaterEqual(times["between"]["started"], times["second"]["ended"],
-                                "the machine drains once for the batch, whatever the order in which the jobs asked")
+        self.call("settings", "--cpu-budget", "8", "--quiet-drain", "1")
+        self.work("run", "--id", "heavy", "--weight", "4", "--timeout", "0", "--", *self.gate("heavy"), agent="a")
+        self.until(lambda: self.state("heavy") == "running", "the heavy job to start")
+        self.work("run", "--id", "timing", *exclusive, "--timeout", "0", "--", *self.gate("timing"), agent="b")
+        self.until(lambda: self.state("timing") == "running", "the quiet job to start while the heavy job runs")
+        self.assertEqual(self.state("heavy"), "running")
+        self.assertIn("quiet window: job timing runs exclusive for", self.work("status").out)
+        for name in ("heavy", "timing"):
+            self.open_gate(name)
+        self.assertEqual(self.work("wait", "heavy", "timing").status, 0)
 
     @unittest.skipIf((os.cpu_count() or 1) < 2, "an exclusive job must be heavier than an ordinary one")
-    def test_an_exclusive_job_that_asks_once_the_batch_started_waits_for_the_jobs_already_waiting(self):
+    def test_two_exclusive_jobs_never_have_their_windows_open_together(self):
         exclusive = ["--weight", str(os.cpu_count())]
-        self.queue_behind(("busy", []), ("first", exclusive), ("between", []), gated={"first"})
-        self.open_gate("busy")
-        self.until(lambda: self.state("first") == "running", "the first exclusive job to start")
-        self.request("late", *exclusive)
-        # Equal predicted run times, so that the order in which they asked decides between the two.
-        self.database("UPDATE tasks SET pred_duration = 30 WHERE id IN ('between', 'late')")
-        status = self.work("status").out
-        self.assertIn("exclusive batch: first running\n", status)
+        self.call("settings", "--cpu-budget", "8", "--quiet-drain", "0")
+        for name in ("first", "second"):
+            self.work("run", "--id", name, *exclusive, "--timeout", "0", "--", *self.gate(name), agent="a")
+            if name == "first":
+                self.until(lambda: self.state("first") == "running", "the first exclusive job to start")
+        self.until(lambda: self.state("second") == "waiting", "the second exclusive job to wait")
+        self.assertIn("one quiet window at a time", self.task("second")["note"])
         self.open_gate("first")
-        self.assertEqual(self.work("wait", "busy", "first", "between", "late").status, 0)
-        started = self.started()
-        self.assertLess(started["between"], started["late"], "the batch is bounded: it does not starve other jobs")
-
-    @unittest.skipIf((os.cpu_count() or 1) < 2, "an exclusive job must be heavier than an ordinary one")
-    def test_validity_work_goes_ahead_of_the_exclusive_batch(self):
-        exclusive = ["--weight", str(os.cpu_count())]
-        self.queue_behind(("busy", []), ("first", exclusive), ("second", exclusive), gated={"first"})
-        self.open_gate("busy")
-        self.until(lambda: self.state("first") == "running", "the first exclusive job to start")
-        self.request("fix", "--kind", "validity")
-        self.open_gate("first")
-        self.assertEqual(self.work("wait", "busy", "first", "second", "fix").status, 0)
-        started = self.started()
-        self.assertLess(started["fix"], started["second"], "validity work keeps its place in the work order")
+        self.until(lambda: self.state("second") == "running", "the second exclusive job to start")
+        self.open_gate("second")
+        self.assertEqual(self.work("wait", "first", "second").status, 0)
+        times = {row["id"]: row for row in self.database("SELECT id, started, ended, quiet_until FROM tasks")}
+        self.assertGreaterEqual(times["second"]["started"],
+                                min(times["first"]["ended"], times["first"]["quiet_until"]))
 
     def test_settings_hold_the_budget_and_limits_for_every_agent(self):
         shown = self.json("settings")[1]
@@ -645,8 +633,13 @@ class CapacityTests(WorkTestCase):
         self.assertIn("capacity: 32 cores; the running jobs' declared weights fit it", text)
         for word in ("off", "auto"):
             self.assertIsNone(self.json("settings", "--capacity", word)[1]["capacity"])
+        self.assertEqual((shown["quiet_drain"], shown["quiet_max"]), (60, 180), "one minute of drain, three of window")
+        shown = self.json("settings", "--quiet-drain", "30", "--quiet-max", "120")[1]
+        self.assertEqual((shown["quiet_drain"], shown["quiet_max"]), (30, 120))
+        self.assertIn("quiet drain: 30.0 s;", self.work("settings").out)
         for arguments in (("--capacity", "0"), ("--capacity", "lots"), ("--cpu-budget", "0"), ("--cpu-budget", "off"),
-                          ("--job-qos", "maintenance"), ("--aging", "-1"),
+                          ("--job-qos", "maintenance"), ("--aging", "-1"), ("--quiet-drain", "-1"),
+                          ("--quiet-max", "nan"),
                           ("--load-factor", "-1"), ("--load-wait", "nan"), ("--log-limit", "0"),
                           ("--keep-days", "inf")):
             with self.subTest(arguments=arguments):
@@ -757,68 +750,12 @@ class MachineGateTests(WorkTestCase):
         settings = work.settings_of(work.Context(self.env).conn)
         return work.Machine(8, budget, capacity, settings, work.Signals(90.0, "normal", None, False))
 
-    def test_a_job_as_heavy_as_the_cpus_runs_alone_whatever_its_history(self):
-        box = self.box(budget=12)
+    def test_a_job_as_heavy_as_the_cpus_counts_its_predicted_cores(self):
+        box = self.box(budget=8)
         exclusive = {"weight": 8, "pred_cores": 1.0}
-        light = {"weight": 2, "pred_cores": 0.5}
-        self.assertEqual(work.cores(light, box), 0.5)
-        self.assertEqual(work.cores(exclusive, box), 12, "a job of the CPU count holds the whole budget, not its use")
-        self.assertIsNone(work.admission(exclusive, [], box), "it starts on an empty machine")
-        self.assertEqual(work.admission(exclusive, [light], box),
-                         ("cores", "predicted 0.5 of 12 cores are taken and this job needs 12"),
-                         "it waits for every running job to end")
-        self.assertEqual(work.admission(light, [exclusive], box),
-                         ("cores", "predicted 12 of 12 cores are taken and this job needs 0.5"),
-                         "nothing starts beside it")
-        self.assertEqual(work.cores(exclusive, self.box(budget=6)), 8, "a budget under the CPU count: it runs alone")
-
-    def test_unknown_signals_hold_nothing(self):
-        self.call("settings", "--memory-budget", "1G")
-        settings = work.settings_of(work.Context(self.env).conn)
-        self.assertIsNone(work.pressure(work.machine(settings, work.Signals(None, None, None, False))))
-        self.assertIsNone(work.pressure(work.machine(settings, work.Signals(None, None, None, True, None))))
-
-    def test_used_memory_above_the_budget_holds_jobs_until_it_falls(self):
-        self.call("settings", "--memory-budget", "14G")
-        self.own_job("build")
-        gib = 1024 * 1024
-        gauge = FakeGauge(idle=60.0, memory_used=15 * gib)
-        thread, outcome = self.supervise("build", gauge)
-        self.held_with("build", "used memory is 15.0 GiB, above the memory budget of 14.0 GiB")
-        self.assertIn("memory used 15.0 GiB (jobs start at or below the budget of 14.0 GiB)", self.status_line(gauge))
-        gauge.signals = work.Signals(60.0, "normal", None, False, 14 * gib)
-        self.assertEqual(self.finished(thread, outcome)["state"], "running", "at the budget, a job starts")
-
-    def status_line(self, gauge):
-        ctx = work.Context(self.env)
-        try:
-            return work.describe_machine(work.machine(work.settings_of(ctx.conn), gauge.read()))
-        finally:
-            ctx.close()
-
-    def test_the_memory_budget_is_a_size_off_or_the_memory_minus_2_gib(self):
-        gib = 1024 * 1024
-        for text, expected in (("14G", 14 * gib), ("14GiB", 14 * gib), ("14336M", 14 * gib), ("1.5T", 1536 * gib)):
-            with self.subTest(text=text):
-                shown = self.json("settings", "--memory-budget", text)[1]
-                self.assertEqual((shown["memory_budget_kib"], shown["memory_budget_is_default"]), (expected, False))
-        self.assertIsNone(self.json("settings", "--memory-budget", "off")[1]["memory_budget_kib"])
-        shown = self.json("settings", "--memory-budget", "auto")[1]
-        total = work.total_memory()
-        self.assertEqual(shown["memory_budget_kib"], None if total is None else total - 2 * gib)
-        self.assertTrue(shown["memory_budget_is_default"])
-        for text in ("14", "lots", "0G", "-1G"):
-            with self.subTest(text=text):
-                self.assertEqual(self.work("settings", "--memory-budget", text).status, 2)
-
-    def test_pressure_held_past_the_load_wait_fails_the_job(self):
-        self.call("settings", "--load-wait", "0.5")
-        self.own_job("heavy")
-        self.assertIsNone(self.finished(*self.supervise("heavy", FakeGauge(memory="critical"))))
-        heavy = self.task("heavy")
-        self.assertEqual((heavy["state"], heavy["started"], heavy["status"]), ("failed", None, None))
-        self.assertIn("memory pressure is critical; jobs start below warning", heavy["note"])
-        self.assertIn("the longest a job waits on the machine's pressure", heavy["note"])
+        self.assertEqual(work.cores(exclusive, box), 1.0, "it no longer holds the whole budget")
+        self.assertEqual(work.cores({"weight": 8, "pred_cores": None}, box), 8, "without history, its weight")
+        self.assertIsNone(work.admission({"weight": 2, "pred_cores": 1.0}, [exclusive], box))
 
     def test_admission_counts_predicted_cores_against_the_budget(self):
         box = self.box(budget=8)
@@ -901,13 +838,12 @@ class MachineGateTests(WorkTestCase):
 
 class OrderingTests(WorkTestCase):
     @staticmethod
-    def line(rows, aging=1.0, batch=None):
-        return [row["id"] for row in sorted(rows, key=lambda row: work.waiting_order(row, batch, aging))]
+    def line(rows, aging=1.0):
+        return [row["id"] for row in sorted(rows, key=lambda row: work.waiting_order(row, aging))]
 
     @staticmethod
-    def job(task_id, requested, duration, kind="other", batch=None, seq=0):
-        return {"id": task_id, "kind": kind, "requested": requested, "pred_duration": duration, "batch": batch,
-                "seq": seq}
+    def job(task_id, requested, duration, kind="other", seq=0):
+        return {"id": task_id, "kind": kind, "requested": requested, "pred_duration": duration, "seq": seq}
 
     def test_the_shortest_predicted_job_goes_first_less_what_it_waited(self):
         long, short = self.job("long", 0.0, 600.0), self.job("short", 100.0, 30.0)
@@ -926,10 +862,9 @@ class OrderingTests(WorkTestCase):
                   if self.line([long, self.job("short", float(t), 30.0)], 0.0)[0] == "long"]
         self.assertEqual(passed, [], "without aging, every shorter job goes first: the long job starves")
 
-    def test_validity_and_the_open_batch_come_before_the_predicted_order(self):
-        rows = [self.job("short", 50.0, 1.0), self.job("fix", 60.0, 900.0, kind="validity"),
-                self.job("batch", 70.0, 900.0, batch="b")]
-        self.assertEqual(self.line(rows, batch="b"), ["fix", "batch", "short"])
+    def test_validity_comes_before_the_predicted_order(self):
+        rows = [self.job("short", 50.0, 1.0), self.job("fix", 60.0, 900.0, kind="validity")]
+        self.assertEqual(self.line(rows), ["fix", "short"])
 
     def test_a_job_without_a_prediction_counts_as_the_default_run_time(self):
         rows = [self.job("unknown", 0.0, None), self.job("known", 0.0, 60.0, seq=1)]
@@ -1026,39 +961,65 @@ class BackfillTests(WorkTestCase):
         self.database("UPDATE tasks SET weight = 3 WHERE id = 'busy'")
         self.assertIsNone(self.why("small"), "a job that cannot delay it may still start")
 
-    def test_a_batch_job_whose_supervisor_is_gone_keeps_no_place(self):
-        cpus = os.cpu_count() or 1
-        self.call("settings", "--cpu-budget", str(cpus))
-        self.job("first", cpus, "running", since=10)
-        self.job("second", cpus, "waiting", since=30)
-        self.job("other", 1, "waiting", since=20)
-        self.database("UPDATE tasks SET batch = 'first' WHERE id IN ('first', 'second')")
-        self.assertEqual(self.why("other"), ("batch", "the exclusive batch runs first: first running, second next"))
-        gone = subprocess.Popen(["true"])
-        gone.wait()
-        self.database("UPDATE tasks SET owner = ? WHERE id = 'second'", gone.pid)
-        self.assertEqual(self.why("other")[0], "cores", "only the running batch job holds it now")
+    def exclusive(self, task_id, state, since, predicted=None):
+        self.job(task_id, os.cpu_count() or 1, state, since=since, command=("bench", task_id))
+        if predicted is not None:
+            self.database("UPDATE tasks SET pred_cores = ? WHERE id = ?", predicted, task_id)
 
-    def test_a_running_job_without_a_prediction_counts_its_history_then_its_samples_then_its_weight(self):
-        # Jobs that were running when the schema moved have no stored prediction.
+    @unittest.skipIf((os.cpu_count() or 1) < 5, "a heavy job of 4 cores beside an exclusive one")
+    def test_a_quiet_job_drains_heavy_jobs_for_the_quiet_drain_at_most(self):
+        self.call("settings", "--cpu-budget", "8", "--quiet-drain", "60")
+        self.job("heavy", 4, "running", since=100, command=("make", "heavy"))
+        self.exclusive("timing", "waiting", since=10, predicted=1.0)
+        cause, reason = self.why("timing")
+        self.assertEqual(cause, "quiet")
+        self.assertRegex(reason, r"^it drains: job heavy, predicted above 1 core, still runs; it starts in \d+\.\d s "
+                                 r"at the latest$")
+        self.job("more", 4, "waiting", since=5, command=("make", "more"))
+        self.job("light", 1, "waiting", since=5, command=("make", "light"))
+        self.assertEqual(self.why("more")[0], "quiet", "no new heavy job starts while it drains")
+        self.assertIsNone(self.why("light"), "a light job still does")
+        self.database("UPDATE tasks SET requested = ? WHERE id = 'timing'", time.time() - 61)
+        self.assertIsNone(self.why("timing"), "past the quiet drain it starts, though the heavy job runs")
+
+    @unittest.skipIf((os.cpu_count() or 1) < 5, "a heavy job of 4 cores beside an exclusive one")
+    def test_during_its_window_heavy_jobs_wait_and_light_jobs_start_until_the_quiet_max(self):
         self.call("settings", "--cpu-budget", "8")
-        self.call("add", "--id", "past", "--cwd", self.project, "--", "make", "known", agent="a")
-        ended = time.time() - 100
-        self.database("UPDATE tasks SET state = 'done', started = ?, ended = ?, cpu_time = 60, status = 0 "
-                      "WHERE id = 'past'", ended - 60, ended)
-        self.job("known", 4, "running", since=30, command=("make", "known"))
-        self.job("sampled", 4, "running", since=30, command=("make", "sampled"))
-        self.job("unknown", 4, "running", since=30, command=("make", "unknown"))
-        self.database("UPDATE tasks SET cpu = 150 WHERE id = 'sampled'")
-        ctx = work.Context(self.env)
-        self.addCleanup(ctx.close)
-        rows = ctx.conn.execute("SELECT * FROM tasks WHERE state = 'running' ORDER BY id").fetchall()
-        estimated = {row["id"]: row["pred_cores"] for row in work.estimated(ctx.conn, rows)}
-        self.assertEqual(estimated, {"known": 1.0, "sampled": 1.5, "unknown": None},
-                         "the history, else the last sample, else nothing: the weight counts")
-        self.job("next", 1.5, "waiting", since=5, command=("make", "next"))
-        self.assertIsNone(self.why("next"), "1 + 1.5 + 4 predicted cores leave room for 1.5 in a budget of 8")
-        self.assertIn("cores: predicted 6.5 of the CPU budget of 8", self.work("status").out)
+        self.exclusive("timing", "running", since=10, predicted=1.0)
+        self.database("UPDATE tasks SET quiet_until = ? WHERE id = 'timing'", time.time() + 100)
+        self.job("heavy", 4, "waiting", since=5, command=("make", "heavy"))
+        self.job("light", 1, "waiting", since=5, command=("make", "light"))
+        cause, reason = self.why("heavy")
+        self.assertEqual(cause, "quiet")
+        self.assertRegex(reason, r"^job timing runs in its quiet window for 1 min 3\d s more; no job predicted above "
+                                 r"1 core starts in it, and this job needs 4$")
+        self.assertIsNone(self.why("light"))
+        self.database("UPDATE tasks SET quiet_until = ? WHERE id = 'timing'", time.time() - 1)
+        self.assertIsNone(self.why("heavy"), "after the quiet max, the exclusive job runs on as an ordinary one")
+
+    def test_a_second_exclusive_job_waits_for_the_first_window_to_close_then_drains(self):
+        self.call("settings", "--cpu-budget", "8", "--quiet-drain", "60")
+        self.exclusive("first", "running", since=50, predicted=1.0)
+        self.database("UPDATE tasks SET quiet_until = ? WHERE id = 'first'", time.time() + 30)
+        self.exclusive("second", "waiting", since=40)
+        cause, reason = self.why("second")
+        self.assertEqual(cause, "quiet")
+        self.assertIn("job first's quiet window is open for", reason)
+        self.assertIn("one quiet window at a time", reason)
+        self.database("UPDATE tasks SET quiet_until = ? WHERE id = 'first'", time.time() - 1)
+        self.assertEqual(self.why("second")[0], "cores", "its drain counts from the window's close; without history "
+                                                         "its weight does not fit beside the first job yet")
+        self.database("UPDATE tasks SET quiet_until = ? WHERE id = 'first'", time.time() - 61)
+        self.database("UPDATE tasks SET requested = ? WHERE id = 'second'", time.time() - 100)
+        self.assertIsNone(self.why("second"), "once the drain has passed, it starts")
+
+    def test_a_second_exclusive_job_waits_behind_the_first_in_line(self):
+        self.call("settings", "--cpu-budget", "8", "--quiet-drain", "60")
+        self.job("heavy", 4, "running", since=100, command=("make", "heavy"))
+        self.exclusive("first", "waiting", since=20, predicted=1.0)
+        self.exclusive("second", "waiting", since=10, predicted=1.0)
+        self.assertEqual(self.why("second"), ("quiet", "job first, exclusive too, is ahead of it: one quiet window "
+                                                        "at a time"))
 
     def test_backfill_never_takes_the_heads_turn(self):
         self.call("settings", "--cpu-budget", "2")
@@ -1529,6 +1490,15 @@ class StatusTests(WorkTestCase):
             rows = dict(conn.execute("SELECT id, sig_tool FROM tasks").fetchall())
         self.assertEqual(rows, {"old": "swift build", "later": "make all"}, "the migration signs the jobs it finds")
         self.assertEqual(self.work("claim", "later", agent="b", env={"AGENT_WORK_HOME": home}).status, 0)
+
+    def test_a_database_of_the_previous_schema_gains_the_quiet_settings(self):
+        home = self.old_database(12)
+        shown = self.json("settings", env={"AGENT_WORK_HOME": home})[1]
+        self.assertEqual((shown["quiet_drain"], shown["quiet_max"]), (60, 180))
+        self.assertEqual(self.task_in(home, "old")["state"], "done")
+
+    def task_in(self, home, task_id):
+        return self.json("show", task_id, env={"AGENT_WORK_HOME": home})[1]
 
     def test_the_idle_gate_defaults_to_10_percent_and_an_old_default_moves_with_it(self):
         fresh = os.path.join(self.root, "fresh")

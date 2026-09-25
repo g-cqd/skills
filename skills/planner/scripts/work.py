@@ -36,15 +36,16 @@ Rules:
     cores: a job behind the head may start first if it fits now and in the cores the head leaves free, or if it is
     small (small weight, 1 predicted core) while the head has waited less than the backfill wait (300 s) and no
     validity job is ahead of it. A head past the backfill wait keeps every job behind it, so none starves. Exclusive
-    jobs, as heavy as the CPU count, are timing measurements: they hold the whole budget, whatever their history, and
-    run in batches: when one starts, the exclusive jobs already waiting join its batch, and while the batch is open
-    they start next, one at a time, ahead of every waiting job but validity work, so the machine drains once for the
-    batch. An exclusive job that asks later waits for the next batch; a batch job whose supervisor is gone keeps no
-    place, as any waiting job. A job that the machine's pressure alone holds back past the load wait fails. `work
-    settings` shows and sets these values, kept in the database so that every agent's jobs are admitted alike: CPU
-    budget, capacity, memory budget, idle min, memory limit, load factor, aging, job QoS, backfill wait, small weight,
-    load wait (1800 s), log limit, and how long events and logs are kept; `work status` shows the signals beside them
-    and each job's prediction, and a waiting job's reason names the rule that holds it.
+    jobs, as heavy as the CPU count, are timing measurements, and they no longer drain the machine: one counts its
+    predicted cores as any job does. While it waits it holds new jobs predicted above the small weight, for the quiet
+    drain (60 s) at most, then starts even if such jobs still run; while it runs, no new job predicted above the small
+    weight starts, for the quiet max (180 s) at most, after which it runs on as an ordinary job. Light jobs start
+    throughout, and one quiet window is open at a time: a second exclusive job waits for the first window to close. A
+    job that the machine's pressure alone holds back past the load wait fails. `work settings` shows and sets these
+    values, kept in the database so that every agent's jobs are admitted alike: CPU budget, capacity, memory budget,
+    idle min, memory limit, load factor, aging, job QoS, quiet drain, quiet max, backfill wait, small weight, load
+    wait (1800 s), log limit, and how long events and logs are kept; `work status` shows the signals beside them and
+    each job's prediction, and a waiting job's reason names the rule that holds it.
   - Jobs: a detached supervisor starts the command in its own process group with stdin closed, at the job QoS
     (utility, on macOS through taskpolicy -c, which its children inherit, so the user's own work comes first under
     contention; an exclusive job at the default QoS, so its timings are not distorted), writes its output whole to a
@@ -228,6 +229,13 @@ MIGRATIONS = ((
     # The idle gate's default becomes 10%, the value the admission on predicted cores was simulated with; a database
     # still at the old default, 15, moves with it.
     "UPDATE settings SET idle_min = 10 WHERE idle_min = 15",
+), (
+    # Quiet exclusive jobs: a bounded drain before an exclusive job and a bounded quiet window while it runs replace
+    # the whole-machine drain and the batches; the batch column stays, unused.
+    "ALTER TABLE settings ADD COLUMN quiet_drain REAL NOT NULL DEFAULT 60 CHECK (quiet_drain >= 0)",
+    "ALTER TABLE settings ADD COLUMN quiet_max REAL NOT NULL DEFAULT 180 CHECK (quiet_max >= 0)",
+    "ALTER TABLE tasks ADD COLUMN quiet_until REAL",
+    "CREATE INDEX tasks_by_quiet ON tasks (quiet_until) WHERE quiet_until IS NOT NULL",
 ))
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -703,7 +711,6 @@ def task_json(row: sqlite3.Row, now: float | None = None) -> dict:
         "started": iso(row["started"]), "ended": iso(row["ended"]),
         "waited": rounded(waited_of(row, now)), "ran": rounded(ran_of(row, now)),
         "status": row["status"], "pid": row["pid"], "supervisor": row["owner"], "log": row["log"], "qos": row["qos"],
-        "batch": row["batch"],
         "predicted": None if row["pred_cores"] is None else {
             "cores": rounded(row["pred_cores"]), "rss_kib": row["pred_rss"], "duration": rounded(row["pred_duration"]),
             "from": row["pred_from"]},
@@ -1051,16 +1058,34 @@ def estimated(conn: sqlite3.Connection, rows) -> list[dict]:
     return result
 
 
+def describe_quiet(conn: sqlite3.Connection, running: list, waiting: list, box: Machine, now: float) -> dict | None:
+    """The open quiet window, else the drain of the first exclusive job in line, for status; None when neither holds
+    anything."""
+    small = cores_text(box.settings.small_weight)
+    window = open_window(running, now)
+    if window is not None:
+        left = window["quiet_until"] - now
+        return {"state": "window", "job": window["id"], "seconds_left": round(left, 1),
+                "text": f"job {window['id']} runs exclusive for {span(left)} more at most; no new job predicted above "
+                        f"{small} starts until then"}
+    line = sorted((item for item in waiting if exclusive(item["weight"], box)),
+                  key=lambda item: waiting_order(item, box.settings.aging))
+    if line:
+        left = drain_start(conn, line[0]) + box.settings.quiet_drain - now
+        if left > 0:
+            return {"state": "drain", "job": line[0]["id"], "seconds_left": round(left, 1),
+                    "text": f"job {line[0]['id']} waits to run exclusive; for {span(left)} more at most, no new job "
+                            f"predicted above {small} starts"}
+    return None
+
+
 def describe_hold(row: sqlite3.Row, box) -> str:
     """What a job holds or will hold against the budget, and its predicted memory, for status."""
-    if exclusive(row["weight"], box):
-        return f"exclusive: holds the whole budget of {number(box.budget)} cores"
+    kind = "exclusive, " if exclusive(row["weight"], box) else ""
     if row["pred_cores"] is None:
-        return f"holds {number(row['weight'])} cores, its weight (no prediction)"
-    need = number(cores(row, box))
-    unit = "core" if need == "1" else "cores"
-    return (f"predicted {need} {unit}, {memory(row['pred_rss'])} at peak, {span(row['pred_duration'])} "
-            f"({row['pred_from']})")
+        return f"{kind}holds {number(row['weight'])} cores, its weight (no prediction)"
+    return (f"{kind}predicted {cores_text(cores(row, box))}, {memory(row['pred_rss'])} at peak, "
+            f"{span(row['pred_duration'])} ({row['pred_from']})")
 
 
 def describe_prediction(row: sqlite3.Row) -> str:
@@ -1232,13 +1257,16 @@ class Settings:
     memory_budget: int | None = None  # KiB of used memory; None: the memory minus 2 GiB; 0: no gate
     aging: float = 1.0  # seconds of predicted run time forgiven for each second a job waits
     job_qos: str = "utility"  # the QoS of every job but the exclusive ones
+    quiet_drain: float = 60.0  # the longest an exclusive job holds new heavy jobs before it starts, in seconds
+    quiet_max: float = 180.0  # the longest quiet window of a running exclusive job, in seconds
 
 
 def settings_of(conn: sqlite3.Connection) -> Settings:
     row = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
     return Settings(row["capacity"], row["load_factor"], row["load_wait"], row["log_limit"], row["keep_days"],
                     row["pruned"], row["idle_min"], row["memory_limit"], row["backfill_wait"], row["small_weight"],
-                    row["cpu_budget"], row["memory_budget"], row["aging"], row["job_qos"])
+                    row["cpu_budget"], row["memory_budget"], row["aging"], row["job_qos"], row["quiet_drain"],
+                    row["quiet_max"])
 
 
 MEMORY_LEVELS = ("normal", "warning", "critical")
@@ -1508,18 +1536,39 @@ def check_weight(weight: float) -> float:
 
 
 def exclusive(weight: float, box: Machine) -> bool:
-    """Whether a job is as heavy as the CPU count: it holds the whole CPU budget, so the machine drains before it."""
+    """Whether a job is as heavy as the CPU count: a timing measurement, which runs at the default QoS and gets a
+    bounded quiet drain and quiet window (`quiet_blocker`)."""
     return weight >= box.cpus
 
 
 def cores(row, box: Machine) -> float:
     """The cores a job holds against the CPU budget: its predicted cores, capped by its declared weight, or its
-    declared weight without a prediction. An exclusive job holds the whole budget, so it runs alone and nothing starts
-    beside it; it is a timing measurement, so no prediction stands in for its weight."""
+    declared weight without a prediction. An exclusive job counts the same way."""
     weight = row["weight"]
-    if exclusive(weight, box):
-        return max(box.budget, weight)
     return weight if row["pred_cores"] is None else min(weight, row["pred_cores"])
+
+
+def heavy(row, box: Machine) -> bool:
+    """Whether a job is predicted to use more than the small weight: a quiet drain or window holds it."""
+    return cores(row, box) > box.settings.small_weight + 1e-9
+
+
+def cores_text(value: float) -> str:
+    return f"{number(value)} core{'' if number(value) == '1' else 's'}"
+
+
+def open_window(running: list, now: float):
+    """The running exclusive job whose quiet window is open, or None: at most one is."""
+    return next((item for item in running if item["quiet_until"] is not None and item["quiet_until"] > now), None)
+
+
+def drain_start(conn: sqlite3.Connection, row) -> float:
+    """When the quiet drain of an exclusive job begins: when it asked, or when the last quiet window of another job
+    closed, whichever is later, so the drain before a second exclusive job counts from the first one's close. A window
+    closes at its end or when its job ends. One indexed scan of the jobs that had a window."""
+    closed = conn.execute("SELECT MAX(MIN(quiet_until, COALESCE(ended, quiet_until))) FROM tasks "
+                          "WHERE quiet_until IS NOT NULL AND id != ?", (row["id"],)).fetchone()[0]
+    return max(row["requested"], closed or 0.0)
 
 
 def number(value: float) -> str:
@@ -1632,37 +1681,49 @@ def backfill(row: sqlite3.Row, ahead: list[sqlite3.Row], running: list[sqlite3.R
     return "ahead", reason
 
 
-def waiting_order(row, batch: str | None = None, aging: float = 1.0) -> tuple:
-    """A waiting job's place in line: validity first, as in order_tasks' work order, then the jobs of the open
-    exclusive batch `batch`, then the shortest predicted run time less `aging` times the time waited, then the order
-    in which the jobs asked. Shortest first cuts the total wait; aging bounds each job's: a job predicted to run P
-    seconds goes ahead of every job that asks more than P / aging seconds after it. The time waited is the same
-    for every job at one moment, so the key is the predicted run time plus aging times the request time, and the
-    order changes only when a job asks or leaves. A job without a prediction counts as the default run time."""
+def waiting_order(row, aging: float = 1.0) -> tuple:
+    """A waiting job's place in line: validity first, as in order_tasks' work order, then the shortest predicted run
+    time less `aging` times the time waited, then the order in which the jobs asked. Shortest first cuts the total
+    wait; aging bounds each job's: a job predicted to run P seconds goes ahead of every job that asks more than P /
+    aging seconds after it. The time waited is the same for every job at one moment, so the key is the predicted run
+    time plus aging times the request time, and the order changes only when a job asks or leaves. A job without a
+    prediction counts as the default run time."""
     duration = row["pred_duration"] if row["pred_duration"] is not None else DEFAULT_DURATION
-    return (0 if row["kind"].lower() in order_tasks.VALIDITY_KINDS else 1,
-            0 if batch is not None and row["batch"] == batch else 1, duration + aging * row["requested"],
+    return (0 if row["kind"].lower() in order_tasks.VALIDITY_KINDS else 1, duration + aging * row["requested"],
             row["requested"], row["seq"])
-
-
-def open_batch(running: list[sqlite3.Row], waiting: list[sqlite3.Row]) -> str | None:
-    """The open exclusive batch: the batch of a running job, else of a waiting job, or None. `waiting` holds only the
-    jobs whose supervisor lives, so a batch none of whose jobs runs or waits alive is closed."""
-    return next((item["batch"] for item in [*running, *waiting] if item["batch"]), None)
 
 
 def enumerate_ids(ids: list[str]) -> str:
     return ids[0] if len(ids) == 1 else f"{', '.join(ids[:-1])} and {ids[-1]}"
 
 
-def describe_batch(batch: str, running: list[sqlite3.Row], line: list[sqlite3.Row]) -> str:
-    """The open batch's jobs, running and then next in line order: "job-12 running, job-15 and job-18 next"."""
-    parts = []
-    for ids, what in (([item["id"] for item in running if item["batch"] == batch], "running"),
-                      ([item["id"] for item in line if item["batch"] == batch], "next")):
-        if ids:
-            parts.append(f"{enumerate_ids(ids)} {what}")
-    return ", ".join(parts)
+def quiet_blocker(conn: sqlite3.Connection, row, running: list, quiet: list, box: Machine,
+                  now: float) -> tuple[str, str] | None:
+    """Why an exclusive job cannot start now, or None. Exclusive jobs are timing measurements; they no longer drain
+    the machine. One quiet window at a time: the job waits for the exclusive jobs ahead of it in work order (`quiet`,
+    this one included) and for an open window. Then it drains for the quiet drain at most, counted from when it asked
+    or the last window closed: while jobs predicted above the small weight still run, or its predicted cores do not fit
+    the budget, it waits, and no new heavy job starts. Past the drain it starts whatever runs, once the machine is not
+    under pressure; as it starts its quiet window opens, for the quiet max at most."""
+    settings = box.settings
+    if quiet and quiet[0]["id"] != row["id"]:
+        return "quiet", f"job {quiet[0]['id']}, exclusive too, is ahead of it: one quiet window at a time"
+    window = open_window(running, now)
+    if window is not None:
+        return "quiet", (f"job {window['id']}'s quiet window is open for {span(window['quiet_until'] - now)} more: "
+                         f"one quiet window at a time")
+    end = drain_start(conn, row) + settings.quiet_drain
+    if now >= end:
+        return pressure(box)
+    busy = [item["id"] for item in running if heavy(item, box)]
+    if busy:
+        return "quiet", (f"it drains: {'job' if len(busy) == 1 else 'jobs'} {enumerate_ids(busy)}, predicted above "
+                         f"{cores_text(settings.small_weight)}, still {'runs' if len(busy) == 1 else 'run'}; it starts "
+                         f"in {span(end - now)} at the latest")
+    held = admission(row, running, box)
+    if held is not None and held[0] in ("cores", "capacity"):
+        return held[0], f"{held[1]}; it starts in {span(end - now)} at the latest"
+    return held
 
 
 def prune(ctx: Context, now: float | None = None) -> None:
@@ -1755,10 +1816,11 @@ class Supervisor:
                 box = machine(settings, self.gauge.read(idle=settings.idle_min > 0))
                 blocked = self.blocker(conn, row, box)
                 if blocked is None:
-                    if exclusive(row["weight"], box):
-                        self.form_batch(conn, row, box)
-                    conn.execute("UPDATE tasks SET state = 'running', started = ?, note = '' WHERE id = ?",
-                                 (time.time(), self.task_id))
+                    now = time.time()
+                    # An exclusive job opens its quiet window as it starts.
+                    until = now + settings.quiet_max if exclusive(row["weight"], box) else None
+                    conn.execute("UPDATE tasks SET state = 'running', started = ?, quiet_until = ?, note = '' "
+                                 "WHERE id = ?", (now, until, self.task_id))
                     return get_task(conn, self.task_id)
                 cause, reason = blocked
                 # Other jobs end; outside pressure need not. A job that the machine alone holds back gives up at last.
@@ -1778,18 +1840,35 @@ class Supervisor:
                 last_sweep = time.monotonic()
 
     def blocker(self, conn: sqlite3.Connection, row: sqlite3.Row, box: Machine) -> tuple[str, str] | None:
-        """Why the job cannot start now, as (cause, reason), or None. Waiting jobs start in work order, with the jobs
-        of the open exclusive batch right after validity work; a waiting job whose supervisor is gone keeps no place.
-        A job behind the head of the line may start before it only as `backfill` allows, and never before a job of
-        the open batch, so that the machine, once drained for the batch, runs its jobs back to back."""
+        """Why the job cannot start now, as (cause, reason), or None. An exclusive job waits as `quiet_blocker` says.
+        Another job predicted above the small weight waits while a quiet window is open, or while the first exclusive
+        job in line drains, for the quiet drain at most. Otherwise the other jobs start in work order; a waiting job
+        whose supervisor is gone keeps no place, and a job behind the head of the line may start before it only as
+        `backfill` allows. Exclusive jobs keep no place in that line: they hold only heavy jobs, and only a while."""
         running, line = self.lines(conn, row)
-        batch = open_batch(running, line)
-        line.sort(key=lambda item: waiting_order(item, batch, box.settings.aging))
+        now, settings = time.time(), box.settings
+        order = lambda item: waiting_order(item, settings.aging)  # noqa: E731
+        quiet = sorted((item for item in line if exclusive(item["weight"], box)), key=order)
+        if exclusive(row["weight"], box):
+            return quiet_blocker(conn, row, running, quiet, box, now)
+        small = cores_text(settings.small_weight)
+        window = open_window(running, now)
+        end = drain_start(conn, quiet[0]) + settings.quiet_drain if quiet and window is None else None
+        if heavy(row, box):
+            if window is not None:
+                return "quiet", (f"job {window['id']} runs in its quiet window for "
+                                 f"{span(window['quiet_until'] - now)} more; no job predicted above {small} starts in "
+                                 f"it, and this job needs {number(cores(row, box))}")
+            if end is not None and now < end:
+                return "quiet", (f"job {quiet[0]['id']} waits to run exclusive, and for {span(end - now)} more no "
+                                 f"job predicted above {small} starts; this job needs {number(cores(row, box))}")
+        # The line holds the other jobs; while a quiet window or drain holds the heavy ones, only the light ones.
+        holding = window is not None or (end is not None and now < end)
+        line = sorted((item for item in line if not exclusive(item["weight"], box)
+                       and not (holding and heavy(item, box))), key=order)
         if line[0]["id"] != row["id"]:
             ahead = line[:[item["id"] for item in line].index(row["id"])]
-            if row["batch"] != batch and any(item["batch"] == batch for item in ahead):
-                return "batch", f"the exclusive batch runs first: {describe_batch(batch, running, line)}"
-            held = backfill(row, ahead, running, box, time.time())
+            held = backfill(row, ahead, running, box, now)
             if held is not None:
                 return held
         return admission(row, running, box)
@@ -1798,24 +1877,12 @@ class Supervisor:
         """The running jobs in the order they started, and the waiting jobs whose supervisor lives, with this one, in
         the order they asked."""
         running = estimated(conn, conn.execute(
-            "SELECT id, weight, pred_cores, cpu, started, batch, sig_full, sig_head, sig_prog, sig_tool FROM tasks "
-            "WHERE state = 'running' ORDER BY started, seq").fetchall())
-        waiting = conn.execute("SELECT id, kind, requested, seq, owner, weight, pred_cores, pred_duration, batch "
+            "SELECT id, weight, pred_cores, cpu, started, quiet_until, sig_full, sig_head, sig_prog, sig_tool "
+            "FROM tasks WHERE state = 'running' ORDER BY started, seq").fetchall())
+        waiting = conn.execute("SELECT id, kind, requested, seq, owner, weight, pred_cores, pred_duration "
                                "FROM tasks WHERE state = 'claimed' AND requested IS NOT NULL "
                                "ORDER BY requested, seq").fetchall()
         return running, [item for item in waiting if item["id"] == row["id"] or exists(item["owner"])]
-
-    def form_batch(self, conn: sqlite3.Connection, row: sqlite3.Row, box: Machine) -> None:
-        """As an exclusive job starts with no batch open, opens its batch, in the caller's transaction: it and the
-        exclusive jobs waiting now, whose supervisor lives, form the batch. A job that starts while a batch is open,
-        validity work going ahead of it, runs outside it."""
-        running, line = self.lines(conn, row)
-        if open_batch(running, [item for item in line if item["id"] != row["id"]]) is not None:
-            return
-        members = [row["id"]] + [item["id"] for item in line
-                                 if item["id"] != row["id"] and exclusive(item["weight"], box)]
-        conn.execute(f"UPDATE tasks SET batch = ? WHERE id IN ({','.join('?' * len(members))})",
-                     (row["id"], *members))
 
     def execute(self, conn: sqlite3.Connection, row: sqlite3.Row) -> int:
         argv, cwd = json.loads(row["command"]), row["cwd"]
@@ -2803,7 +2870,8 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
                                              ("memory_budget", args.memory_budget),
                                              ("backfill_wait", args.backfill_wait),
                                              ("small_weight", args.small_weight),
-                                             ("aging", args.aging), ("job_qos", args.job_qos))
+                                             ("aging", args.aging), ("job_qos", args.job_qos),
+                                             ("quiet_drain", args.quiet_drain), ("quiet_max", args.quiet_max))
                if value is not None}
     if changes:
         with writing(conn):
@@ -2826,7 +2894,8 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
               "load_factor": settings.load_factor, "load_limit": box.load_limit, "load_wait": settings.load_wait,
               "log_limit": settings.log_limit, "keep_days": settings.keep_days,
               "backfill_wait": settings.backfill_wait, "small_weight": settings.small_weight,
-              "aging": settings.aging, "job_qos": settings.job_qos})
+              "aging": settings.aging, "job_qos": settings.job_qos, "quiet_drain": settings.quiet_drain,
+              "quiet_max": settings.quiet_max})
         return 0
     budget_default = " (the default: the CPU count)" if settings.cpu_budget is None else ""
     capacity = "off (the default): no cap on declared weights" if box.capacity is None else \
@@ -2852,6 +2921,9 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
           f"aging: {settings.aging:g}; waiting jobs go shortest predicted run time first, less this many seconds "
           f"for each second waited\n"
           f"backfill wait: {span(settings.backfill_wait)}; a job that waited longer keeps every job behind it\n"
+          f"quiet drain: {span(settings.quiet_drain)}; the longest an exclusive job holds new jobs predicted above "
+          f"the small weight before it starts\n"
+          f"quiet max: {span(settings.quiet_max)}; the longest an exclusive job keeps them out once it runs\n"
           f"job qos: {settings.job_qos}; every job but the exclusive ones runs at this QoS, and its children with "
           f"it, so the user's own work comes first{applied}\n"
           f"small weight: {settings.small_weight:g}; a job predicted to use this many cores or fewer may start past "
@@ -2876,23 +2948,19 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
         totals = dict(conn.execute(f"SELECT state, COUNT(*) FROM tasks WHERE {in_scope('scope')} GROUP BY state",
                                    {"scope": scope}).fetchall())
         view = queue(conn, scope)
-        # The budget and the open exclusive batch are the machine's, whatever the scope.
+        # The budget and the quiet window or drain are the machine's, whatever the scope.
         every_running = estimated(conn, conn.execute(
-            "SELECT id, weight, pred_cores, cpu, batch, sig_full, sig_head, sig_prog, sig_tool FROM tasks "
+            "SELECT id, weight, pred_cores, cpu, quiet_until, sig_full, sig_head, sig_prog, sig_tool FROM tasks "
             "WHERE state = 'running' ORDER BY started, seq").fetchall())
         every_waiting = [row for row in conn.execute("SELECT id, kind, requested, seq, owner, weight, pred_cores, "
-                                                     "pred_duration, batch FROM tasks WHERE state = 'claimed' AND "
+                                                     "pred_duration FROM tasks WHERE state = 'claimed' AND "
                                                      "requested IS NOT NULL ORDER BY requested, seq")
                          if exists(row["owner"])]
+        quiet = describe_quiet(conn, every_running, every_waiting, box, now)
     used, jobs = sum(cores(row, box) for row in every_running), len(every_running)
     declared = sum(row["weight"] for row in every_running)
     running = estimated(conn, [row for row in active if row["state"] == "running"])
     waiting = [row for row in active if row["state"] == "claimed" and row["requested"] is not None]
-    batch = open_batch(every_running, every_waiting)
-    every_waiting.sort(key=lambda row: waiting_order(row, batch, box.settings.aging))
-    batch_json = None if batch is None else {
-        "id": batch, "running": [row["id"] for row in every_running if row["batch"] == batch],
-        "next": [row["id"] for row in every_waiting if row["batch"] == batch]}
     tally = {state: totals.get(state, 0) for state in ("queued", "claimed", "running", "done", "failed", "cancelled")}
     tally["ready"] = sum(1 for waits in view.waits.values() if not waits)
     signals, settings = box.signals, box.settings
@@ -2901,7 +2969,7 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
             "memory_limit": settings.memory_limit, "load": signals.load, "load_gate": signals.load_gate,
             "load_limit": box.load_limit, "cpu_budget": box.budget, "used": used, "capacity": box.capacity,
             "declared": declared, "jobs": jobs,
-            "holds": pressure(box)[1] if pressure(box) else None, "batch": batch_json}
+            "holds": pressure(box)[1] if pressure(box) else None, "quiet": quiet}
     if args.json:
         emit({"time": iso(now), "scope": scope, "machine": host,
               "scopes": [scope_json(row, counts) for row in scopes],
@@ -2913,8 +2981,8 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
     cap = "no cap" if box.capacity is None else f"capacity {number(box.capacity)}"
     print(f"cores: predicted {number(used)} of the CPU budget of {number(box.budget)} taken by {jobs} job(s); "
           f"declared {number(declared)} ({cap})" + (f"; new jobs wait: {held[1]}" if held else ""))
-    if batch is not None:
-        print(f"exclusive batch: {describe_batch(batch, every_running, every_waiting)}")
+    if quiet is not None:
+        print(f"quiet {quiet['state']}: {quiet['text']}")
     if scopes:
         print("scopes:")
         print("\n".join("  " + line for line in scope_tree(scopes, counts)))
@@ -3088,6 +3156,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_argument("--job-qos", choices=QOS_LEVELS,
                      help="the macOS QoS of every job but the exclusive ones, which run at the default QoS; utility "
                           "(the default) lets the user's own work come first")
+    sub.add_argument("--quiet-drain", type=duration, metavar="SECONDS",
+                     help="an exclusive job waits this long at most for jobs predicted above the small weight to end, "
+                          "and holds new ones meanwhile, then starts (default 60)")
+    sub.add_argument("--quiet-max", type=duration, metavar="SECONDS",
+                     help="while an exclusive job runs, no job predicted above the small weight starts, for this long "
+                          "at most (default 180)")
     sub.add_argument("--backfill-wait", type=positive, metavar="SECONDS",
                      help="once the head of the line waited this long, no job starts before it (default 300)")
     sub.add_argument("--small-weight", type=positive, metavar="CORES",
