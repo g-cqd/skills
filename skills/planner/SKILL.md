@@ -389,16 +389,18 @@ changes with each new shell, so set `WORK_AGENT` to claim a task in one call and
   numbers only: at most one per task, holding every figure the report states (`performance-engineering`). In
   benchmarks, prefer CPU time to wall time where the harness allows, and interleave A and B runs, iterating at weight
   2 or 3: the machine is never idle. An exclusive job, as heavy as the CPU count, no longer stops the queue: it counts
-  its predicted cores as any job does and runs at the default QoS. While it waits it holds new jobs predicted above
-  the small weight for `--quiet-drain` (60 s) at most, then starts even if such jobs still run; while it runs, no new
-  job predicted above the small weight starts, for `--quiet-max` (3 min) at most, after which it runs on as an
-  ordinary job. Light jobs start throughout, and one quiet window is open at a time. Its log records the load, the
-  idle CPU and the other running jobs as it starts and ends, so its numbers carry their context. A repository-wide
-  quiet check runs once per landing, and only when the change can affect it (Landing), not in each agent's iterations.
-  A job that the machine's pressure alone holds back longer than the load wait (30 min) fails. These values live in
-  the database, so every agent's jobs share them: `work settings`. `work status` shows each job's prediction, the
-  budgets, the signals, and an open quiet window or drain with the time it has left and what it holds; each waiting
-  job's reason names the rule that holds it. The evidence: `references/work-scheduling.md`.
+  its predicted cores as any job does and runs at the default QoS. Without history of its own, it counts the typical
+  exclusive use, the median of the last 20 exclusive jobs (1 core while fewer than 3 have run), capped by its weight,
+  not its whole weight. While it waits it holds new jobs predicted above the small weight for `--quiet-drain` (60 s)
+  at most, then starts even if such jobs still run; while it runs, no new job predicted above the small weight starts,
+  for `--quiet-max` (3 min) at most, after which it runs on as an ordinary job. Light jobs start throughout, and one
+  quiet window is open at a time. Its log records the load, the idle CPU and the other running jobs as it starts and
+  ends, so its numbers carry their context. A repository-wide quiet check runs once per landing, and only when the
+  change can affect it (Landing), not in each agent's iterations. A job that the machine's pressure alone holds back
+  longer than the load wait (30 min) fails. These values live in the database, so every agent's jobs share them: `work
+  settings`. `work status` shows each job's prediction, the budgets, the signals, and an open quiet window or drain
+  with the time it has left and what it holds; each waiting job's reason names the rule that holds it. The evidence:
+  `references/work-scheduling.md`.
 - **Limits.** A job whose log passes the log limit (256 MiB) is stopped. `status` and `run` delete events, and the
   logs of ended tasks, older than 14 days.
 - **Waiting.** `work run` and `work wait` return the moment the job ends, with its own exit status (127 for a

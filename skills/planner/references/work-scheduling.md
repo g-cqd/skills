@@ -69,11 +69,13 @@ overload by 0.11 h over the whole trace.
 4. **Order.** Validity first, then the smallest predicted run time minus `--aging` (1) times the seconds waited, then
    the order of asking. Backfill counts predicted cores, and a head that has waited `--backfill-wait` still keeps
    every job behind it.
-5. **Quiet exclusive jobs.** A job as heavy as the CPU count counts its predicted cores as any job does. While it
-   waits, it holds new jobs predicted above `--small-weight` for `--quiet-drain` (60 s) at most, then starts even if
-   such jobs still run. While it runs, no new job predicted above the small weight starts, for `--quiet-max` (3 min)
-   at most; then it runs on as an ordinary job. Light jobs start throughout, one quiet window is open at a time, and
-   its log records the load average, the idle CPU and the running jobs as it starts and ends.
+5. **Quiet exclusive jobs.** A job as heavy as the CPU count counts its predicted cores as any job does. Most are
+   one-off scripts with new signatures, so one without history of its own counts the median use of the last 20
+   exclusive jobs (1 core while fewer than 3 have run), capped by its weight. While it waits, it holds new jobs
+   predicted above `--small-weight` for `--quiet-drain` (60 s) at most, then starts even if such jobs still run. While
+   it runs, no new job predicted above the small weight starts, for `--quiet-max` (3 min) at most; then it runs on as
+   an ordinary job. Light jobs start throughout, one quiet window is open at a time, and its log records the load
+   average, the idle CPU and the running jobs as it starts and ends.
 6. **QoS.** Jobs run at the utility QoS (`--job-qos`), through `taskpolicy -c utility` on macOS, and their children
    inherit it, so the user's own work comes first under contention. Exclusive jobs run at the default QoS, so their
    timings are not distorted.

@@ -38,17 +38,19 @@ Rules:
     cores the head leaves free, or if it is small (small weight, 1 predicted core) while the head has waited less than
     the backfill wait (300 s) and no validity job is ahead of it. A head past the backfill wait keeps every job behind
     it, so none starves. Exclusive jobs, as heavy as the CPU count, are timing measurements, and they no longer drain
-    the machine: one counts its predicted cores as any job does. While it waits it holds new jobs predicted above the
-    small weight, for the quiet drain (60 s) at most, then starts even if such jobs still run; while it runs, no new
-    job predicted above the small weight starts, for the quiet max (180 s) at most, after which it runs on as an
-    ordinary job. Light jobs start throughout, and one quiet window is open at a time: a second exclusive job waits
-    for the first window to close. Its log records, as it starts and as it ends, the load average, the idle CPU and
-    the other running jobs with their predicted cores, so that its timings carry their context. A job that the
-    machine's pressure alone holds back past the load wait fails. `work settings` shows and sets these values, kept in
-    the database so that every agent's jobs are admitted alike: CPU budget, capacity, memory budget, idle min, memory
-    limit, load factor, aging, job QoS, quiet drain, quiet max, backfill wait, small weight, load wait (1800 s), log
-    limit, and how long events and logs are kept; `work status` shows the signals beside them and each job's
-    prediction, and a waiting job's reason names the rule that holds it.
+    the machine: one counts its predicted cores as any job does. Without history of its own, it counts the typical
+    exclusive use, the median of the last 20 exclusive jobs (1 core while fewer than 3 have run), capped by its
+    weight, not its whole weight. While it waits it holds new jobs predicted above the small weight, for the quiet
+    drain (60 s) at most, then starts even if such jobs still run; while it runs, no new job predicted above the small
+    weight starts, for the quiet max (180 s) at most, after which it runs on as an ordinary job. Light jobs start
+    throughout, and one quiet window is open at a time: a second exclusive job waits for the first window to close.
+    Its log records, as it starts and as it ends, the load average, the idle CPU and the other running jobs with their
+    predicted cores, so that its timings carry their context. A job that the machine's pressure alone holds back past
+    the load wait fails. `work settings` shows and sets these values, kept in the database so that every agent's jobs
+    are admitted alike: CPU budget, capacity, memory budget, idle min, memory limit, load factor, aging, job QoS,
+    quiet drain, quiet max, backfill wait, small weight, load wait (1800 s), log limit, and how long events and logs
+    are kept; `work status` shows the signals beside them and each job's prediction, and a waiting job's reason names
+    the rule that holds it.
   - Jobs: a detached supervisor starts the command in its own process group with stdin closed, at the job QoS
     (utility, on macOS through taskpolicy -c, which its children inherit, so the user's own work comes first under
     contention; an exclusive job at the default QoS, so its timings are not distorted), writes its output whole to a
@@ -1017,12 +1019,15 @@ class Prediction:
     def basis(self) -> str:
         if self.level == "none":
             return "no history: the declared weight"
+        if self.level == "exclusive":
+            return "typical exclusive use; no history"
         return f"{self.runs} run{'s' if self.runs != 1 else ''} of {SOURCES[self.level]}"
 
 
 def predict(conn: sqlite3.Connection, signed, weight: float) -> Prediction:
     """The prediction for a job of declared `weight` whose signatures are `signed` (a mapping, or a row with sig_
-    columns). One indexed query per level, at most four, plus one for the fallback run time."""
+    columns). One indexed query per level, at most four, plus one for the fallback run time. An exclusive job
+    without history counts the typical exclusive use, capped by its weight, rather than its weight."""
     for level, needed in SIGNATURE_LEVELS:
         key = signed[level] if isinstance(signed, dict) else signed[f"sig_{level}"]
         if key is None:
@@ -1039,7 +1044,28 @@ def predict(conn: sqlite3.Connection, signed, weight: float) -> Prediction:
                           median(durations), level, len(runs))
     recent = [row[0] for row in conn.execute(f"SELECT ended - started FROM tasks WHERE {RAN} ORDER BY ended DESC "
                                              "LIMIT ?", (RECENT,))]
-    return Prediction(weight, None, median(recent) if recent else DEFAULT_DURATION, "none", 0)
+    duration = median(recent) if recent else DEFAULT_DURATION
+    cpus = os.cpu_count() or 1
+    if weight >= cpus:
+        return Prediction(min(weight, typical_exclusive(conn, cpus)), None, duration, "exclusive", 0)
+    return Prediction(weight, None, duration, "none", 0)
+
+
+TYPICAL_RUNS = 20  # The finished exclusive jobs whose median use stands in for one without history.
+TYPICAL_MIN = 3  # Fewer finished exclusive jobs than this: TYPICAL_CORES stands in.
+TYPICAL_CORES = 1.0
+
+
+def typical_exclusive(conn: sqlite3.Connection, cpus: int) -> float:
+    """The cores an exclusive job without history is predicted to use: the median of the average cores of the last 20
+    exclusive jobs that ran, whatever their signature, or 1 core while fewer than 3 have. Most exclusive jobs are
+    one-off scripts with new signatures, and they used 0.5 to 1.2 of 8 cores; counted at their whole weight, each
+    would hold every job but the tiny ones for its whole run."""
+    runs = conn.execute(f"SELECT started, ended, cpu_time FROM tasks WHERE weight >= ? AND {RAN} "
+                        "ORDER BY ended DESC LIMIT ?", (cpus, TYPICAL_RUNS)).fetchall()
+    if len(runs) < TYPICAL_MIN:
+        return TYPICAL_CORES
+    return max(MIN_CORES, median(row["cpu_time"] / max(row["ended"] - row["started"], 0.05) for row in runs))
 
 
 def estimated(conn: sqlite3.Connection, rows) -> list[dict]:
