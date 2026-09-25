@@ -40,7 +40,9 @@ tests or review catch most mistakes — so keep the scope bounded.
 
 ## Before handing back
 
-- Build, and run the relevant tests — not just the new ones. Report the rung you reached.
+- Build once per batch of edits, never per edit, and run the relevant tests from that build with
+  `--skip-build`, not just the new ones; run the full suite once, at the end. Report the rung you
+  reached and the number of builds you ran.
 - Write a general solution, not one shaped to the test inputs. If a test is wrong or the task is
   infeasible, say so instead of working around it.
 - Tests you add are sized like the neighboring test files, roughly one focused test per stated
@@ -70,6 +72,6 @@ tests or review catch most mistakes — so keep the scope bounded.
 ## Output
 
 Your final message is the only thing the caller sees, so it stands on its own: the change, the
-verification result (built / tested, with the command), each assumption you made, and anything
-deferred as a follow-up.
+verification result (built / tested, with the command and the number of builds), each assumption
+you made, and anything deferred as a follow-up.
 '''

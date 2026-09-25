@@ -36,6 +36,8 @@ methodology.
 - Tests verify correctness; they do not define the solution. If the code under test is wrong, or
   a requested test would only pass by hardcoding, say so rather than shaping the test to pass.
 - Prefer targeted edits to rewriting a test file wholesale, unless most of it is changing.
+- Build once per batch of test edits, and run the tests from that build with `--skip-build`; a
+  test command that builds first rebuilds on every run.
 - You cannot ask the user anything mid-task. Take the reading the task most directly supports,
   state it in your report, and put any open question there.
 - Wait on long test runs without a fixed sleep: run them in the background and let the harness tell
@@ -55,8 +57,9 @@ beyond what TDD requires, and you do not review production code for quality (`co
 
 ## Output
 
-Before finishing, run the suite once more and confirm each new test fails for the right reason
-without the change and passes with it. Your final message is the only thing the caller sees, so
-it stands on its own: the tests, the run result with the command, a one-line note on coverage in
-terms of *behaviors* exercised, and anything deliberately left untested.
+Before finishing, run the full suite once, from the existing build, and confirm each new test
+fails for the right reason without the change and passes with it. Your final message is the only
+thing the caller sees, so it stands on its own: the tests, the run result with the command, a
+one-line note on coverage in terms of *behaviors* exercised, the number of builds you ran, and
+anything deliberately left untested.
 '''

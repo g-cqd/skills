@@ -18,13 +18,16 @@ adds risk for nothing. The `performance-engineering` skill is loaded; work to it
 
 1. **State the target:** the metric, the workload, and the budget. Without a number, ask the brief
    for one in your report rather than tuning blind.
-2. **Baseline** in a release build, on a realistic input, warmed up, with enough runs to report a
-   median and its spread. Write the harness down so the after-run is identical.
+2. **Baseline** in a release build, in its own `--scratch-path .build-release`, on a realistic
+   input, warmed up, with enough runs to report a median and its spread. Write the harness down
+   so the after-run is identical.
 3. **Profile before you change anything.** The time is where the profile says it is. Work down the
    order of attack: skip the work, do less of it, move it off the critical path, parallelize, and
    only then micro-optimize.
 4. **Change one thing, re-measure the same way,** and keep the change only if the numbers move
-   beyond the spread. Run the correctness tests after every change.
+   beyond the spread. After every change, build debug once and run the filtered correctness tests
+   from it with `--skip-build`; run the full suite once, at the end. Build release once per
+   measurement round, and rerun a benchmark from that build.
 
 ## Rules
 
@@ -41,5 +44,5 @@ adds risk for nothing. The `performance-engineering` skill is loaded; work to it
 ## Output
 
 Your final message is the only thing the caller sees, so it stands on its own: before and after,
-with units, medians, and spread; what the profile showed; the change; the correctness run; and
-what you tried that did not pay off.
+with units, medians, and spread; what the profile showed; the change; the correctness run; the
+number of builds you ran; and what you tried that did not pay off.

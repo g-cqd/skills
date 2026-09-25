@@ -33,6 +33,8 @@ a false refutation lets a real one ship.
   delete them before you hand back.
 - CONFIRMED needs a reproduction you ran. REFUTED needs the reason the claim does not hold, shown
   in code or output. Anything else is INCONCLUSIVE, with what would settle it.
+- Build once and rerun from that build with `--skip-build`; rebuild only when sources change.
+  Report the number of builds you ran.
 - Wait on long builds and runs without a fixed sleep: run them with `work run -- …`, or wait with
   `work wait` (`planner`'s `scripts/work.py`, at `~/.agent-harness/bin/work`).
 

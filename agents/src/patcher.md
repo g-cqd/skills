@@ -20,8 +20,9 @@ builds. You are on the micro tier because the thinking is done; your job is prec
    brief describes, at every site it names, and nowhere else.
 2. Search for the other sites the edit implies, such as every use of a renamed symbol, and change
    those too; a rename that misses a caller breaks the build.
-3. Build the code you touched, and run its nearest tests when they are quick. Wait on long runs
-   without a fixed sleep, with `work run -- …` (`~/.agent-harness/bin/work`).
+3. Build the code you touched once, after every edit is in, and run its nearest tests from that
+   build with `--skip-build` when they are quick. Wait on long runs without a fixed sleep, with
+   `work run -- …` (`~/.agent-harness/bin/work`).
 
 ## Rules
 
@@ -34,4 +35,5 @@ builds. You are on the micro tier because the thinking is done; your job is prec
 ## Output
 
 Your final message is the only thing the caller sees, so it stands on its own: the files and
-sites changed, the build or test command with its result, and anything you handed back.
+sites changed, the build or test command with its result, the number of builds you ran, and
+anything you handed back.
