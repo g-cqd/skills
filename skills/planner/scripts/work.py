@@ -42,14 +42,16 @@ Rules:
     batch. An exclusive job that asks later waits for the next batch; a batch job whose supervisor is gone keeps no
     place, as any waiting job. A job that the machine's pressure alone holds back past the load wait fails. `work
     settings` shows and sets these values, kept in the database so that every agent's jobs are admitted alike: CPU
-    budget, capacity, memory budget, idle min, memory limit, load factor, aging, backfill wait, small weight, load
-    wait (1800 s), log limit, and how long events and logs are kept; `work status` shows the signals beside them and
-    each job's prediction, and a waiting job's reason names the rule that holds it.
-  - Jobs: a detached supervisor starts the command in its own process group with stdin closed, writes its output
-    whole to a log, stops it if the log passes the log limit (256 MiB), samples the CPU and memory of its process
-    tree every 2 s with ps, and records its true exit status: 127 when the command is missing, 126 when it cannot
-    run, 128 plus the signal that killed it. `run` and `wait` return the moment the work ends, or 124 at --timeout
-    (default 570 s) while it goes on.
+    budget, capacity, memory budget, idle min, memory limit, load factor, aging, job QoS, backfill wait, small weight,
+    load wait (1800 s), log limit, and how long events and logs are kept; `work status` shows the signals beside them
+    and each job's prediction, and a waiting job's reason names the rule that holds it.
+  - Jobs: a detached supervisor starts the command in its own process group with stdin closed, at the job QoS
+    (utility, on macOS through taskpolicy -c, which its children inherit, so the user's own work comes first under
+    contention; an exclusive job at the default QoS, so its timings are not distorted), writes its output whole to a
+    log, stops it if the log passes the log limit (256 MiB), samples the CPU and memory of its process tree every 2 s
+    with ps, and records its true exit status: 127 when the command is missing, 126 when it cannot run, 128 plus the
+    signal that killed it. `run` and `wait` return the moment the work ends, or 124 at --timeout (default 570 s) while
+    it goes on.
   - Waiting: `wait` also waits on what `work` did not start: --pid until processes exit (a zombie has), --file until
     paths exist and are not empty (one file holding a number exits with that number, as a status file), --gone
     until paths are removed, --log until a line matches an extended regular expression (grep -E). These need no
@@ -218,6 +220,11 @@ MIGRATIONS = ((
 ), (
     # Waiting jobs go shortest predicted run time first, less `aging` seconds for each second waited.
     "ALTER TABLE settings ADD COLUMN aging REAL NOT NULL DEFAULT 1 CHECK (aging >= 0)",
+), (
+    # The QoS at which jobs run, so that the user's own work comes first under contention, and the QoS each job ran at.
+    "ALTER TABLE settings ADD COLUMN job_qos TEXT NOT NULL DEFAULT 'utility' "
+    "CHECK (job_qos IN ('utility', 'default', 'background'))",
+    "ALTER TABLE tasks ADD COLUMN qos TEXT",
 ))
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -692,7 +699,7 @@ def task_json(row: sqlite3.Row, now: float | None = None) -> dict:
         "queued": iso(row["queued"]), "claimed": iso(row["claimed"]), "requested": iso(row["requested"]),
         "started": iso(row["started"]), "ended": iso(row["ended"]),
         "waited": rounded(waited_of(row, now)), "ran": rounded(ran_of(row, now)),
-        "status": row["status"], "pid": row["pid"], "supervisor": row["owner"], "log": row["log"],
+        "status": row["status"], "pid": row["pid"], "supervisor": row["owner"], "log": row["log"], "qos": row["qos"],
         "batch": row["batch"],
         "predicted": None if row["pred_cores"] is None else {
             "cores": rounded(row["pred_cores"]), "rss_kib": row["pred_rss"], "duration": rounded(row["pred_duration"]),
@@ -1196,13 +1203,14 @@ class Settings:
     cpu_budget: float | None = None  # the running jobs' predicted cores; None: the CPU count
     memory_budget: int | None = None  # KiB of used memory; None: the memory minus 2 GiB; 0: no gate
     aging: float = 1.0  # seconds of predicted run time forgiven for each second a job waits
+    job_qos: str = "utility"  # the QoS of every job but the exclusive ones
 
 
 def settings_of(conn: sqlite3.Connection) -> Settings:
     row = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
     return Settings(row["capacity"], row["load_factor"], row["load_wait"], row["log_limit"], row["keep_days"],
                     row["pruned"], row["idle_min"], row["memory_limit"], row["backfill_wait"], row["small_weight"],
-                    row["cpu_budget"], row["memory_budget"], row["aging"])
+                    row["cpu_budget"], row["memory_budget"], row["aging"], row["job_qos"])
 
 
 MEMORY_LEVELS = ("normal", "warning", "critical")
@@ -1784,9 +1792,19 @@ class Supervisor:
             print(f"work: cannot run {brief(argv)}: its directory {printable(cwd)} is gone", flush=True)
             self.finish(conn, None, f"its directory {cwd} is gone")
             return 1
+        settings, env = settings_of(conn), {**os.environ, "PWD": cwd}
+        # An exclusive job is a timing measurement: it runs at the default QoS, as the user's own work does.
+        qos = "default" if exclusive(row["weight"], machine(settings)) else settings.job_qos
+        wrapper = qos_wrapper(qos)
+        if wrapper is None:
+            qos = "default"
         try:
+            # The wrapper execs the command in its own process, so the pid, the process group and the signals are
+            # the command's; the command is found first, as exec would, so that one missing or not runnable still
+            # ends with 127 or 126 rather than the wrapper's own status.
+            launch = argv if wrapper is None else [*wrapper, locate(argv[0], env, cwd), *argv[1:]]
             # Its stdout is the supervisor's, the log that `run` opened; stdin is closed, as no one can answer it.
-            child = subprocess.Popen(argv, cwd=cwd, env={**os.environ, "PWD": cwd}, stdin=subprocess.DEVNULL,
+            child = subprocess.Popen(launch, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                                      stderr=subprocess.STDOUT, start_new_session=True, close_fds=True)
         except (OSError, ValueError) as error:
             print(f"work: cannot run {brief(argv)}: {error}", flush=True)
@@ -1799,8 +1817,8 @@ class Supervisor:
         self.child = child
         if self.stop is not None:
             forward(child.pid, self.stop)
-        self.update(conn, "UPDATE tasks SET pid = ? WHERE id = ?", (child.pid, self.task_id), "started",
-                    f"process {child.pid}; waited {span(waited_of(row, time.time()))} for capacity")
+        self.update(conn, "UPDATE tasks SET pid = ?, qos = ? WHERE id = ?", (child.pid, qos, self.task_id), "started",
+                    f"process {child.pid} at the {qos} QoS; waited {span(waited_of(row, time.time()))} for capacity")
         log_limit = settings_of(conn).log_limit
         stop = threading.Event()
         sampler = threading.Thread(target=self.sample, args=(child.pid, row["log"], log_limit, stop), daemon=True)
@@ -1889,6 +1907,47 @@ class Supervisor:
                           "WHERE id = ? AND state NOT IN ('done', 'failed', 'cancelled')",
                     (state, status, time.time(), cpu_time, note, self.task_id),
                     "finished" if status is not None else "failed", detail)
+
+
+TASKPOLICY = "/usr/sbin/taskpolicy"
+QOS_LEVELS = ("utility", "default", "background")
+# The first bytes of a file that exec runs: a script's #!, and Mach-O, universal and ELF binaries.
+EXECUTABLE_MAGIC = (b"#!", b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce",
+                    b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca", b"\x7fELF")
+
+
+def qos_wrapper(qos: str, platform: str = sys.platform) -> list[str] | None:
+    """The command that starts a job at `qos`: on macOS, taskpolicy -c, which clamps the QoS of the process and of
+    every thread and child it makes, so the user's own work runs first under contention. None for the default QoS,
+    and where there is no taskpolicy: there the job runs at the default QoS."""
+    if qos == "default" or platform != "darwin" or not os.access(TASKPOLICY, os.X_OK):
+        return None
+    return [TASKPOLICY, "-c", qos]
+
+
+def locate(program: str, env: dict[str, str], cwd: str) -> str:
+    """The file that exec would run for `program`, searched as execvp searches PATH, from `cwd`. Raises the error exec
+    would raise: FileNotFoundError when it is nowhere, PermissionError when it is not executable or a directory,
+    OSError(ENOEXEC) when it is neither a script nor a binary."""
+    if "/" in program:
+        candidates = [os.path.join(cwd, program)]
+    else:
+        candidates = [os.path.join(cwd, directory or ".", program)
+                      for directory in env.get("PATH", os.defpath).split(os.pathsep)]
+    denied = None
+    for candidate in candidates:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            with suppress(OSError):  # A file that cannot be read may still be run; exec decides.
+                with open(candidate, "rb") as handle:
+                    head = handle.read(4)
+                if not any(head.startswith(magic) for magic in EXECUTABLE_MAGIC):
+                    raise OSError(errno.ENOEXEC, os.strerror(errno.ENOEXEC), program)
+            return candidate
+        if denied is None and os.path.exists(candidate):
+            denied = candidate
+    if denied is not None:
+        raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), program)
+    raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), program)
 
 
 def size_of(path: str) -> int:
@@ -2713,7 +2772,8 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
                                              ("memory_budget", args.memory_budget),
                                              ("backfill_wait", args.backfill_wait),
                                              ("small_weight", args.small_weight),
-                                             ("aging", args.aging)) if value is not None}
+                                             ("aging", args.aging), ("job_qos", args.job_qos))
+               if value is not None}
     if changes:
         with writing(conn):
             for key, value in changes.items():
@@ -2735,7 +2795,7 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
               "load_factor": settings.load_factor, "load_limit": box.load_limit, "load_wait": settings.load_wait,
               "log_limit": settings.log_limit, "keep_days": settings.keep_days,
               "backfill_wait": settings.backfill_wait, "small_weight": settings.small_weight,
-              "aging": settings.aging})
+              "aging": settings.aging, "job_qos": settings.job_qos})
         return 0
     budget_default = " (the default: the CPU count)" if settings.cpu_budget is None else ""
     capacity = "off (the default): no cap on declared weights" if box.capacity is None else \
@@ -2749,6 +2809,7 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
         memory_budget_text = (f"{gib(box.memory_budget)}"
                               + (" (the default: the memory minus 2 GiB)" if settings.memory_budget is None else "")
                               + "; jobs start while used memory (active, wired and compressed) is at or below it")
+    applied = "" if qos_wrapper("utility") else " (not applied here: macOS only)"
     print(f"cpu budget: {box.budget:g} cores{budget_default}; the running jobs' predicted cores fit it\n"
           f"capacity: {capacity}\n"
           f"memory budget: {memory_budget_text}\n"
@@ -2760,6 +2821,8 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
           f"aging: {settings.aging:g}; waiting jobs go shortest predicted run time first, less this many seconds "
           f"for each second waited\n"
           f"backfill wait: {span(settings.backfill_wait)}; a job that waited longer keeps every job behind it\n"
+          f"job qos: {settings.job_qos}; every job but the exclusive ones runs at this QoS, and its children with "
+          f"it, so the user's own work comes first{applied}\n"
           f"small weight: {settings.small_weight:g}; a job this light may start past the head for a while\n"
           f"log limit: {settings.log_limit} bytes; a job whose log grows past it is stopped\n"
           f"keep: {settings.keep_days:g} days of events and of the logs of ended tasks")
@@ -2828,7 +2891,8 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
             usage_text = (f"cpu {row['cpu']:.0f}%, memory {memory(row['rss'])} (peak {memory(row['rss_peak'])})"
                           if row["rss"] is not None else "not sampled yet")
             print(f"  {row['id']}: process {row['pid'] or '-'}, {span(ran_of(row, now))}, {usage_text}, "
-                  f"weight {row['weight']:g}, {describe_hold(row, box)}, {row['agent']}, "
+                  f"weight {row['weight']:g}, {describe_hold(row, box)}, {row['qos'] or 'default'} QoS, "
+                  f"{row['agent']}, "
                   f"scope {row['scope'] or '-'}: "
                   f"{display(json.loads(row['command']))}" + (f" ({printable(row['note'])})" if row["note"] else ""))
     if waiting:
@@ -2988,6 +3052,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_argument("--aging", type=duration, metavar="RATE",
                      help="waiting jobs go shortest predicted run time first, less this many seconds for each second "
                           "they waited, so that none starves; 0 for shortest first alone (default 1)")
+    sub.add_argument("--job-qos", choices=QOS_LEVELS,
+                     help="the macOS QoS of every job but the exclusive ones, which run at the default QoS; utility "
+                          "(the default) lets the user's own work come first")
     sub.add_argument("--backfill-wait", type=positive, metavar="SECONDS",
                      help="once the head of the line waited this long, no job starts before it (default 300)")
     sub.add_argument("--small-weight", type=positive, metavar="CORES",
