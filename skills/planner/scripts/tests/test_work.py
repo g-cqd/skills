@@ -1152,15 +1152,16 @@ class SignatureTests(WorkTestCase):
 
 
 class PredictionTests(WorkTestCase):
-    def ran(self, command, cores, seconds, rss=None, status=0, ago=1000.0):
+    def ran(self, command, cores, seconds, rss=None, status=0, ago=1000.0, weight=1.0):
         """A finished job of `command` that used `cores` on average over `seconds`, ended `ago` seconds ago."""
         task_id = f"past-{len(self.database('SELECT seq FROM tasks'))}"
-        self.call("add", "--id", task_id, "--cwd", self.project, "--", *command, agent="a")
+        self.call("add", "--id", task_id, "--cwd", self.project, "--weight", str(weight), "--", *command, agent="a")
         ended = time.time() - ago
         self.database("UPDATE tasks SET state = 'done', started = ?, ended = ?, cpu_time = ?, rss_peak = ?, "
                       "status = ? WHERE id = ?", ended - seconds, ended, cores * seconds, rss, status, task_id)
 
-    def predict(self, command, weight=8.0):
+    def predict(self, command, weight=None):
+        weight = (os.cpu_count() or 1) - 0.5 if weight is None else weight  # Just under exclusive.
         ctx = work.Context(self.env)
         try:
             return work.predict(ctx.conn, work.signatures(command, self.project), weight)
@@ -1209,6 +1210,29 @@ class PredictionTests(WorkTestCase):
         ctx = work.Context(self.env)
         self.addCleanup(ctx.close)
         self.assertEqual(work.predict(ctx.conn, work.signatures(["swift", "build"], elsewhere), 8).level, "tool")
+
+    def test_an_exclusive_job_without_history_counts_the_typical_exclusive_use(self):
+        cpus = os.cpu_count() or 1
+        guess = self.predict(["bench", "new"], weight=cpus)
+        self.assertEqual((guess.cores, guess.level), (min(1.0, cpus), "exclusive"),
+                         "one core while fewer than 3 exclusive jobs have run")
+        self.assertEqual(guess.basis, "typical exclusive use; no history")
+        self.ran(["make", "wide"], 6.0, 60, weight=min(6, cpus))  # Not exclusive: it does not count.
+        for index, cores in enumerate((0.5, 1.2, 0.8)):
+            self.ran(["bench", f"one-off-{index}"], cores, 30, weight=cpus)
+        self.assertAlmostEqual(self.predict(["bench", "new"], weight=cpus).cores, 0.8,
+                               msg="the median of the last exclusive jobs, whatever their signature")
+        self.assertEqual(self.predict(["make", "new"], weight=1).level, "none", "an ordinary job keeps its weight")
+
+    def test_the_typical_exclusive_use_reads_the_last_20_and_is_capped_by_the_weight(self):
+        cpus = os.cpu_count() or 1
+        for index in range(3):
+            self.ran(["bench", f"old-{index}"], 0.2, 30, weight=cpus, ago=9000 - index)
+        for index in range(20):
+            self.ran(["bench", f"recent-{index}"], cpus + 2.0, 30, weight=cpus, ago=5000 - index)
+        guess = self.predict(["bench", "new"], weight=cpus)
+        self.assertEqual((guess.cores, guess.level), (cpus, "exclusive"),
+                         "the median of the last 20 is above the declared weight, which caps it")
 
     def test_jobs_that_never_ran_teach_nothing(self):
         for status in (126, 127):
