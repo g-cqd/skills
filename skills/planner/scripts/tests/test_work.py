@@ -76,7 +76,7 @@ class WorkTestCase(unittest.TestCase):
         self.env["AGENT_WORK_HOME"] = self.home
         # A fixed CPU budget and machine gates that hold nothing keep the tests independent of the machine's state;
         # the tests of the gates themselves feed them fake signals.
-        lenient = ("--load-factor", "1000", "--idle-min", "0", "--memory-limit", "off")
+        lenient = ("--load-factor", "1000", "--idle-min", "0", "--memory-limit", "off", "--memory-budget", "off")
         self.assertEqual(self.call("settings", "--cpu-budget", "16", *lenient).status, 0)
 
     def tearDown(self):
@@ -639,8 +639,8 @@ class CapacityTests(WorkTestCase):
 class FakeGauge:
     """The machine's signals as a test sets them; a test can change them while a supervisor polls."""
 
-    def __init__(self, idle=50.0, memory="normal", load=None, load_gate=False):
-        self.signals = work.Signals(idle, memory, load, load_gate)
+    def __init__(self, idle=50.0, memory="normal", load=None, load_gate=False, memory_used=None):
+        self.signals = work.Signals(idle, memory, load, load_gate, memory_used)
 
     def read(self, idle=True):
         return self.signals
@@ -754,9 +754,43 @@ class MachineGateTests(WorkTestCase):
         self.assertEqual(work.cores(exclusive, self.box(budget=6)), 8, "a budget under the CPU count: it runs alone")
 
     def test_unknown_signals_hold_nothing(self):
+        self.call("settings", "--memory-budget", "1G")
         settings = work.settings_of(work.Context(self.env).conn)
         self.assertIsNone(work.pressure(work.machine(settings, work.Signals(None, None, None, False))))
-        self.assertIsNone(work.pressure(work.machine(settings, work.Signals(None, None, None, True))))
+        self.assertIsNone(work.pressure(work.machine(settings, work.Signals(None, None, None, True, None))))
+
+    def test_used_memory_above_the_budget_holds_jobs_until_it_falls(self):
+        self.call("settings", "--memory-budget", "14G")
+        self.own_job("build")
+        gib = 1024 * 1024
+        gauge = FakeGauge(idle=60.0, memory_used=15 * gib)
+        thread, outcome = self.supervise("build", gauge)
+        self.held_with("build", "used memory is 15.0 GiB, above the memory budget of 14.0 GiB")
+        self.assertIn("memory used 15.0 GiB (jobs start at or below the budget of 14.0 GiB)", self.status_line(gauge))
+        gauge.signals = work.Signals(60.0, "normal", None, False, 14 * gib)
+        self.assertEqual(self.finished(thread, outcome)["state"], "running", "at the budget, a job starts")
+
+    def status_line(self, gauge):
+        ctx = work.Context(self.env)
+        try:
+            return work.describe_machine(work.machine(work.settings_of(ctx.conn), gauge.read()))
+        finally:
+            ctx.close()
+
+    def test_the_memory_budget_is_a_size_off_or_the_memory_minus_2_gib(self):
+        gib = 1024 * 1024
+        for text, expected in (("14G", 14 * gib), ("14GiB", 14 * gib), ("14336M", 14 * gib), ("1.5T", 1536 * gib)):
+            with self.subTest(text=text):
+                shown = self.json("settings", "--memory-budget", text)[1]
+                self.assertEqual((shown["memory_budget_kib"], shown["memory_budget_is_default"]), (expected, False))
+        self.assertIsNone(self.json("settings", "--memory-budget", "off")[1]["memory_budget_kib"])
+        shown = self.json("settings", "--memory-budget", "auto")[1]
+        total = work.total_memory()
+        self.assertEqual(shown["memory_budget_kib"], None if total is None else total - 2 * gib)
+        self.assertTrue(shown["memory_budget_is_default"])
+        for text in ("14", "lots", "0G", "-1G"):
+            with self.subTest(text=text):
+                self.assertEqual(self.work("settings", "--memory-budget", text).status, 2)
 
     def test_pressure_held_past_the_load_wait_fails_the_job(self):
         self.call("settings", "--load-wait", "0.5")
@@ -794,6 +828,8 @@ class MachineGateTests(WorkTestCase):
         levels = [work.linux_memory_level(meminfo.format(available)) for available in (4000000, 1200000, 700000)]
         self.assertEqual(levels, ["normal", "warning", "critical"])
         self.assertIsNone(work.linux_memory_level("MemTotal: 10 kB\n"))
+        self.assertEqual(work.linux_memory_used(meminfo.format(4000000)), 12000000, "MemTotal minus MemAvailable")
+        self.assertIsNone(work.linux_memory_used("MemTotal: 10 kB\n"))
 
     def test_the_gauge_measures_idle_cpu_between_two_readings(self):
         class Ticks(work.Gauge):
@@ -832,6 +868,7 @@ class MachineGateTests(WorkTestCase):
         signals = work.Gauge().read()
         self.assertTrue(0 <= signals.idle <= 100)
         self.assertIn(signals.memory, work.MEMORY_LEVELS)
+        self.assertTrue(0 < signals.memory_used < work.total_memory(), "active, wired and compressed pages, in KiB")
         self.assertFalse(signals.load_gate)
 
     def test_status_and_settings_show_the_thresholds(self):
@@ -1547,7 +1584,8 @@ class SetupTests(WorkTestCase):
         bare["HOME"] = home
         # One shell runs work twice, so both calls share the default name agent-<that shell's pid>.
         shell = subprocess.Popen(
-            ["sh", "-c", '"$0" "$1" settings --load-factor 1000 --idle-min 0 --memory-limit off >/dev/null && '
+            ["sh", "-c", '"$0" "$1" settings --load-factor 1000 --idle-min 0 --memory-limit off --memory-budget off '
+             '>/dev/null && '
              '"$0" "$1" run --timeout 0 --id bare -- sh -c "$2"; echo $$',
              sys.executable, SCRIPT, self.gate("bare")[2]],
             cwd=self.project, env=bare, stdout=subprocess.PIPE, text=True)
