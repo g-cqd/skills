@@ -19,25 +19,31 @@ Rules:
     has read it (`work show`, which prints its digest) and accepted it (`work accept ID --digest D`), whoever queued
     it: agent names are self-declared, so no name proves who wrote a command. Only a command typed inline with
     `work run -- ...` needs no acceptance. Commands are stored as argument lists and run without a shell.
-  - Capacity: a job weighs the cores it uses (default 1, at most the CPU count); a job as heavy as the CPU count
-    holds the whole capacity, so it runs alone whatever the capacity. A job starts only while the running
-    jobs' weights plus its own fit the capacity, or when no job runs, and while the machine is not under pressure:
-    the CPU at least idle-min idle (15%, measured over the supervisor's last poll), memory pressure below the memory
-    limit (warning, from the kernel), and, on Linux only, the load average below the CPU count times the load factor
-    (1.5). macOS counts threads that wait on memory and disk in its load average, so there it is shown, not used.
-    Jobs that wait for room start in work order: validity first, then the order in which they asked, with backfill:
-    a job behind the head may start first if it fits now and in the cores the head leaves free, or if it is small
-    (small weight, 1) while the head has waited less than the backfill wait (300 s) and no validity job is ahead of
-    it. A head past the backfill wait keeps every job behind it, so none starves. Exclusive jobs, as heavy as the
-    CPU count, run in batches: when one starts, the exclusive jobs already waiting join its batch, and while the
+  - Capacity: a job declares a weight, the cores it may use (default 1, at most the CPU count), but it is admitted
+    on the cores it is predicted to use, from the history of its command: the median average cores (CPU time over
+    run time) of the last 5 runs of the most specific signature that has enough of them, capped by the declared
+    weight, which is the estimate while there is no history. A signature normalizes the command, with paths reduced
+    to their last component and ids masked, and its directory counts as its repository and the path inside it, so
+    worktrees share history. A job starts only while the running jobs' predicted cores plus its own fit the CPU
+    budget (default the CPU count), and their declared weights plus its own fit the capacity when one is set (off
+    by default), or when no job runs, and while the machine is not under pressure: the CPU at least idle-min idle
+    (15%, measured over the supervisor's last poll), memory pressure below the memory limit (warning, from the
+    kernel), and, on Linux only, the load average below the CPU count times the load factor (1.5). macOS counts
+    threads that wait on memory and disk in its load average, so there it is shown, not used.
+    Jobs that wait for room start in work order: validity first, then the order in which they asked, with backfill in
+    predicted cores: a job behind the head may start first if it fits now and in the cores the head leaves free, or
+    if it is small (small weight, 1 predicted core) while the head has waited less than the backfill wait (300 s)
+    and no validity job is ahead of it. A head past the backfill wait keeps every job behind it, so none starves.
+    Exclusive jobs, as heavy as the CPU count, are timing measurements: they hold the whole budget, whatever their
+    history, and run in batches: when one starts, the exclusive jobs already waiting join its batch, and while the
     batch is open they start next, one at a time, ahead of every waiting job but validity work, so the machine
     drains once for the batch. An exclusive job that asks later waits for the next batch; a batch job whose
     supervisor is gone keeps no place, as any waiting job. A job that the machine's pressure
     alone holds back past the load wait fails. `work settings` shows and sets these values, kept
-    in the database so that every agent's jobs are admitted alike: capacity (default the CPU count minus 2, at least
-    1), idle min, memory limit, load factor, backfill wait, small weight, load wait (1800 s), log limit, and how
-    long events and logs are kept;
-    `work status` shows the signals beside them, and a waiting job's reason names the signal that holds it.
+    in the database so that every agent's jobs are admitted alike: CPU budget, capacity, idle min, memory limit,
+    load factor, backfill wait, small weight, load wait (1800 s), log limit, and how long events and logs are kept;
+    `work status` shows the signals beside them and each job's prediction, and a waiting job's reason names the rule
+    that holds it.
   - Jobs: a detached supervisor starts the command in its own process group with stdin closed, writes its output
     whole to a log, stops it if the log passes the log limit (256 MiB), samples the CPU and memory of its process
     tree every 2 s with ps, and records its true exit status: 127 when the command is missing, 126 when it cannot
@@ -200,6 +206,10 @@ MIGRATIONS = ((
     "ALTER TABLE tasks ADD COLUMN pred_rss INTEGER",
     "ALTER TABLE tasks ADD COLUMN pred_duration REAL",
     "ALTER TABLE tasks ADD COLUMN pred_from TEXT",
+), (
+    # Admission counts predicted cores against the CPU budget (NULL: the CPU count). The capacity becomes an optional
+    # cap on declared weights: NULL, which meant the CPU count minus 2, now means no cap; a value set is kept.
+    "ALTER TABLE settings ADD COLUMN cpu_budget REAL CHECK (cpu_budget IS NULL OR cpu_budget > 0)",
 ))
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -275,6 +285,11 @@ def percent(text: str) -> float:
 
 
 def capacity_setting(text: str) -> float | str:
+    """A cap on declared cores, or off (auto, the older name of the default, means off too)."""
+    return "off" if text in ("off", "auto") else positive(text)
+
+
+def budget_setting(text: str) -> float | str:
     return "auto" if text == "auto" else positive(text)
 
 
@@ -976,6 +991,16 @@ def predict(conn: sqlite3.Connection, signed, weight: float) -> Prediction:
     return Prediction(weight, None, statistics.median(recent) if recent else DEFAULT_DURATION, "none", 0)
 
 
+def describe_hold(row: sqlite3.Row, box) -> str:
+    """What a job holds or will hold against the budget, and its predicted memory, for status."""
+    if exclusive(row["weight"], box):
+        return f"exclusive: holds the whole budget of {number(box.budget)} cores"
+    if row["pred_cores"] is None:
+        return f"holds {number(row['weight'])} cores, its weight (no prediction)"
+    need = number(cores(row, box))
+    return f"predicted {need} core{'' if need == '1' else 's'} and {memory(row['pred_rss'])} at peak ({row['pred_from']})"
+
+
 def describe_prediction(row: sqlite3.Row) -> str:
     if row["pred_cores"] is None:
         return "no prediction"
@@ -1131,7 +1156,7 @@ def sweep(conn: sqlite3.Connection) -> list[dict]:
 class Settings:
     """The machine's one settings row: the same capacity and limits for every agent's jobs."""
 
-    capacity: float | None  # None: the CPU count minus 2, at least 1
+    capacity: float | None  # a cap on the running jobs' declared weights; None: no cap
     load_factor: float
     load_wait: float
     log_limit: int
@@ -1141,12 +1166,14 @@ class Settings:
     memory_limit: str = "warning"
     backfill_wait: float = 300.0
     small_weight: float = 1.0
+    cpu_budget: float | None = None  # the running jobs' predicted cores; None: the CPU count
 
 
 def settings_of(conn: sqlite3.Connection) -> Settings:
     row = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
     return Settings(row["capacity"], row["load_factor"], row["load_wait"], row["log_limit"], row["keep_days"],
-                    row["pruned"], row["idle_min"], row["memory_limit"], row["backfill_wait"], row["small_weight"])
+                    row["pruned"], row["idle_min"], row["memory_limit"], row["backfill_wait"], row["small_weight"],
+                    row["cpu_budget"])
 
 
 MEMORY_LEVELS = ("normal", "warning", "critical")
@@ -1298,7 +1325,8 @@ class Gauge:
 @dataclass
 class Machine:
     cpus: int
-    capacity: float
+    budget: float  # the predicted cores that running jobs may take together
+    capacity: float | None  # the declared cores that running jobs may take together; None: no cap
     settings: Settings
     signals: Signals | None
 
@@ -1316,7 +1344,7 @@ def load_average() -> float | None:
 
 def machine(settings: Settings, signals: Signals | None = None) -> Machine:
     cpus = os.cpu_count() or 1
-    return Machine(cpus, settings.capacity or max(1, cpus - 2), settings, signals)
+    return Machine(cpus, settings.cpu_budget or float(cpus), settings.capacity, settings, signals)
 
 
 def check_weight(weight: float) -> float:
@@ -1326,19 +1354,34 @@ def check_weight(weight: float) -> float:
     return weight
 
 
-def claimed(weight: float, box: Machine) -> float:
-    """The cores a job holds against the capacity: its weight, except that a job as heavy as the CPU count holds the
-    whole capacity, so it runs alone and nothing starts beside it, whatever the capacity. A capacity above the CPU
-    count lets jobs, which use less than they weigh, overlap; a quiet-machine measurement still gets the machine."""
-    return max(box.capacity, weight) if weight >= box.cpus else weight
+def exclusive(weight: float, box: Machine) -> bool:
+    """Whether a job is as heavy as the CPU count: it holds the whole CPU budget, so the machine drains before it."""
+    return weight >= box.cpus
 
 
-def fits(weight: float, used: float, capacity: float) -> tuple[str, str] | None:
-    """Why a job of `weight` cores does not fit beside the running jobs' weights `used`, or None when it does. A job
-    heavier than the capacity fits when no job runs, so that it runs alone rather than never."""
-    if used > 0 and used + weight > capacity + 1e-9:
-        return "capacity", f"{used:g} of {capacity:g} cores are taken and this job needs {weight:g}"
-    return None
+def cores(row, box: Machine) -> float:
+    """The cores a job holds against the CPU budget: its predicted cores, capped by its declared weight, or its
+    declared weight without a prediction. An exclusive job holds the whole budget, so it runs alone and nothing starts
+    beside it; it is a timing measurement, so no prediction stands in for its weight."""
+    weight = row["weight"]
+    if exclusive(weight, box):
+        return max(box.budget, weight)
+    return weight if row["pred_cores"] is None else min(weight, row["pred_cores"])
+
+
+def number(value: float) -> str:
+    """Cores for a reason or a view: one decimal at most, 7.4, 8 or 0.5."""
+    return f"{round(value, 1):g}"
+
+
+def over(need: float, used: float, limit: float) -> bool:
+    """Whether a job that needs `need` does not fit beside `used` under `limit`. A job larger than the limit fits
+    when nothing is taken, so that it runs alone rather than never."""
+    return used > 0 and used + need > limit + 1e-9
+
+
+def taken(need: float, used: float, box: Machine) -> tuple[str, str]:
+    return "cores", f"predicted {number(used)} of {number(box.budget)} cores are taken and this job needs {number(need)}"
 
 
 def pressure(box: Machine) -> tuple[str, str] | None:
@@ -1358,10 +1401,18 @@ def pressure(box: Machine) -> tuple[str, str] | None:
     return None
 
 
-def admission(weight: float, used: float, box: Machine) -> tuple[str, str] | None:
-    """Why a job of `weight` cores cannot start now, as (cause, reason), or None when it can: it must fit the
-    capacity, and the machine must not be under pressure."""
-    return fits(claimed(weight, box), used, box.capacity) or pressure(box)
+def admission(row, running: list, box: Machine) -> tuple[str, str] | None:
+    """Why a job cannot start now beside the `running` jobs, as (cause, reason), or None when it can: its predicted
+    cores must fit the CPU budget beside theirs, its declared weight the capacity, when one is set, beside theirs,
+    and the machine must not be under pressure."""
+    need, used = cores(row, box), sum(cores(item, box) for item in running)
+    if over(need, used, box.budget):
+        return taken(need, used, box)
+    declared = sum(item["weight"] for item in running)
+    if box.capacity is not None and over(row["weight"], declared, box.capacity):
+        return "capacity", (f"declared weights of {number(declared)} of the capacity of {number(box.capacity)} "
+                            f"cores are taken and this job declares {number(row['weight'])}")
+    return pressure(box)
 
 
 def describe_machine(box: Machine) -> str:
@@ -1379,39 +1430,39 @@ def describe_machine(box: Machine) -> str:
 
 def backfill(row: sqlite3.Row, ahead: list[sqlite3.Row], running: list[sqlite3.Row], box: Machine,
              now: float) -> tuple[str, str] | None:
-    """Why a job behind the head of the line may not start before it, or None when it may, by the EASY rule: only
-    when the head cannot start for want of cores, never when there is room for it. We know
-    no job's run time, so the head's reservation is kept in cores: whatever runs now may end before the head can
-    start, but a job that started while the head waited may still run then. So a job may start past the head when
-    it fits in the free cores now and
-      - it fits in the cores the head leaves free: the head's weight, the weights of the jobs that started while the
-        head waited, and its own, fit the capacity together, so it can never delay the head; or
-      - it is small (at most small_weight cores) and no validity job is ahead of it: it may delay the head, but only
-        until the head has waited backfill_wait.
+    """Why a job behind the head of the line may not start before it, or None when it may, by the EASY rule in
+    predicted cores: only when the head cannot start for want of cores, never when there is room for it. Run times
+    are predicted too roughly to reserve the head a start time, so its reservation is kept in cores: whatever runs now
+    may end before the head can start, but a job that started while the head waited may still run then. So a job may
+    start past the head when it fits in the free cores now and
+      - it fits in the cores the head leaves free: the head's cores, the cores of the jobs that started while the
+        head waited, and its own, fit the budget together, so it can never delay the head; or
+      - it is small (at most small_weight predicted cores) and no validity job is ahead of it: it may delay the head,
+        but only until the head has waited backfill_wait.
     Once the head has waited backfill_wait, nothing starts before it, so no job starves. O(R + A) for R running and
     A waiting jobs ahead."""
-    head, settings, weight = ahead[0], box.settings, claimed(row["weight"], box)
-    head_weight = claimed(head["weight"], box)
+    head, settings, need = ahead[0], box.settings, cores(row, box)
+    head_need = cores(head, box)
     waited = now - head["requested"]
     if waited >= settings.backfill_wait:
         return "ahead", (f"job {head['id']} has waited {span(waited)}, past the backfill limit of "
                          f"{span(settings.backfill_wait)}, so no job starts before it")
-    used = sum(claimed(item["weight"], box) for item in running)
-    if fits(head_weight, used, box.capacity) is None:
+    used = sum(cores(item, box) for item in running)
+    if not over(head_need, used, box.budget):
         return "ahead", f"job {head['id']} is ahead of it, and there is room for it"
-    if used + weight > box.capacity + 1e-9:
-        return "capacity", f"{used:g} of {box.capacity:g} cores are taken and this job needs {weight:g}"
-    since = sum(claimed(item["weight"], box) for item in running if item["started"] is not None
+    if used + need > box.budget + 1e-9:
+        return taken(need, used, box)
+    since = sum(cores(item, box) for item in running if item["started"] is not None
                 and item["started"] >= head["requested"])
-    spare = box.capacity - head_weight - since
-    if weight <= spare + 1e-9:
+    spare = box.budget - head_need - since
+    if need <= spare + 1e-9:
         return None
     validity = next((item for item in ahead if item["kind"].lower() in order_tasks.VALIDITY_KINDS), None)
-    if weight <= settings.small_weight + 1e-9 and validity is None:
+    if need <= settings.small_weight + 1e-9 and validity is None:
         return None
-    reason = (f"job {head['id']} is ahead of it and needs {head_weight:g} of the {box.capacity:g} cores, which "
-              f"leaves {max(0.0, spare):g} for jobs behind it; this job needs {weight:g}")
-    if validity is not None and weight <= settings.small_weight + 1e-9:
+    reason = (f"job {head['id']} is ahead of it and needs {number(head_need)} of the {number(box.budget)} cores, "
+              f"which leaves {number(max(0.0, spare))} for jobs behind it; this job needs {number(need)}")
+    if validity is not None and need <= settings.small_weight + 1e-9:
         reason += f", and job {validity['id']}, validity work, keeps its place"
     return "ahead", reason
 
@@ -1421,11 +1472,6 @@ def waiting_order(row: sqlite3.Row, batch: str | None = None) -> tuple:
     batch `batch`, then the order in which the jobs asked for capacity."""
     return (0 if row["kind"].lower() in order_tasks.VALIDITY_KINDS else 1,
             0 if batch is not None and row["batch"] == batch else 1, row["requested"], row["seq"])
-
-
-def exclusive(weight: float, box: Machine) -> bool:
-    """Whether a job is as heavy as the CPU count: it holds the whole capacity, so the machine drains before it."""
-    return weight >= box.cpus
 
 
 def open_batch(running: list[sqlite3.Row], waiting: list[sqlite3.Row]) -> str | None:
@@ -1568,7 +1614,6 @@ class Supervisor:
         running, line = self.lines(conn, row)
         batch = open_batch(running, line)
         line.sort(key=lambda item: waiting_order(item, batch))
-        used = sum(claimed(item["weight"], box) for item in running)
         if line[0]["id"] != row["id"]:
             ahead = line[:[item["id"] for item in line].index(row["id"])]
             if row["batch"] != batch and any(item["batch"] == batch for item in ahead):
@@ -1576,15 +1621,16 @@ class Supervisor:
             held = backfill(row, ahead, running, box, time.time())
             if held is not None:
                 return held
-        return admission(row["weight"], used, box)
+        return admission(row, running, box)
 
     def lines(self, conn: sqlite3.Connection, row: sqlite3.Row) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
         """The running jobs in the order they started, and the waiting jobs whose supervisor lives, with this one, in
         the order they asked."""
-        running = conn.execute("SELECT id, weight, started, batch FROM tasks WHERE state = 'running' "
+        running = conn.execute("SELECT id, weight, pred_cores, started, batch FROM tasks WHERE state = 'running' "
                                "ORDER BY started, seq").fetchall()
-        waiting = conn.execute("SELECT id, kind, requested, seq, owner, weight, batch FROM tasks "
-                               "WHERE state = 'claimed' AND requested IS NOT NULL ORDER BY requested, seq").fetchall()
+        waiting = conn.execute("SELECT id, kind, requested, seq, owner, weight, pred_cores, pred_duration, batch "
+                               "FROM tasks WHERE state = 'claimed' AND requested IS NOT NULL "
+                               "ORDER BY requested, seq").fetchall()
         return running, [item for item in waiting if item["id"] == row["id"] or exists(item["owner"])]
 
     def form_batch(self, conn: sqlite3.Connection, row: sqlite3.Row, box: Machine) -> None:
@@ -2526,7 +2572,8 @@ def cmd_close(ctx: Context, args: argparse.Namespace, command: list[str] | None)
 def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | None) -> int:
     agent = ctx.optional_agent(args.agent)
     conn = ctx.conn
-    changes = {key: value for key, value in (("capacity", args.capacity), ("load_factor", args.load_factor),
+    changes = {key: value for key, value in (("cpu_budget", args.cpu_budget), ("capacity", args.capacity),
+                                             ("load_factor", args.load_factor),
                                              ("load_wait", args.load_wait), ("log_limit", args.log_limit),
                                              ("keep_days", args.keep_days), ("idle_min", args.idle_min),
                                              ("memory_limit", args.memory_limit),
@@ -2536,20 +2583,26 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
         with writing(conn):
             for key, value in changes.items():
                 # `key` comes from the fixed list above, never from input.
-                conn.execute(f"UPDATE settings SET {key} = ? WHERE id = 1", (None if value == "auto" else value,))
+                # The CPU budget's auto and the capacity's off are stored as NULL, their default.
+                default = key in ("cpu_budget", "capacity") and value in ("auto", "off")
+                conn.execute(f"UPDATE settings SET {key} = ? WHERE id = 1", (None if default else value,))
             record(conn, "settings", agent=agent, detail=", ".join(f"{key} {value}" for key, value in changes.items()))
     settings = settings_of(conn)
     box = machine(settings)
     if args.json:
-        emit({"capacity": box.capacity, "capacity_is_default": settings.capacity is None, "cpus": box.cpus,
+        emit({"cpu_budget": box.budget, "cpu_budget_is_default": settings.cpu_budget is None,
+              "capacity": box.capacity, "capacity_is_default": settings.capacity is None, "cpus": box.cpus,
               "idle_min": settings.idle_min, "memory_limit": settings.memory_limit,
               "load_factor": settings.load_factor, "load_limit": box.load_limit, "load_wait": settings.load_wait,
               "log_limit": settings.log_limit, "keep_days": settings.keep_days,
               "backfill_wait": settings.backfill_wait, "small_weight": settings.small_weight})
         return 0
-    default = " (the default: the CPU count minus 2)" if settings.capacity is None else ""
+    budget_default = " (the default: the CPU count)" if settings.cpu_budget is None else ""
+    capacity = "off (the default): no cap on declared weights" if box.capacity is None else \
+        f"{box.capacity:g} cores; the running jobs' declared weights fit it"
     memory_rule = "not a gate" if settings.memory_limit == "off" else f"jobs start below {settings.memory_limit}"
-    print(f"capacity: {box.capacity:g} cores{default}\n"
+    print(f"cpu budget: {box.budget:g} cores{budget_default}; the running jobs' predicted cores fit it\n"
+          f"capacity: {capacity}\n"
           f"idle min: {settings.idle_min:g}%; jobs start while the CPU is at least this idle\n"
           f"memory limit: {settings.memory_limit}; {memory_rule} memory pressure\n"
           f"load factor: {settings.load_factor:g}; on Linux only, jobs start below load {box.load_limit:.2f} on "
@@ -2576,15 +2629,16 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
                               "ORDER BY seq", {"scope": scope}).fetchall()
         totals = dict(conn.execute(f"SELECT state, COUNT(*) FROM tasks WHERE {in_scope('scope')} GROUP BY state",
                                    {"scope": scope}).fetchall())
-        weights = [row[0] for row in conn.execute("SELECT weight FROM tasks WHERE state = 'running'")]
-        used, jobs = sum(claimed(weight, box) for weight in weights), len(weights)
         view = queue(conn, scope)
-        # The open exclusive batch is the machine's, whatever the scope.
-        every_running = conn.execute("SELECT id, batch FROM tasks WHERE state = 'running' ORDER BY started, seq") \
-            .fetchall()
-        every_waiting = [row for row in conn.execute("SELECT id, kind, requested, seq, owner, batch FROM tasks WHERE "
-                                                     "state = 'claimed' AND requested IS NOT NULL "
-                                                     "ORDER BY requested, seq") if exists(row["owner"])]
+        # The budget and the open exclusive batch are the machine's, whatever the scope.
+        every_running = conn.execute("SELECT id, weight, pred_cores, batch FROM tasks WHERE state = 'running' "
+                                     "ORDER BY started, seq").fetchall()
+        every_waiting = [row for row in conn.execute("SELECT id, kind, requested, seq, owner, weight, pred_cores, "
+                                                     "pred_duration, batch FROM tasks WHERE state = 'claimed' AND "
+                                                     "requested IS NOT NULL ORDER BY requested, seq")
+                         if exists(row["owner"])]
+    used, jobs = sum(cores(row, box) for row in every_running), len(every_running)
+    declared = sum(row["weight"] for row in every_running)
     running = [row for row in active if row["state"] == "running"]
     waiting = [row for row in active if row["state"] == "claimed" and row["requested"] is not None]
     batch = open_batch(every_running, every_waiting)
@@ -2597,7 +2651,8 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
     signals, settings = box.signals, box.settings
     host = {"cpus": box.cpus, "idle": signals.idle, "idle_min": settings.idle_min, "memory": signals.memory,
             "memory_limit": settings.memory_limit, "load": signals.load, "load_gate": signals.load_gate,
-            "load_limit": box.load_limit, "capacity": box.capacity, "used": used, "jobs": jobs,
+            "load_limit": box.load_limit, "cpu_budget": box.budget, "used": used, "capacity": box.capacity,
+            "declared": declared, "jobs": jobs,
             "holds": pressure(box)[1] if pressure(box) else None, "batch": batch_json}
     if args.json:
         emit({"time": iso(now), "scope": scope, "machine": host,
@@ -2607,8 +2662,9 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
         return 0
     print(describe_machine(box))
     held = pressure(box)
-    print(f"capacity: {used:g} of {box.capacity:g} cores taken by {jobs} job(s)"
-          + (f"; new jobs wait: {held[1]}" if held else ""))
+    cap = "no cap" if box.capacity is None else f"capacity {number(box.capacity)}"
+    print(f"cores: predicted {number(used)} of the CPU budget of {number(box.budget)} taken by {jobs} job(s); "
+          f"declared {number(declared)} ({cap})" + (f"; new jobs wait: {held[1]}" if held else ""))
     if batch is not None:
         print(f"exclusive batch: {describe_batch(batch, every_running, every_waiting)}")
     if scopes:
@@ -2620,13 +2676,14 @@ def cmd_status(ctx: Context, args: argparse.Namespace, command: list[str] | None
             usage_text = (f"cpu {row['cpu']:.0f}%, memory {memory(row['rss'])} (peak {memory(row['rss_peak'])})"
                           if row["rss"] is not None else "not sampled yet")
             print(f"  {row['id']}: process {row['pid'] or '-'}, {span(ran_of(row, now))}, {usage_text}, "
-                  f"weight {row['weight']:g}, {row['agent']}, scope {row['scope'] or '-'}: "
+                  f"weight {row['weight']:g}, {describe_hold(row, box)}, {row['agent']}, "
+                  f"scope {row['scope'] or '-'}: "
                   f"{display(json.loads(row['command']))}" + (f" ({printable(row['note'])})" if row["note"] else ""))
     if waiting:
         print("waiting for capacity:")
         for row in waiting:
-            print(f"  {row['id']}: {span(waited_of(row, now))}, weight {row['weight']:g}, {row['agent']}, "
-                  f"scope {row['scope'] or '-'}" + (f": {printable(row['note'])}" if row["note"] else ""))
+            print(f"  {row['id']}: {span(waited_of(row, now))}, weight {row['weight']:g}, {describe_hold(row, box)}, "
+                  f"{row['agent']}, scope {row['scope'] or '-'}" + (f": {printable(row['note'])}" if row["note"] else ""))
     print(f"tasks: {tally['queued']} queued ({tally['ready']} ready), {tally['claimed']} claimed, "
           f"{tally['running']} running, {tally['done']} done, {tally['failed']} failed, {tally['cancelled']} cancelled")
     for change in swept:
@@ -2696,7 +2753,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_argument("--value", type=positive, default=1.0, help="cost of delay (default 1)")
     sub.add_argument("--files", nargs="+", action="extend", metavar="PATH",
                      help="files or directories it changes, relative to --cwd")
-    sub.add_argument("--weight", type=positive, default=1.0, help="cores its command uses (default 1)")
+    sub.add_argument("--weight", type=positive, default=1.0,
+                     help="cores its command may use: the cap on its predicted cores, and the estimate until it has "
+                          "a history (default 1)")
     sub.add_argument("--cwd", help="the command's directory (default the current one)")
 
     for name, help_text in (("order", "the queued tasks in work order"),
@@ -2719,7 +2778,9 @@ def build_parser() -> argparse.ArgumentParser:
                   agent=True)
     sub.add_argument("task", nargs="?", help="a task you claimed")
     sub.add_argument("--id", help="the new job's id (default job-N)")
-    sub.add_argument("--weight", type=positive, help="cores the new job uses (default 1)")
+    sub.add_argument("--weight", type=positive,
+                     help="cores the new job may use: the cap on its predicted cores, and the estimate until it has "
+                          "a history (default 1)")
     sub.add_argument("--files", nargs="+", action="extend", metavar="PATH", help="files the new job changes")
     sub.add_argument("--cwd", help="the new job's directory (default the current one)")
     sub.add_argument("--kind", help="the new job's kind (default other)")
@@ -2758,8 +2819,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = command("settings", cmd_settings, "show or set the capacity and limits that every agent's jobs share",
                   agent=True)
+    sub.add_argument("--cpu-budget", type=budget_setting, metavar="CORES",
+                     help="predicted cores that running jobs may take together, or auto for the CPU count")
     sub.add_argument("--capacity", type=capacity_setting,
-                     help="cores that running jobs may take together, or auto for the CPU count minus 2")
+                     help="a cap on the declared cores that running jobs may take together, or off (the default)")
     sub.add_argument("--idle-min", type=percent, metavar="PERCENT",
                      help="jobs start while the CPU is at least this idle (default 15)")
     sub.add_argument("--memory-limit", choices=("warning", "critical", "off"),
