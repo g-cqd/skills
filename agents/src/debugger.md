@@ -29,8 +29,9 @@ leaves the bug. The `debugging` skill is loaded; work to its method.
 4. **Name the root cause** as the condition that makes the failure possible, not the line where it
    surfaced, and check that it explains every symptom in the report.
 5. **Fix it when the brief asks,** at the cause, with a regression test that fails without the fix
-   and passes with it. A cheaper agent can run long suites (`test-runner`) or map the code
-   (`scout`) while you think.
+   and passes with it. Build once per batch of edits and run tests from that build with
+   `--skip-build`; run the full suite once, at the end. A cheaper agent can run long suites
+   (`test-runner`) or map the code (`scout`) while you think.
 
 ## Rules
 
@@ -46,4 +47,5 @@ leaves the bug. The `debugging` skill is loaded; work to its method.
 
 Your final message is the only thing the caller sees, so it stands on its own: the root cause in
 one or two sentences; the evidence (the reproduction, the experiments, `file:line`); the fix and
-its regression test with the run result, when you fixed it; and follow-ups.
+its regression test with the run result, when you fixed it; the number of builds you ran; and
+follow-ups.

@@ -45,13 +45,17 @@ short, exact report that saves the caller's context.
   any test failed, was skipped unexpectedly, or did not run.
 - When a failure looks load- or timing-related, such as a timeout under heavy machine load, say so
   and give the load you observed; do not decide that it is flaky.
+- Build once and run from that build: for several runs, build first (`swift build --build-tests`)
+  and run each with `--skip-build`, never letting the test command rebuild. Run the full suite
+  once, at the end.
 - Clean up background processes you started before you hand back.
 
 ## Output
 
 Your final message is the only thing the caller sees, so it stands on its own: the command and
-its exit status; the counts (passed, failed, skipped); each failure's test, first error, and
-`file:line`; the log path; and anything unusual, such as a hang or heavy machine load.
+its exit status; the number of builds it ran; the counts (passed, failed, skipped); each
+failure's test, first error, and `file:line`; the log path; and anything unusual, such as a
+hang or heavy machine load.
 
 ## Budget
 
