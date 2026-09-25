@@ -85,18 +85,32 @@ Highest leverage first. Most real wins come from the first two.
 ### Benchmarking discipline
 
 Warm up. Run many iterations. Report **median and spread**, never the best run. Fix the inputs,
-isolate machine state, pin versions. Run the benchmark through `work` (`planner`'s `scripts/work.py`).
-While iterating, compare before and after by interleaving A and B runs in one job (ABAB…) at weight
-2 or 3: both sides see the same background load, so it cancels out. Keep an exclusive run (`--weight`
-equal to the CPU count, so no other agent's job loads the machine) for the final numbers a report
-states: one per task, not one per iteration, since each drains the machine.
-Compare like with like — same data, same build configuration,
-**release mode**. Iterate on the code in debug; build release once per measurement round, in its
-own `--scratch-path` (`.build-release`): alternating debug and release builds in one `.build`
-rebuilds the package at each switch, for up to 14 minutes. Rerun a benchmark from the existing
-build (`swift run -c release --scratch-path .build-release --skip-build …`) unless sources changed.
-A microbenchmark whose access pattern differs from production is fiction that
-will confidently mislead you.
+isolate machine state, pin versions. A microbenchmark whose access pattern differs from production
+is fiction that will confidently mislead you.
+
+On a machine shared with other agents:
+
+- **Run the benchmark through `work`** (`planner`'s `scripts/work.py`).
+- **Interleave A and B in one job** (ABAB…, several rounds) at weight 1 or 2. Both sides then see
+  the same background load, so it cancels out of the ratio. Report the ratio with the medians, and
+  the load the machine was under.
+- **Prefer CPU time to wall time** where the harness can read it: the thread's or the process's
+  CPU time. Contention stretches wall time far more than CPU time. Instruction and cycle counts
+  (`/usr/bin/time -l`, `perf stat`) are steadier still.
+- **One exclusive run per task, at most:** `--weight` equal to the CPU count, and only for an
+  absolute number the report must state, such as a budget in milliseconds. It holds every figure
+  the report states. It is never an iteration step, and never a loop of rounds.
+
+Compare like with like — same data, same build configuration, **release mode**:
+
+- **Iterate on the code in debug.** Build release once per task, in its own `--scratch-path`
+  (`.build-release`); alternating debug and release in one `.build` rebuilds the package at each
+  switch, for up to 14 minutes.
+- **Put A and B in one binary** where the old path can stay: a runtime switch (an environment
+  variable) selects it, so one release build measures both sides. Otherwise build the baseline
+  once, keep it, and never rebuild it.
+- **Rerun a benchmark from the existing build** (`swift run -c release --scratch-path
+  .build-release --skip-build …`) unless sources changed.
 
 ---
 

@@ -36,8 +36,11 @@ methodology.
 - Tests verify correctness; they do not define the solution. If the code under test is wrong, or
   a requested test would only pass by hardcoding, say so rather than shaping the test to pass.
 - Prefer targeted edits to rewriting a test file wholesale, unless most of it is changing.
-- Build once per batch of test edits, and run the tests from that build with `--skip-build`; a
-  test command that builds first rebuilds on every run.
+- Red and green happen per step, not per test: write the step's tests together and build once to
+  see them fail, then build once more with the code to see them pass. Fix every error in a failed
+  build's log before building again. Run the tests from that build with `--skip-build`; a test
+  command that builds first rebuilds on every run. Build one configuration, the debug build of the
+  package under test, and aim for about four builds in the task.
 - You cannot ask the user anything mid-task. Take the reading the task most directly supports,
   state it in your report, and put any open question there.
 - Wait on long test runs without a fixed sleep: run them in the background and let the harness tell
@@ -57,9 +60,10 @@ beyond what TDD requires, and you do not review production code for quality (`co
 
 ## Output
 
-Before finishing, run the full suite once, from the existing build, and confirm each new test
-fails for the right reason without the change and passes with it. Your final message is the only
-thing the caller sees, so it stands on its own: the tests, the run result with the command, a
-one-line note on coverage in terms of *behaviors* exercised, the number of builds you ran, and
-anything deliberately left untested.
+Before finishing, rebase onto the current main line, build once, run the full suite once from
+that build, and confirm each new test fails for the right reason without the change and passes
+with it. That run is the verification the receiver relies on, without rebuilding. Your final
+message is the only thing the caller sees, so it stands on its own: the tests, the run result
+with the command, the base commit and the counts, a one-line note on coverage in terms of
+*behaviors* exercised, the builds by kind, and anything deliberately left untested.
 '''

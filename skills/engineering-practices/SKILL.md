@@ -30,8 +30,10 @@ one is `planner`.
 §SMALL    PR ≤ ~15-min-review · slice-by-behavior ¬by-file-type
 §SCOPE    boy-scout ∈ scope-only ⇒ rest ⇒ follow-up-ticket
 §CLOSE    ¬report-done BEFORE §5 gate ∀5-steps
-§BUILD    batch-edits ⇒ 1 build ⇒ fix ∀diagnostics · build ∷ what-step-needs ·
-          rerun ⇒ ¬rebuild · full-suite ×1 at-end · report ∋ build-count
+§BUILD    whole-step ⇒ 1 build ¬per-edit · failed-build ⇒ fix ∀errors-in-log ⇒ 1 rebuild ·
+          1 config while-developing ¬matrix · release ×1 per-task ∋ A∧B in-one-binary ·
+          rerun ⇒ ¬rebuild · budget ≈4 per-task · report ∋ builds-by-kind
+§HANDBACK rebase-on-main ⇒ final build ⇒ full-suite ∀touched-packages ⇒ receiver ¬rebuilds
 §WAIT     long-work ⇒ harness-notify | work run|wait (planner) ⇒ ¬fixed-sleep
 §DEPS     add-dependency ∷ architectural-decision ¬convenience
 §BAN      big-bang-rewrite · drive-by-churn · flag ∅removal-ticket ·
@@ -105,8 +107,8 @@ adopting its bugs, its CVEs, and its upgrade treadmill.
 Before reporting **any** task as done:
 
 1. **Re-read the original request.** Was *this* what was asked? Anything quietly dropped?
-2. **Run the full test suite** — not just the new tests — once, from the build you already have
-   (Builds, below).
+2. **Run the full test suite** — not just the new tests — once, from the build you already have,
+   after catching up with the main line (Builds and Hand-back, below).
 3. **Exercise the change once like a user.** Run it. For UI, use the validation loop in `xcode`.
 4. **Review your own diff**: leftovers, debug prints, dead code, unrelated edits, commented-out
    experiments. Remove any scratch script or helper file you created for iteration; verifying
@@ -118,18 +120,43 @@ Step 1 catches the most expensive class of failure: a correct implementation of 
 
 ### Builds
 
-A build costs minutes; a test run from an existing build costs seconds. On one shared machine,
-builds took two thirds of all job time, and single agents ran up to 59 of them in one task.
+A build costs minutes of every core; a test run from an existing build costs seconds. On one
+shared machine, builds took more than half of all the CPU its jobs used in a day. Three habits
+caused it: agents rebuilt every couple of minutes to check one edit, they checked each change
+against several build configurations, and the coordinator rebuilt what they had already tested.
 
-- **Batch edits, then build once.** Finish a coherent step, every edit it needs, then build. Never
-  build to check one small edit. Fix everything that build's diagnostics report in one pass.
-- **Build only what the step needs:** the module it touches and its tests, not the whole project
-  (`swift` §6, `xcode`). The full build waits for the end.
-- **Test from the build.** During the task, run the filtered tests the change touches; at the end,
-  run the full suite once. Never let a test command build implicitly in a loop.
-- **Don't rebuild to rerun.** Rerunning a test or a benchmark reuses the existing build, unless
-  sources changed since.
-- **Count your builds.** The task report states how many builds it ran, so waste is visible.
+- **No edit–build loop.** Write the whole step, the code and its tests, and read it over before
+  you build. Catch type errors while you edit with the language server's diagnostics where they
+  work, not with a build. A build every few minutes is the waste this rule exists to stop.
+- **Fix a failed build from its log.** Fix every error the log reports, then build once more.
+  Never rebuild after fixing one error.
+- **One configuration while you develop:** the debug build of the package you changed, with its
+  tests (`swift` §6, `xcode`). A module-only build replaces the test build for a step whose tests
+  you do not run yet; it never comes on top of it.
+- **No combination matrix.** Do not check one change across build combinations: debug and release,
+  each target, each flag, each consumer package. The packages a change touches are checked once,
+  at hand-back (below).
+- **Release once per task,** for the final numbers only (`performance-engineering` §4). Compare
+  before and after inside that one binary, behind a runtime switch, where the old path can stay;
+  otherwise build the baseline once and keep it.
+- **Test from the build.** Run the filtered tests the change touches from the build you have, and
+  the full suite once, at the end. Rerunning a test or a benchmark never rebuilds.
+- **A budget of about four builds per task:** two or three debug builds and at most one release
+  build. The report states the builds by kind; going over the budget needs a reason in the report.
+
+### Hand-back
+
+The agent that made a change verifies it, and whoever receives the change does not verify it again.
+
+1. **Catch up first.** Rebase your branch onto the current main line (or merge it in, if the
+   repository merges), then build once and run the full suite of each package the change touches.
+   Also run the suites of the packages that use an API you changed. That run verifies the merged
+   state.
+2. **Report what the run covered:** the base commit, each suite with its counts, and the builds
+   by kind.
+3. **The receiver lands it without rebuilding** when the main line has not moved since, or has
+   moved only in other packages. It needs another run only if the main line changed the same
+   packages. The agent does that run from its warm build, not the receiver from a cold one.
 
 ## 6. Waiting on long-running work
 

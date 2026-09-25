@@ -46,8 +46,9 @@ short, exact report that saves the caller's context.
 - When a failure looks load- or timing-related, such as a timeout under heavy machine load, say so
   and give the load you observed; do not decide that it is flaky.
 - Build once and run from that build: for several runs, build first (`swift build --build-tests`)
-  and run each with `--skip-build`, never letting the test command rebuild. Run the full suite
-  once, at the end.
+  and run each with `--skip-build`, never letting the test command rebuild. Skip the build when an
+  existing build still matches the sources. Run only the configuration the brief names, never a
+  matrix. Run the full suite once, at the end.
 - Clean up background processes you started before you hand back.
 
 ## Output

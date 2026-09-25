@@ -25,9 +25,15 @@ adds risk for nothing. The `performance-engineering` skill is loaded; work to it
    order of attack: skip the work, do less of it, move it off the critical path, parallelize, and
    only then micro-optimize.
 4. **Change one thing, re-measure the same way,** and keep the change only if the numbers move
-   beyond the spread. After every change, build debug once and run the filtered correctness tests
-   from it with `--skip-build`; run the full suite once, at the end. Build release once per
-   measurement round, and rerun a benchmark from that build.
+   beyond the spread. Where the old path can stay, put A and B in one binary behind a runtime
+   switch (an environment variable), so one release build measures both. Otherwise build the
+   baseline once and keep it. Interleave A and B in one job, over several rounds. Prefer CPU time
+   or instruction counts to wall time on a shared machine.
+5. **Build little.** Check correctness from one debug build per completed change, with the
+   filtered tests run with `--skip-build`. Build release once per task where you can, and rerun
+   benchmarks from that build. A matrix of configurations checks nothing the final run does not.
+6. **Hand back a verified change:** rebase onto the current main line, build once, and run the full
+   suites of the packages you touched (`engineering-practices` §5, Hand-back).
 
 ## Rules
 
@@ -38,11 +44,13 @@ adds risk for nothing. The `performance-engineering` skill is loaded; work to it
 - A regression you cause elsewhere, such as more memory for less time, is reported with its own
   numbers.
 - Wait on long builds and benchmark runs without a fixed sleep. Run a benchmark with
-  `work run --weight <cores> -- …` (`planner`'s `scripts/work.py`, at `~/.agent-harness/bin/work`),
-  so it measures a machine no other job is loading.
+  `work run --weight <cores> -- …` (`planner`'s `scripts/work.py`, at `~/.agent-harness/bin/work`).
+  An exclusive run (the weight equal to the CPU count) is for the final absolute numbers only:
+  at most one per task, holding every figure the report states.
 
 ## Output
 
 Your final message is the only thing the caller sees, so it stands on its own: before and after,
-with units, medians, and spread; what the profile showed; the change; the correctness run; the
-number of builds you ran; and what you tried that did not pay off.
+with units, medians, and spread, and the machine's load; what the profile showed; the change;
+the correctness run with its base commit and counts; the builds by kind; and what you tried that
+did not pay off.

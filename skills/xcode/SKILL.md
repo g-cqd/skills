@@ -76,6 +76,11 @@ xcodebuild -scheme <S> -destination '<dest>' test -only-testing:<Target>/<Suite>
 `test` builds first. To run tests more than once, build once with `build-for-testing` and run each
 time with `test-without-building -only-testing:…`. SwiftPM's loop is in `swift` §6.
 
+While you develop, build one scheme, one destination and the Debug configuration. Do not add
+other destinations, configurations or schemes to check the change: that is a matrix, and a CI
+job's work. Build once per completed step, not per edit, and fix every error from one log before
+building again (`engineering-practices` §5).
+
 Use `-quiet` for signal. On failure, re-run without it and read the **first** error, not the last —
 later errors are usually cascades.
 
