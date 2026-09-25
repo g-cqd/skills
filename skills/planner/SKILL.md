@@ -282,6 +282,9 @@ steps, do it directly: spawning an agent is slower than a direct grep and loses 
 already hold. While subagents run, the lead keeps working on independent items rather than
 idling; wait only when the next step depends on a result.
 
+Reuse worktrees. A fresh worktree's first build starts from scratch, so give a sequence of tasks in
+the same package area one worktree, passed from task to task, rather than a new one each.
+
 Consult `references/orchestration-patterns.md` for full lock lifecycle, failure recovery, wave dispatch, and verification patterns.
 
 ### Work Order and the Queue
