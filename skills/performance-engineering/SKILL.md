@@ -91,9 +91,11 @@ While iterating, compare before and after by interleaving A and B runs in one jo
 equal to the CPU count, so no other agent's job loads the machine) for the final numbers a report
 states: one per task, not one per iteration, since each drains the machine.
 Compare like with like — same data, same build configuration,
-**release mode**. Build the release benchmark in its own `--scratch-path` (`.build-release`):
-alternating debug and release builds in one `.build` rebuilds the package at each switch, for up
-to 14 minutes. A microbenchmark whose access pattern differs from production is fiction that
+**release mode**. Iterate on the code in debug; build release once per measurement round, in its
+own `--scratch-path` (`.build-release`): alternating debug and release builds in one `.build`
+rebuilds the package at each switch, for up to 14 minutes. Rerun a benchmark from the existing
+build (`swift run -c release --scratch-path .build-release --skip-build …`) unless sources changed.
+A microbenchmark whose access pattern differs from production is fiction that
 will confidently mislead you.
 
 ---
