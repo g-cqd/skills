@@ -600,6 +600,25 @@ class CapacityTests(WorkTestCase):
         self.assertEqual(self.work("wait", "heavy", "timing").status, 0)
 
     @unittest.skipIf((os.cpu_count() or 1) < 2, "an exclusive job must be heavier than an ordinary one")
+    def test_an_exclusive_jobs_log_records_the_load_as_it_starts_and_ends(self):
+        self.work("run", "--id", "beside", "--timeout", "0", "--", *self.gate("beside"), agent="a")
+        self.until(lambda: self.state("beside") == "running", "the other job to start")
+        result = self.work("run", "--id", "timing", "--weight", str(os.cpu_count()), "--", "echo", "measured",
+                           agent="b")
+        self.assertEqual(result.status, 0, result.out + result.err)
+        with open(self.task("timing")["log"]) as handle:
+            lines = handle.read().splitlines()
+        load = r"load (\d+\.\d\d|unknown), CPU (\d+% idle|idle unknown)"
+        self.assertRegex(lines[0], rf"^work: context at start: {load}; running: beside \(predicted 1 core\)$")
+        self.assertEqual(lines[1], "measured")
+        self.assertRegex(lines[2], rf"^work: context at end: {load} over the run; running: beside "
+                                   r"\(predicted 1 core\)$")
+        self.open_gate("beside")
+        self.work("run", "--id", "alone", "--weight", str(os.cpu_count()), "--", "true", agent="b")
+        with open(self.task("alone")["log"]) as handle:
+            self.assertRegex(handle.readline(), r"; running: no other job$")
+
+    @unittest.skipIf((os.cpu_count() or 1) < 2, "an exclusive job must be heavier than an ordinary one")
     def test_two_exclusive_jobs_never_have_their_windows_open_together(self):
         exclusive = ["--weight", str(os.cpu_count())]
         self.call("settings", "--cpu-budget", "8", "--quiet-drain", "0")

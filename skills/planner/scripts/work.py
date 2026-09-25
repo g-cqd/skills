@@ -40,12 +40,14 @@ Rules:
     predicted cores as any job does. While it waits it holds new jobs predicted above the small weight, for the quiet
     drain (60 s) at most, then starts even if such jobs still run; while it runs, no new job predicted above the small
     weight starts, for the quiet max (180 s) at most, after which it runs on as an ordinary job. Light jobs start
-    throughout, and one quiet window is open at a time: a second exclusive job waits for the first window to close. A
-    job that the machine's pressure alone holds back past the load wait fails. `work settings` shows and sets these
-    values, kept in the database so that every agent's jobs are admitted alike: CPU budget, capacity, memory budget,
-    idle min, memory limit, load factor, aging, job QoS, quiet drain, quiet max, backfill wait, small weight, load
-    wait (1800 s), log limit, and how long events and logs are kept; `work status` shows the signals beside them and
-    each job's prediction, and a waiting job's reason names the rule that holds it.
+    throughout, and one quiet window is open at a time: a second exclusive job waits for the first window to close.
+    Its log records, as it starts and as it ends, the load average, the idle CPU and the other running jobs with their
+    predicted cores, so that its timings carry their context. A job that the machine's pressure alone holds back past
+    the load wait fails. `work settings` shows and sets these values, kept in the database so that every agent's jobs
+    are admitted alike: CPU budget, capacity, memory budget, idle min, memory limit, load factor, aging, job QoS,
+    quiet drain, quiet max, backfill wait, small weight, load wait (1800 s), log limit, and how long events and logs
+    are kept; `work status` shows the signals beside them and each job's prediction, and a waiting job's reason names
+    the rule that holds it.
   - Jobs: a detached supervisor starts the command in its own process group with stdin closed, at the job QoS
     (utility, on macOS through taskpolicy -c, which its children inherit, so the user's own work comes first under
     contention; an exclusive job at the default QoS, so its timings are not distorted), writes its output whole to a
@@ -1079,6 +1081,12 @@ def describe_quiet(conn: sqlite3.Connection, running: list, waiting: list, box: 
     return None
 
 
+def describe_cores(row) -> str:
+    if row["pred_cores"] is None:
+        return f"declared {cores_text(row['weight'])}, no prediction"
+    return f"predicted {cores_text(min(row['weight'], row['pred_cores']))}"
+
+
 def describe_hold(row: sqlite3.Row, box) -> str:
     """What a job holds or will hold against the budget, and its predicted memory, for status."""
     kind = "exclusive, " if exclusive(row["weight"], box) else ""
@@ -1762,6 +1770,7 @@ class Supervisor:
         self.ctx, self.task_id, self.gauge = ctx, task_id, gauge or Gauge()
         self.me = os.getpid()
         self.child: subprocess.Popen | None = None
+        self.admitted: Signals | None = None  # the signals of the poll that let the job start
         self.stop: int | None = None
         self.over_limit = False
         # Held while `child` is cleared, and while the sampler signals it, so the sampler never signals a reaped pid.
@@ -1814,6 +1823,7 @@ class Supervisor:
                     return None
                 settings = settings_of(conn)
                 box = machine(settings, self.gauge.read(idle=settings.idle_min > 0))
+                self.admitted = box.signals
                 blocked = self.blocker(conn, row, box)
                 if blocked is None:
                     now = time.time()
@@ -1896,6 +1906,9 @@ class Supervisor:
         wrapper = qos_wrapper(qos)
         if wrapper is None:
             qos = "default"
+        timing = exclusive(row["weight"], machine(settings))
+        if timing:
+            self.context(conn, "start", self.admitted)
         try:
             # The wrapper execs the command in its own process, so the pid, the process group and the signals are
             # the command's; the command is found first, as exec would, so that one missing or not runnable still
@@ -1922,6 +1935,9 @@ class Supervisor:
         sampler = threading.Thread(target=self.sample, args=(child.pid, row["log"], log_limit, stop), daemon=True)
         sampler.start()
         raw, resources = self.reap(child.pid)
+        if timing:
+            # The gauge last read the ticks at the poll that started the job: its idle CPU now covers the run.
+            self.context(conn, "end", self.gauge.read(), " over the run")
         status = os.waitstatus_to_exitcode(raw)
         status = 128 - status if status < 0 else status
         child.returncode = status
@@ -1931,6 +1947,22 @@ class Supervisor:
             if self.over_limit else ""
         self.finish(conn, status, note, resources.ru_utime + resources.ru_stime)
         return 0
+
+    def context(self, conn: sqlite3.Connection, when: str, signals: Signals | None, span_of: str = "") -> None:
+        """Writes to the log of an exclusive job the machine's state as it starts or ends, so that its timings carry
+        their context: the load average, the idle CPU, and the other running jobs with their predicted cores."""
+        try:
+            with reading(conn):
+                others = estimated(conn, conn.execute(
+                    "SELECT id, weight, pred_cores, cpu, sig_full, sig_head, sig_prog, sig_tool FROM tasks "
+                    "WHERE state = 'running' AND id != ? ORDER BY started, seq", (self.task_id,)).fetchall())
+        except sqlite3.Error as error:
+            print(f"work: context at {when}: the running jobs cannot be read: {error}", flush=True)
+            return
+        load = f"{signals.load:.2f}" if signals and signals.load is not None else "unknown"
+        idle = f"{signals.idle:.0f}% idle" if signals and signals.idle is not None else "idle unknown"
+        jobs = ", ".join(f"{item['id']} ({describe_cores(item)})" for item in others) or "no other job"
+        print(f"work: context at {when}: load {load}, CPU {idle}{span_of}; running: {jobs}", flush=True)
 
     def reap(self, pid: int):
         """Waits for the command to end, stops forwarding signals to it, and reaps it. Where the platform can wait
