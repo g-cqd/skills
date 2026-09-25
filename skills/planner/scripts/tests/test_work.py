@@ -1483,7 +1483,7 @@ class StatusTests(WorkTestCase):
         with contextlib.closing(sqlite3.connect(path)) as conn:
             for statements in work.MIGRATIONS[:version]:
                 for statement in statements:
-                    conn.execute(statement)
+                    statement(conn) if callable(statement) else conn.execute(statement)
             conn.execute(f"PRAGMA user_version = {version}")
             now = time.time()
             conn.execute("INSERT INTO tasks (id, author, queued, command, cwd, weight, state, agent, requested, "
@@ -1507,6 +1507,19 @@ class StatusTests(WorkTestCase):
             rows = dict(conn.execute("SELECT id, sig_tool FROM tasks").fetchall())
         self.assertEqual(rows, {"old": "swift build", "later": "make all"}, "the migration signs the jobs it finds")
         self.assertEqual(self.work("claim", "later", agent="b", env={"AGENT_WORK_HOME": home}).status, 0)
+
+    def test_the_idle_gate_defaults_to_10_percent_and_an_old_default_moves_with_it(self):
+        fresh = os.path.join(self.root, "fresh")
+        self.assertEqual(self.json("settings", env={"AGENT_WORK_HOME": fresh})[1]["idle_min"], 10)
+        for old, now in ((15, 10), (20, 20)):
+            with self.subTest(old=old):
+                home = self.old_database(10)
+                with contextlib.closing(sqlite3.connect(os.path.join(home, "work.db"))) as conn:
+                    conn.execute("UPDATE settings SET idle_min = ?", (old,))
+                    conn.commit()
+                self.assertEqual(self.json("settings", env={"AGENT_WORK_HOME": home})[1]["idle_min"], now,
+                                 "a value set by hand is kept")
+                shutil.rmtree(home)
 
     def test_log_records_each_state_change(self):
         self.work("scope", "set", "proj")

@@ -26,7 +26,7 @@ Rules:
     last component and ids masked, and its directory counts as its repository and the path inside it, so worktrees
     share history. A job starts only while the running jobs' predicted cores plus its own fit the CPU budget (default
     the CPU count), and their declared weights plus its own fit the capacity when one is set (off by default), or when
-    no job runs, and while the machine is not under pressure: the CPU at least idle-min idle (15%, measured over the
+    no job runs, and while the machine is not under pressure: the CPU at least idle-min idle (10%, measured over the
     supervisor's last poll), used memory at or below the memory budget (the memory minus 2 GiB; on macOS the active,
     wired and compressed pages, on Linux MemTotal minus MemAvailable), memory pressure below the memory limit
     (warning, from the kernel), and, on Linux only, the load average below the CPU count times the load factor (1.5).
@@ -224,6 +224,10 @@ MIGRATIONS = ((
     "ALTER TABLE settings ADD COLUMN job_qos TEXT NOT NULL DEFAULT 'utility' "
     "CHECK (job_qos IN ('utility', 'default', 'background'))",
     "ALTER TABLE tasks ADD COLUMN qos TEXT",
+), (
+    # The idle gate's default becomes 10%, the value the admission on predicted cores was simulated with; a database
+    # still at the old default, 15, moves with it.
+    "UPDATE settings SET idle_min = 10 WHERE idle_min = 15",
 ))
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -1201,7 +1205,7 @@ class Settings:
     log_limit: int
     keep_days: float
     pruned: float | None
-    idle_min: float = 15.0
+    idle_min: float = 10.0
     memory_limit: str = "warning"
     backfill_wait: float = 300.0
     small_weight: float = 1.0
@@ -3048,7 +3052,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_argument("--capacity", type=capacity_setting,
                      help="a cap on the declared cores that running jobs may take together, or off (the default)")
     sub.add_argument("--idle-min", type=percent, metavar="PERCENT",
-                     help="jobs start while the CPU is at least this idle (default 15)")
+                     help="jobs start while the CPU is at least this idle (default 10)")
     sub.add_argument("--memory-budget", type=memory_setting, metavar="SIZE",
                      help="jobs start while used memory is at or below this, as 14G; auto for the memory minus 2 GiB "
                           "(the default), or off")
