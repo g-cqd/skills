@@ -18,8 +18,24 @@ What the trace showed:
 
 - **Declared weights overstate real use by 2.75 times.** The median job uses about 1 core at every declared weight
   from 1 to 8. A capacity counted in declared cores leaves cores idle while jobs wait.
-- **Exclusive jobs cause most of the waiting.** A job as heavy as the CPU count drains the machine before it starts.
-  They belong to a task's final timing numbers only, one job per task.
+- **Exclusive jobs cause most of the waiting.** A job as heavy as the CPU count drained the machine before it
+  started. They belong to a task's final timing numbers only, one job per task.
+
+## Exclusive jobs after policy R
+
+Six hours of the job database after policy R was installed showed that exclusive jobs still caused most of the
+waiting, and gained little from it:
+
+- 13 exclusive jobs ran. Ordinary jobs waited 232 min in total, and 158 min of it (68%) overlapped an exclusive
+  job's drain or run.
+- Drains took a median of about 5 min, up to 19.8 min, for runs of a median 0.4 min, up to 8.1 min.
+- The exclusive jobs used 0.5 to 1.2 cores on average, of 8.
+- The drained machine was not quiet anyway: the load stayed around 40 to 50 from work outside the queue.
+- Moving the other jobs to the background QoS is no way out: under that load a background single-thread loop took
+  81.6 s of wall time for 2.86 s of CPU time, against 7 to 17 s at the default QoS.
+
+So an exclusive job no longer drains the machine. It gets a bounded quiet drain and a bounded quiet window, and its
+log records the load around it; a benchmark prefers CPU time to wall time and interleaves A and B.
 
 ## Policy R against today's policy
 
@@ -50,8 +66,11 @@ overload by 0.11 h over the whole trace.
 4. **Order.** Validity first, then the smallest predicted run time minus `--aging` (1) times the seconds waited, then
    the order of asking. Backfill counts predicted cores, and a head that has waited `--backfill-wait` still keeps
    every job behind it.
-5. **Exclusive jobs stay exclusive.** A job as heavy as the CPU count holds the whole budget, whatever its history,
-   and exclusive jobs waiting together run as one batch.
+5. **Quiet exclusive jobs.** A job as heavy as the CPU count counts its predicted cores as any job does. While it
+   waits, it holds new jobs predicted above `--small-weight` for `--quiet-drain` (60 s) at most, then starts even if
+   such jobs still run. While it runs, no new job predicted above the small weight starts, for `--quiet-max` (3 min)
+   at most; then it runs on as an ordinary job. Light jobs start throughout, one quiet window is open at a time, and
+   its log records the load average, the idle CPU and the running jobs as it starts and ends.
 6. **QoS.** Jobs run at the utility QoS (`--job-qos`), through `taskpolicy -c utility` on macOS, and their children
    inherit it, so the user's own work comes first under contention. Exclusive jobs run at the default QoS, so their
    timings are not distorted.
@@ -66,6 +85,8 @@ overload by 0.11 h over the whole trace.
 | An AIMD limit on the budget | No slowdown signal at this load. Closed loop, 10 copies: total wait unchanged at 24.8 h |
 | EASY backfill on predicted run times | Closed loop, 10 copies: no gain on backfill in cores (18.4 h against 17.8 h), and memory overload 0.84 h |
 | Shortest predicted first without aging | One replay, closed loop: one job waited 11,568 s |
+| Draining the whole machine for an exclusive job, and batching exclusive jobs | Measured after install: 68% of the ordinary jobs' waiting overlapped a drain or run, for runs that used 0.5 to 1.2 of 8 cores |
+| Other jobs at the background QoS during an exclusive run | Measured: a background loop took 81.6 s of wall time for 2.86 s of CPU time; it starves |
 
 ## Sources
 
