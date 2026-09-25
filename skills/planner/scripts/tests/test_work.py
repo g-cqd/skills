@@ -74,10 +74,10 @@ class WorkTestCase(unittest.TestCase):
         os.makedirs(self.project)
         self.env = {key: value for key, value in os.environ.items() if not key.startswith("WORK_")}
         self.env["AGENT_WORK_HOME"] = self.home
-        # A fixed capacity and machine gates that hold nothing keep the tests independent of the machine's state;
+        # A fixed CPU budget and machine gates that hold nothing keep the tests independent of the machine's state;
         # the tests of the gates themselves feed them fake signals.
         lenient = ("--load-factor", "1000", "--idle-min", "0", "--memory-limit", "off")
-        self.assertEqual(self.call("settings", "--capacity", "16", *lenient).status, 0)
+        self.assertEqual(self.call("settings", "--cpu-budget", "16", *lenient).status, 0)
 
     def tearDown(self):
         self.stop_jobs()
@@ -489,18 +489,18 @@ class RunTests(WorkTestCase):
 
 class CapacityTests(WorkTestCase):
     def test_with_capacity_one_the_second_job_starts_when_the_first_ends(self):
-        self.call("settings", "--capacity", "1")
+        self.call("settings", "--cpu-budget", "1")
         self.assertEqual(self.work("run", "--id", "first", "--timeout", "0", "--", *self.gate("first"),
                                    agent="alice").status, 124)
         self.until(lambda: self.state("first") == "running", "the first job to start")
-        # The capacity is the database's: an agent's environment cannot raise it for its own jobs.
+        # The budget is the database's: an agent's environment cannot raise it for its own jobs.
         second = self.start("run", "--id", "second", "--", "sh", "-c", "echo second", agent="bob",
                             env={"WORK_CAPACITY": "16"})
         self.until(lambda: self.state("second") == "waiting", "the second job to wait")
         self.open_gate("first")
         output, errors = second.communicate(timeout=60)
         self.assertEqual(second.returncode, 0, errors)
-        self.assertIn("job second waits for capacity: 1 of 1 cores are taken", output)
+        self.assertIn("job second waits for capacity: predicted 1 of 1 cores are taken", output)
         self.assertRegex(output, r"finished with status 0 after [\d.]+ s \(waited [\d.]+ s for capacity, ran")
         times = {row["id"]: row for row in self.database("SELECT id, requested, started, ended FROM tasks")}
         self.assertGreaterEqual(times["second"]["started"], times["first"]["ended"])
@@ -508,11 +508,11 @@ class CapacityTests(WorkTestCase):
         self.assertAlmostEqual(self.task("second")["waited"], times["second"]["started"] - times["second"]["requested"],
                                places=2)
 
-    def queue_behind(self, busy, *jobs, capacity="1", gated=()):
-        """Sets the capacity, starts a job that holds it until its gate opens, then queues `jobs`, (id, extra
+    def queue_behind(self, busy, *jobs, budget="1", gated=()):
+        """Sets the CPU budget, starts a job that holds it until its gate opens, then queues `jobs`, (id, extra
         arguments) pairs, one after the other, each once the one before waits. A job named in `gated` runs until its
         own gate opens; the others run `true`."""
-        self.call("settings", "--capacity", capacity)
+        self.call("settings", "--cpu-budget", budget)
         self.work("run", "--id", busy[0], *busy[1], "--timeout", "0", "--", *self.gate(busy[0]), agent="a")
         self.until(lambda: self.state(busy[0]) == "running", "the first job to start")
         for task_id, extra in jobs:
@@ -542,13 +542,32 @@ class CapacityTests(WorkTestCase):
         self.assertLess(started["zeta"], started["alpha"], "first in, first out, whatever the ids")
 
     @unittest.skipIf((os.cpu_count() or 1) < 2, "a weight of 2 needs two CPUs")
-    def test_the_capacity_counts_the_weights_of_running_jobs(self):
-        self.queue_behind(("heavy", ["--weight", "2"]), ("second", ["--weight", "2"]), capacity="3")
-        self.assertIn("2 of 3 cores are taken and this job needs 2", self.task("second")["note"])
+    def test_without_history_the_budget_counts_the_declared_weights(self):
+        self.queue_behind(("heavy", ["--weight", "2"]), ("second", ["--weight", "2"]), budget="3")
+        self.assertIn("predicted 2 of 3 cores are taken and this job needs 2", self.task("second")["note"])
         self.open_gate("heavy")
         self.assertEqual(self.work("wait", "heavy", "second").status, 0)
         started, ended = self.started(), self.database("SELECT ended FROM tasks WHERE id = 'heavy'")[0]["ended"]
         self.assertGreaterEqual(started["second"], ended)
+
+    @unittest.skipIf((os.cpu_count() or 1) < 2, "a weight of 2 needs two CPUs")
+    def test_five_jobs_of_weight_2_that_each_use_one_core_run_together_in_a_budget_of_8(self):
+        self.call("settings", "--cpu-budget", "8")
+        command = self.gate("five")
+        # One past run of the same command, which used one core on average: 60 s of CPU time in 60 s.
+        self.call("add", "--id", "past", "--cwd", self.project, "--", *command, agent="a")
+        ended = time.time() - 100
+        self.database("UPDATE tasks SET state = 'done', started = ?, ended = ?, cpu_time = 60, status = 0 "
+                      "WHERE id = 'past'", ended - 60, ended)
+        ids = [f"job{index}" for index in range(5)]
+        for task_id in ids:
+            self.work("run", "--id", task_id, "--weight", "2", "--timeout", "0", "--", *command, agent="b")
+        self.until(lambda: all(self.state(task_id) == "running" for task_id in ids), "the five jobs to run together")
+        status = self.work("status").out
+        self.assertIn("cores: predicted 5 of the CPU budget of 8 taken by 5 job(s); declared 10 (no cap)", status)
+        self.assertIn("predicted 1 core and - at peak (1 run of the same command)", status)
+        self.open_gate("five")
+        self.assertEqual(self.work("wait", *ids).status, 0)
 
     @unittest.skipIf((os.cpu_count() or 1) < 2, "an exclusive job must be heavier than an ordinary one")
     def test_exclusive_jobs_waiting_together_run_back_to_back_as_one_batch(self):
@@ -592,15 +611,25 @@ class CapacityTests(WorkTestCase):
         started = self.started()
         self.assertLess(started["fix"], started["second"], "validity work keeps its place in the work order")
 
-    def test_settings_hold_the_capacity_and_limits_for_every_agent(self):
-        self.assertEqual(self.json("settings")[1]["capacity"], 16)
+    def test_settings_hold_the_budget_and_limits_for_every_agent(self):
+        shown = self.json("settings")[1]
+        self.assertEqual((shown["cpu_budget"], shown["capacity"], shown["capacity_is_default"]), (16, None, True),
+                         "the capacity is off by default")
         cpus = os.cpu_count() or 1
-        status, shown = self.json("settings", "--capacity", "auto", "--log-limit", "1024", "--keep-days", "2")
+        status, shown = self.json("settings", "--cpu-budget", "auto", "--capacity", "32", "--log-limit", "1024",
+                                  "--keep-days", "2")
         self.assertEqual(status, 0)
-        self.assertEqual((shown["capacity"], shown["capacity_is_default"]), (max(1, cpus - 2), True))
+        self.assertEqual((shown["cpu_budget"], shown["cpu_budget_is_default"]), (cpus, True))
+        self.assertEqual((shown["capacity"], shown["capacity_is_default"]), (32, False))
         self.assertEqual((shown["log_limit"], shown["keep_days"], shown["load_limit"]), (1024, 2, cpus * 1000))
-        for arguments in (("--capacity", "0"), ("--capacity", "lots"), ("--load-factor", "-1"),
-                          ("--load-wait", "nan"), ("--log-limit", "0"), ("--keep-days", "inf")):
+        text = self.work("settings").out
+        self.assertIn(f"cpu budget: {cpus} cores (the default: the CPU count)", text)
+        self.assertIn("capacity: 32 cores; the running jobs' declared weights fit it", text)
+        for word in ("off", "auto"):
+            self.assertIsNone(self.json("settings", "--capacity", word)[1]["capacity"])
+        for arguments in (("--capacity", "0"), ("--capacity", "lots"), ("--cpu-budget", "0"), ("--cpu-budget", "off"),
+                          ("--load-factor", "-1"), ("--load-wait", "nan"), ("--log-limit", "0"),
+                          ("--keep-days", "inf")):
             with self.subTest(arguments=arguments):
                 self.assertEqual(self.work("settings", *arguments).status, 2)
         self.assertEqual(self.work("add", "--weight", str(cpus + 1), agent="a").status, 2)
@@ -705,21 +734,23 @@ class MachineGateTests(WorkTestCase):
                 box = work.machine(settings, work.Signals(90.0, level, None, False))
                 self.assertEqual(work.pressure(box) is not None, held)
 
-    def test_a_job_as_heavy_as_the_cpus_runs_alone_whatever_the_capacity(self):
+    def box(self, budget=8.0, capacity=None):
         settings = work.settings_of(work.Context(self.env).conn)
-        settings.capacity = 12
-        box = work.Machine(8, 12, settings, work.Signals(90.0, "normal", None, False))
-        self.assertEqual(work.claimed(2, box), 2)
-        self.assertEqual(work.claimed(8, box), 12, "a job of the CPU count holds the whole capacity")
-        self.assertIsNone(work.admission(8, 0, box), "it starts on an empty machine")
-        self.assertEqual(work.admission(8, 2, box), ("capacity", "2 of 12 cores are taken and this job needs 12"),
+        return work.Machine(8, budget, capacity, settings, work.Signals(90.0, "normal", None, False))
+
+    def test_a_job_as_heavy_as_the_cpus_runs_alone_whatever_its_history(self):
+        box = self.box(budget=12)
+        exclusive = {"weight": 8, "pred_cores": 1.0}
+        light = {"weight": 2, "pred_cores": 0.5}
+        self.assertEqual(work.cores(light, box), 0.5)
+        self.assertEqual(work.cores(exclusive, box), 12, "a job of the CPU count holds the whole budget, not its use")
+        self.assertIsNone(work.admission(exclusive, [], box), "it starts on an empty machine")
+        self.assertEqual(work.admission(exclusive, [light], box),
+                         ("cores", "predicted 0.5 of 12 cores are taken and this job needs 12"),
                          "it waits for every running job to end")
-        self.assertEqual(work.admission(2, work.claimed(8, box), box),
-                         ("capacity", "12 of 12 cores are taken and this job needs 2"),
-                         "nothing starts beside it")
-        self.assertIsNone(work.admission(2, 8, box), "lighter jobs overlap past the CPU count")
-        below = work.Machine(8, 6, settings, work.Signals(90.0, "normal", None, False))
-        self.assertEqual(work.claimed(8, below), 8, "a capacity under the CPU count already makes it run alone")
+        self.assertEqual(work.admission(light, [exclusive], box),
+                         ("cores", "predicted 12 of 12 cores are taken and this job needs 0.5"), "nothing starts beside it")
+        self.assertEqual(work.cores(exclusive, self.box(budget=6)), 8, "a budget under the CPU count: it runs alone")
 
     def test_unknown_signals_hold_nothing(self):
         settings = work.settings_of(work.Context(self.env).conn)
@@ -735,10 +766,24 @@ class MachineGateTests(WorkTestCase):
         self.assertIn("memory pressure is critical; jobs start below warning", heavy["note"])
         self.assertIn("the longest a job waits on the machine's pressure", heavy["note"])
 
-    def test_fits_counts_the_capacity(self):
-        self.assertIsNone(work.fits(2, 3, 6))
-        self.assertEqual(work.fits(2, 5, 6), ("capacity", "5 of 6 cores are taken and this job needs 2"))
-        self.assertIsNone(work.fits(8, 0, 6), "a job heavier than the capacity runs alone")
+    def test_admission_counts_predicted_cores_against_the_budget(self):
+        box = self.box(budget=8)
+        running = [{"weight": 2, "pred_cores": 1.0} for _ in range(4)]
+        self.assertIsNone(work.admission({"weight": 2, "pred_cores": 1.0}, running, box),
+                          "five jobs of weight 2 that each use one core fit a budget of 8")
+        self.assertEqual(work.admission({"weight": 2, "pred_cores": None}, running + [{"weight": 4, "pred_cores": 3.4}],
+                                        box), ("cores", "predicted 7.4 of 8 cores are taken and this job needs 2"),
+                         "without a prediction, the declared weight counts")
+        self.assertIsNone(work.admission({"weight": 6, "pred_cores": 9.0}, [], box), "alone, any job fits")
+        self.assertEqual(work.cores({"weight": 2, "pred_cores": 3.0}, box), 2, "the declared weight caps the prediction")
+
+    def test_the_capacity_caps_the_declared_weights_when_set(self):
+        running = [{"weight": 3, "pred_cores": 0.5}]
+        job = {"weight": 2, "pred_cores": 0.5}
+        self.assertIsNone(work.admission(job, running, self.box()), "no cap by default")
+        self.assertEqual(work.admission(job, running, self.box(capacity=4)),
+                         ("capacity", "declared weights of 3 of the capacity of 4 cores are taken and this job "
+                                      "declares 2"))
 
     def test_linux_signals_are_read_from_proc(self):
         self.assertEqual(work.linux_cpu_ticks("cpu  100 5 50 800 45 0 0 0 0 0\ncpu0 1 2 3 4\n"), (845, 1000))
@@ -820,13 +865,13 @@ class BackfillTests(WorkTestCase):
             ctx.close()
 
     def test_a_small_job_backfills_past_a_blocked_large_head(self):
-        self.call("settings", "--capacity", "3")
+        self.call("settings", "--cpu-budget", "3")
         self.work("run", "--id", "busy", "--weight", "2", "--timeout", "0", "--", *self.gate("busy"), agent="a")
         self.until(lambda: self.state("busy") == "running", "the first job to start")
         self.work("run", "--id", "head", "--weight", "2", "--timeout", "0", "--", "true", agent="b")
         self.until(lambda: self.state("head") == "waiting", "the head to wait")
         self.assertIn("head: ", self.work("status").out)
-        self.assertIn("2 of 3 cores are taken and this job needs 2", self.work("status").out)
+        self.assertIn("predicted 2 of 3 cores are taken and this job needs 2", self.work("status").out)
         self.work("run", "--id", "small", "--timeout", "0", "--", *self.gate("small"), agent="c")
         self.until(lambda: self.state("small") == "running", "the small job to start past the head")
         self.assertEqual(self.state("head"), "waiting")
@@ -838,7 +883,7 @@ class BackfillTests(WorkTestCase):
         self.assertLess(started["small"], started["head"])
 
     def test_a_job_that_would_take_the_heads_cores_waits(self):
-        self.call("settings", "--capacity", "5")
+        self.call("settings", "--cpu-budget", "5")
         self.job("busy", 2, "running", since=60)
         self.job("head", 4, "waiting", since=10)
         self.job("medium", 2, "waiting", since=5)
@@ -848,7 +893,7 @@ class BackfillTests(WorkTestCase):
         self.assertIsNone(self.why("light"), "it fits in the core the head leaves free")
 
     def test_jobs_that_started_while_the_head_waited_keep_their_cores_from_the_next(self):
-        self.call("settings", "--capacity", "5", "--small-weight", "0.5")
+        self.call("settings", "--cpu-budget", "5", "--small-weight", "0.5")
         self.job("busy", 1, "running", since=60)
         self.job("head", 4, "waiting", since=30)
         self.job("first", 1, "running", since=10)  # Backfilled: it may still run when the head can start.
@@ -858,7 +903,7 @@ class BackfillTests(WorkTestCase):
         self.assertIn("leaves 0 for jobs behind it", reason)
 
     def test_a_large_head_is_not_starved(self):
-        self.call("settings", "--capacity", "3")
+        self.call("settings", "--cpu-budget", "3")
         self.job("busy", 1, "running", since=600)
         self.job("head", 3, "waiting", since=10)
         self.job("small", 1, "waiting", since=5)
@@ -872,20 +917,20 @@ class BackfillTests(WorkTestCase):
                                                       "5 min 0 s, so no job starts before it"))
 
     def test_a_validity_head_keeps_its_place_from_small_jobs(self):
-        self.call("settings", "--capacity", "3")
+        self.call("settings", "--cpu-budget", "3")
         self.job("busy", 1, "running", since=60)
         self.job("fix", 3, "waiting", since=10, kind="validity")
         self.job("small", 1, "waiting", since=5)
         self.assertEqual(self.why("small"), ("ahead", "job fix is ahead of it and needs 3 of the 3 cores, which leaves "
                                                       "0 for jobs behind it; this job needs 1, and job fix, validity "
                                                       "work, keeps its place"))
-        self.call("settings", "--capacity", "5")
+        self.call("settings", "--cpu-budget", "5")
         self.database("UPDATE tasks SET weight = 3 WHERE id = 'busy'")
         self.assertIsNone(self.why("small"), "a job that cannot delay it may still start")
 
     def test_a_batch_job_whose_supervisor_is_gone_keeps_no_place(self):
         cpus = os.cpu_count() or 1
-        self.call("settings", "--capacity", str(cpus))
+        self.call("settings", "--cpu-budget", str(cpus))
         self.job("first", cpus, "running", since=10)
         self.job("second", cpus, "waiting", since=30)
         self.job("other", 1, "waiting", since=20)
@@ -894,10 +939,10 @@ class BackfillTests(WorkTestCase):
         gone = subprocess.Popen(["true"])
         gone.wait()
         self.database("UPDATE tasks SET owner = ? WHERE id = 'second'", gone.pid)
-        self.assertEqual(self.why("other")[0], "capacity", "only the running batch job holds it now")
+        self.assertEqual(self.why("other")[0], "cores", "only the running batch job holds it now")
 
     def test_backfill_never_takes_the_heads_turn(self):
-        self.call("settings", "--capacity", "2")
+        self.call("settings", "--cpu-budget", "2")
         self.job("head", 1, "waiting", since=10)
         self.job("small", 1, "waiting", since=5)
         self.assertEqual(self.why("small"), ("ahead", "job head is ahead of it, and there is room for it"))
@@ -1099,7 +1144,7 @@ class WaitTests(WorkTestCase):
         self.assertEqual(self.call("done", "held", agent="bob").status, 0)
 
     def test_cancel_withdraws_a_job_that_waits_for_capacity(self):
-        self.call("settings", "--capacity", "1")
+        self.call("settings", "--cpu-budget", "1")
         marker = os.path.join(self.root, "never")
         self.work("run", "--id", "busy", "--timeout", "0", "--", *self.gate("busy"), agent="a")
         self.until(lambda: self.state("busy") == "running", "the first job to start")
@@ -1172,7 +1217,7 @@ class StatusTests(WorkTestCase):
         self.assertFalse(os.path.exists(rolled_back))
 
     def test_a_supervisor_started_by_hand_leaves_a_job_it_does_not_own(self):
-        self.call("settings", "--capacity", "1")
+        self.call("settings", "--cpu-budget", "1")
         self.work("run", "--id", "busy", "--timeout", "0", "--", *self.gate("busy"), agent="a")
         self.until(lambda: self.state("busy") == "running", "the first job to start")
         self.work("run", "--id", "owned", "--timeout", "0", "--", "true", agent="a")
@@ -1209,7 +1254,7 @@ class StatusTests(WorkTestCase):
         self.assertEqual((task["state"], task["status"], task["note"]), ("failed", 128 + signal.SIGTERM, ""))
 
     def test_a_job_whose_supervisor_stops_or_dies_before_it_starts_is_failed(self):
-        self.call("settings", "--capacity", "1")
+        self.call("settings", "--cpu-budget", "1")
         self.work("run", "--id", "busy", "--timeout", "0", "--", *self.gate("busy"), agent="a")
         self.until(lambda: self.state("busy") == "running", "the first job to start")
         for task_id, signum, note in (("stopped", signal.SIGTERM, "stopped by signal 15 before the command started"),
