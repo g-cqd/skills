@@ -5,8 +5,8 @@ description: >
   fix, a mechanical update across a handful of files. Builds the touched code before handing
   back. Use when the change needs no design decision; anything that does goes back to the
   caller.
-model: opus
-effort: medium
+model: sonnet
+effort: low
 tools: Read, Grep, Glob, LSP, Bash, Edit, Write, Skill
 maxTurns: 25
 color: green

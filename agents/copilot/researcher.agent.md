@@ -6,8 +6,8 @@ description: >
   API accept / which version / what do the docs say" questions, and before relying on anything
   that changes over time, such as model names, tool flags, or platform availability. Read-only;
   never edits.
-model: "Claude Opus 5.5"
-reasoningEffort: medium
+model: "Claude Sonnet 5"
+reasoningEffort: high
 tools: ["read", "search", "web", "skill", "apple-docs/*"]
 ---
 

@@ -6,7 +6,7 @@ description: >
   Use for a performance target or a measured regression, not for speculative tuning. Keeps
   correctness: a faster wrong answer is a failure.
 model: "Claude Opus 5.5"
-reasoningEffort: high
+reasoningEffort: medium
 tools: ["read", "search", "execute", "edit", "web", "todo", "agent", "skill"]
 ---
 

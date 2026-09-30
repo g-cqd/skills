@@ -5,7 +5,7 @@ description: >
   fail counts, and each failure's first error with its test, file, and line. Use to run a suite
   without spending a larger agent's context on its log. Never edits code and never fixes a
   failure; it reports.
-model: "Claude Opus 5.5"
+model: "Claude Sonnet 5"
 reasoningEffort: low
 tools: ["read", "search", "execute", "skill"]
 ---

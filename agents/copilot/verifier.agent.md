@@ -6,7 +6,7 @@ description: >
   CONFIRMED, REFUTED, or INCONCLUSIVE with the evidence. Use before acting on a finding or
   reporting a result. Never edits the project; scratch work goes under /tmp.
 model: "Claude Opus 5.5"
-reasoningEffort: high
+reasoningEffort: medium
 tools: ["read", "search", "execute", "skill"]
 ---
 

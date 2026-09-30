@@ -5,8 +5,8 @@ description: >
   fail counts, and each failure's first error with its test, file, and line. Use to run a suite
   without spending a larger agent's context on its log. Never edits code and never fixes a
   failure; it reports.
-model: opus
-effort: medium
+model: sonnet
+effort: low
 tools: Read, Grep, Glob, Bash, Skill
 maxTurns: 30
 color: green

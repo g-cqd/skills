@@ -6,7 +6,7 @@ description: >
   cause with evidence. Fixes it with a regression test when the brief asks for a fix. Use when
   the cause is unknown; a known fix goes to the implementer or the patcher.
 model: "Claude Opus 5.5"
-reasoningEffort: high
+reasoningEffort: medium
 tools: ["read", "search", "execute", "edit", "web", "todo", "agent", "skill", "apple-docs/*"]
 ---
 
