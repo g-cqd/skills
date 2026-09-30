@@ -6,7 +6,7 @@ description: >
   cause with evidence. Fixes it with a regression test when the brief asks for a fix. Use when
   the cause is unknown; a known fix goes to the implementer or the patcher.
 model: opus
-effort: high
+effort: medium
 tools: Read, Grep, Glob, LSP, Bash, Edit, Write, WebFetch, WebSearch, TodoWrite, Agent(scout, test-runner), Skill, mcp__apple-docs
 skills:
   - debugging

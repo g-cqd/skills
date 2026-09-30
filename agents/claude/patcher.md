@@ -6,7 +6,7 @@ description: >
   back. Use when the change needs no design decision; anything that does goes back to the
   caller.
 model: opus
-effort: low
+effort: medium
 tools: Read, Grep, Glob, LSP, Bash, Edit, Write, Skill
 maxTurns: 25
 color: green

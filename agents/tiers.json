@@ -6,7 +6,7 @@
     "_use": "one small mechanical job with a clear stop: locate, run the tests, commit, apply a fix already shown. Failures are cheap to retry.",
     "claude": {
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "codex": {
       "model": "gpt-6-luna",
@@ -21,7 +21,7 @@
     "_use": "mechanical, high-volume, low-risk: scanning, extraction, mapping, boilerplate, doc synthesis. Failures are cheap to retry.",
     "claude": {
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "codex": {
       "model": "gpt-6-sol",
@@ -51,7 +51,7 @@
     "_use": "ambiguous, cross-cutting, high-risk, long-horizon, or expensive-to-fix: architecture, adversarial review, security audit, planning and synthesis.",
     "claude": {
       "model": "opus",
-      "effort": "high"
+      "effort": "medium"
     },
     "codex": {
       "model": "gpt-6-astra",

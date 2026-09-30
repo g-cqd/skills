@@ -6,7 +6,7 @@ description: >
   CONFIRMED, REFUTED, or INCONCLUSIVE with the evidence. Use before acting on a finding or
   reporting a result. Never edits the project; scratch work goes under /tmp.
 model: opus
-effort: high
+effort: medium
 tools: Read, Grep, Glob, LSP, Bash, Skill
 maxTurns: 60
 color: yellow
