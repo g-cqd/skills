@@ -5,8 +5,8 @@ description: >
   requirement, keeps the change small and reviewable, and verifies it builds and passes tests
   before handing back. Use for well-defined implementation and refactoring tasks. Not for
   ambiguous or cross-cutting work — that goes to the orchestrator to shape first.
-model: "Claude Opus 5.5"
-reasoningEffort: medium
+model: "Claude Sonnet 5"
+reasoningEffort: high
 tools: ["read", "search", "execute", "edit", "web", "todo", "agent", "skill", "apple-docs/*"]
 ---
 

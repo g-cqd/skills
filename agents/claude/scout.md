@@ -5,8 +5,8 @@ description: >
   and used, extract facts, and answer "where / whether / how many" questions. Use PROACTIVELY
   to gather context before any change, and for high-volume fan-out searches. Reports findings;
   never edits.
-model: opus
-effort: medium
+model: sonnet
+effort: low
 tools: Read, Grep, Glob, LSP, Bash, Skill
 maxTurns: 40
 color: cyan

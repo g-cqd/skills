@@ -5,8 +5,8 @@ description: >
   migration of legacy suites. Judges whether a suite is meaningful, not just green. Use when a
   change needs tests, a bug needs a regression guard, or a suite needs modernizing. Standard
   tier — the scope is clear and the tests themselves are the safety net.
-model: opus
-effort: medium
+model: sonnet
+effort: high
 tools: Read, Grep, Glob, LSP, Bash, Edit, Write, TodoWrite, Agent(scout, test-runner), Skill, mcp__apple-docs
 skills:
   - testing

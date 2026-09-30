@@ -5,8 +5,8 @@ description: >
   requirement, keeps the change small and reviewable, and verifies it builds and passes tests
   before handing back. Use for well-defined implementation and refactoring tasks. Not for
   ambiguous or cross-cutting work — that goes to the orchestrator to shape first.
-model: opus
-effort: medium
+model: sonnet
+effort: high
 tools: Read, Grep, Glob, LSP, Bash, Edit, Write, WebFetch, WebSearch, TodoWrite, Agent(scout, test-runner, patcher), Skill, mcp__apple-docs
 skills:
   - engineering-practices

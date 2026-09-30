@@ -5,7 +5,7 @@ description: >
   fix, a mechanical update across a handful of files. Builds the touched code before handing
   back. Use when the change needs no design decision; anything that does goes back to the
   caller.
-model: "Claude Opus 5.5"
+model: "Claude Sonnet 5"
 reasoningEffort: low
 tools: ["read", "search", "execute", "edit", "skill"]
 ---

@@ -7,7 +7,7 @@ description: >
   it does not edit. Reasoning tier: review quality is the expensive judgment the cheap tiers
   cannot provide.
 model: "Claude Opus 5.5"
-reasoningEffort: high
+reasoningEffort: medium
 tools: ["read", "search", "web", "skill", "apple-docs/*"]
 ---
 

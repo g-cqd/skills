@@ -71,17 +71,17 @@ The tier→model mapping is the single place cost is tuned:
 
 | Tier | Claude Code | Codex | Copilot | For |
 |---|---|---|---|---|
-| micro | `opus`, low | `gpt-6-luna`, low | Claude Opus 5.5, low | one small mechanical job with a clear stop |
-| economy | `opus`, low | `gpt-6-sol`, low | Claude Opus 5.5, low | mechanical, high-volume, cheap to retry |
-| standard | `opus`, medium | `gpt-6-sol`, medium | Claude Opus 5.5, medium | clear-scope reasoning; tests catch mistakes |
-| reasoning | `opus`, high | `gpt-6-astra`, high | Claude Opus 5.5, high | ambiguous, high-risk, expensive to fix |
+| micro | `sonnet`, low | `gpt-6-luna`, low | Claude Sonnet 5, low | one small mechanical job with a clear stop |
+| economy | `sonnet`, medium | `gpt-6-sol`, low | Claude Sonnet 5, medium | mechanical, high-volume, cheap to retry |
+| standard | `sonnet`, high | `gpt-6-sol`, medium | Claude Sonnet 5, high | clear-scope reasoning; tests catch mistakes |
+| reasoning | `opus`, medium | `gpt-6-astra`, high | Claude Opus 5.5, medium | ambiguous, high-risk, expensive to fix |
 | frontier | `fable`, high | `gpt-6-astra`, xhigh | Claude Fable 5.1, high | the costliest miss, the longest runs |
 
 An agent's own `effort` replaces its tier's on every harness. **Re-audit this map every few
 months.** The best-value model in each class drifts, and a stale mapping quietly eats the savings.
 Change `tiers.json`, re-run `build.py`, done — no agent file is touched.
 
-Model names follow each harness's documentation. Claude Code takes an alias (`opus`, `fable`) or a
+Model names follow each harness's documentation. Claude Code takes an alias (`sonnet`, `opus`, `fable`) or a
 full id (`claude-opus-5-5`, `claude-fable-5-1`). Codex takes a slug; `codex debug models` lists the
 ones the installed client knows. Copilot's documentation for VS Code gives display names
 (`Claude Opus 5.5`) and no other form, and the Copilot CLI has accepted them since 1.0.24. Claude

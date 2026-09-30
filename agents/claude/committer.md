@@ -4,8 +4,8 @@ description: >
   Commits a finished change: stages exactly the files it is given, writes the message in the
   repository's own style, and commits with the configured identity and signing. Use only when
   asked to commit. Never pushes, amends, rebases, or rewrites history unless the brief says so.
-model: opus
-effort: medium
+model: sonnet
+effort: low
 tools: Read, Grep, Glob, Bash, Skill
 maxTurns: 15
 skills:

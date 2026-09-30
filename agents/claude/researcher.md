@@ -6,8 +6,8 @@ description: >
   API accept / which version / what do the docs say" questions, and before relying on anything
   that changes over time, such as model names, tool flags, or platform availability. Read-only;
   never edits.
-model: opus
-effort: medium
+model: sonnet
+effort: high
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch, Skill, mcp__apple-docs
 maxTurns: 60
 color: blue

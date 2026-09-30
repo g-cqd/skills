@@ -5,22 +5,22 @@
   "micro": {
     "_use": "one small mechanical job with a clear stop: locate, run the tests, commit, apply a fix already shown. Failures are cheap to retry.",
     "claude": {
-      "model": "opus",
-      "effort": "medium"
+      "model": "sonnet",
+      "effort": "low"
     },
     "codex": {
       "model": "gpt-6-luna",
       "effort": "low"
     },
     "copilot": {
-      "model": "Claude Opus 5.5",
+      "model": "Claude Sonnet 5",
       "effort": "low"
     }
   },
   "economy": {
     "_use": "mechanical, high-volume, low-risk: scanning, extraction, mapping, boilerplate, doc synthesis. Failures are cheap to retry.",
     "claude": {
-      "model": "opus",
+      "model": "sonnet",
       "effort": "medium"
     },
     "codex": {
@@ -28,23 +28,23 @@
       "effort": "low"
     },
     "copilot": {
-      "model": "Claude Opus 5.5",
-      "effort": "low"
+      "model": "Claude Sonnet 5",
+      "effort": "medium"
     }
   },
   "standard": {
     "_use": "clear-scope local reasoning where tests or review catch most mistakes: implementing a specified change, writing tests.",
     "claude": {
-      "model": "opus",
-      "effort": "medium"
+      "model": "sonnet",
+      "effort": "high"
     },
     "codex": {
       "model": "gpt-6-sol",
       "effort": "medium"
     },
     "copilot": {
-      "model": "Claude Opus 5.5",
-      "effort": "medium"
+      "model": "Claude Sonnet 5",
+      "effort": "high"
     }
   },
   "reasoning": {
@@ -59,7 +59,7 @@
     },
     "copilot": {
       "model": "Claude Opus 5.5",
-      "effort": "high"
+      "effort": "medium"
     }
   },
   "frontier": {
