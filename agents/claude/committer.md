@@ -5,7 +5,7 @@ description: >
   repository's own style, and commits with the configured identity and signing. Use only when
   asked to commit. Never pushes, amends, rebases, or rewrites history unless the brief says so.
 model: opus
-effort: low
+effort: medium
 tools: Read, Grep, Glob, Bash, Skill
 maxTurns: 15
 skills:

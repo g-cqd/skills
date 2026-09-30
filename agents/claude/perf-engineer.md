@@ -6,7 +6,7 @@ description: >
   Use for a performance target or a measured regression, not for speculative tuning. Keeps
   correctness: a faster wrong answer is a failure.
 model: opus
-effort: high
+effort: medium
 tools: Read, Grep, Glob, LSP, Bash, Edit, Write, WebFetch, WebSearch, TodoWrite, Agent(scout, test-runner), Skill
 skills:
   - performance-engineering

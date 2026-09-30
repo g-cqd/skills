@@ -6,7 +6,7 @@ description: >
   without spending a larger agent's context on its log. Never edits code and never fixes a
   failure; it reports.
 model: opus
-effort: low
+effort: medium
 tools: Read, Grep, Glob, Bash, Skill
 maxTurns: 30
 color: green

@@ -6,7 +6,7 @@ description: >
   work item needs writing up. Economy tier — this is synthesis from material that already
   exists, where a wrong draft is cheap to revise.
 model: opus
-effort: low
+effort: medium
 tools: Read, Grep, Glob, Bash, Edit, Write, Skill
 skills:
   - work-docs

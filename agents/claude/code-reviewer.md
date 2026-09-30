@@ -7,7 +7,7 @@ description: >
   it does not edit. Reasoning tier: review quality is the expensive judgment the cheap tiers
   cannot provide.
 model: opus
-effort: high
+effort: medium
 tools: Read, Grep, Glob, LSP, Bash, WebFetch, WebSearch, Skill, mcp__apple-docs
 skills:
   - code-review
