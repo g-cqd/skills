@@ -19,25 +19,28 @@ Rules:
     has read it (`work show`, which prints its digest) and accepted it (`work accept ID --digest D`), whoever queued
     it: agent names are self-declared, so no name proves who wrote a command. Only a command typed inline with
     `work run -- ...` needs no acceptance. Commands are stored as argument lists and run without a shell.
-  - Capacity: a job declares a weight, the cores it may use (default 1, at most the CPU count), but it is admitted on
+  - Capacity: a job declares a weight, the cores it may use (default 1, at most the effective CPU capacity, but at
+    least 1 so a job can run alone on a fractional quota), but it is admitted on
     the cores it is predicted to use, from the history of its command: the median average cores (CPU time over run
-    time) of the last 5 runs of the most specific signature that has enough of them, capped by the declared weight,
-    which is the estimate while there is no history. A signature normalizes the command, with paths reduced to their
+    time) of the last 5 runs of the most specific signature that has enough of them, capped by the declared weight;
+    it also records the p50 and nearest-rank p90 durations from those runs. With no history, declared weight and a
+    default duration are used. A signature normalizes the command, with paths reduced to their
     last component and ids masked, and its directory counts as its repository and the path inside it, so worktrees
     share history. A job starts only while the running jobs' predicted cores plus its own fit the CPU budget (default
-    the CPU count), and their declared weights plus its own fit the capacity when one is set (off by default), or when
+    the effective CPU capacity), and their declared weights plus its own fit the capacity when one is set (off by default), or when
     no job runs, or when the job is tiny, predicted at half a core or less, as unit tests of scripts, git commands and
     small checks are, and while the machine is not under pressure: the CPU at least idle-min idle (10%, measured over
     the supervisor's last poll), used memory at or below the memory budget (the memory minus 2 GiB; on macOS the
     active, wired and compressed pages, on Linux MemTotal minus MemAvailable), memory pressure below the memory limit
-    (warning, from the kernel), and, on Linux only, the load average below the CPU count times the load factor (1.5).
+    (warning, from the kernel), and, on Linux only, the load average below the effective CPU capacity times the load factor (1.5).
     macOS counts threads that wait on memory and disk in its load average, so there it is shown, not used. Tiny jobs
     keep no place in line. The other jobs that wait for room start in work order: validity first, then the shortest
     predicted run time (the median of the same runs) less the aging (1) times the time waited, then the order in which
-    they asked, with backfill in predicted cores: a job behind the head may start first if it fits now and in the
-    cores the head leaves free, or if it is small (small weight, 1 predicted core) while the head has waited less than
-    the backfill wait (300 s) and no validity job is ahead of it. A head past the backfill wait keeps every job behind
-    it, so none starves. Exclusive jobs, as heavy as the CPU count, are timing measurements, and they no longer drain
+    they asked, with backfill reserved against the head's estimated start from running jobs' p90 finish times: a job
+    behind the head may start if its own p90 ends before that estimate or it fits in the cores the head leaves free.
+    Small jobs can still backfill while the head has waited less than the backfill wait (300 s) and no validity job is
+    ahead of them. A head past the backfill wait keeps every job behind
+    it, so none starves. Exclusive jobs, as heavy as the effective CPU capacity (at least 1), are timing measurements, and they no longer drain
     the machine: one counts its predicted cores as any job does. Without history of its own, it counts the typical
     exclusive use, the median of the last 20 exclusive jobs (1 core while fewer than 3 have run), capped by its
     weight, not its whole weight. While it waits it holds new jobs predicted above the small weight, for the quiet
@@ -98,6 +101,7 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from functools import lru_cache
 from datetime import datetime
+from pathlib import Path
 
 import order_tasks
 
@@ -215,7 +219,7 @@ MIGRATIONS = ((
     "ALTER TABLE tasks ADD COLUMN pred_duration REAL",
     "ALTER TABLE tasks ADD COLUMN pred_from TEXT",
 ), (
-    # Admission counts predicted cores against the CPU budget (NULL: the CPU count). The capacity becomes an optional
+    # Admission counts predicted cores against the CPU budget (NULL: the effective CPU capacity). The capacity becomes an optional
     # cap on declared weights: NULL, which meant the CPU count minus 2, now means no cap; a value set is kept.
     "ALTER TABLE settings ADD COLUMN cpu_budget REAL CHECK (cpu_budget IS NULL OR cpu_budget > 0)",
 ), (
@@ -241,6 +245,12 @@ MIGRATIONS = ((
     "ALTER TABLE settings ADD COLUMN quiet_max REAL NOT NULL DEFAULT 180 CHECK (quiet_max >= 0)",
     "ALTER TABLE tasks ADD COLUMN quiet_until REAL",
     "CREATE INDEX tasks_by_quiet ON tasks (quiet_until) WHERE quiet_until IS NOT NULL",
+), (
+    # The p90 run-time prediction makes backfill reservations conservative for the queue head.
+    "ALTER TABLE tasks ADD COLUMN pred_duration_p90 REAL",
+), (
+    # P90 memory predictions let admission reserve the likely peak for waiting jobs.
+    "ALTER TABLE tasks ADD COLUMN pred_rss_p90 INTEGER",
 ))
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -718,6 +728,8 @@ def task_json(row: sqlite3.Row, now: float | None = None) -> dict:
         "status": row["status"], "pid": row["pid"], "supervisor": row["owner"], "log": row["log"], "qos": row["qos"],
         "predicted": None if row["pred_cores"] is None else {
             "cores": rounded(row["pred_cores"]), "rss_kib": row["pred_rss"], "duration": rounded(row["pred_duration"]),
+            "duration_p90": rounded(row["pred_duration_p90"]),
+            "rss_p90_kib": row["pred_rss_p90"],
             "from": row["pred_from"]},
         "cpu_percent": row["cpu"], "rss_kib": row["rss"], "rss_peak_kib": row["rss_peak"],
         "cpu_seconds": rounded(row["cpu_time"]), "sampled": iso(row["sampled"]), "note": row["note"],
@@ -1003,15 +1015,27 @@ def median(values) -> float:
     return ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
 
 
+def percentile(values, quantile: float) -> float:
+    """The nearest-rank percentile, using the smallest observation whose cumulative rank reaches `quantile`.
+
+    - Complexity: O(n log n) time and O(n) space.
+    """
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil(quantile * len(ordered)) - 1)]
+
+
 @dataclass
 class Prediction:
     """What a job is expected to use, from the last runs of its most specific signature that has enough of them:
-    the median of their average cores (CPU time over run time), capped by the declared weight; the largest of their
-    memory peaks; the median of their run times. Without history, the declared weight is the estimate."""
+    the median of their average cores (CPU time over run time), capped by the declared weight; the largest and p90 of
+    their memory peaks; and the median and p90 of their run times. Without history, the declared weight is the core
+    estimate."""
 
     cores: float
     rss_kib: int | None
+    rss_p90_kib: int | None
     duration: float
+    duration_p90: float
     level: str
     runs: int
 
@@ -1041,14 +1065,21 @@ def predict(conn: sqlite3.Connection, signed, weight: float) -> Prediction:
         cores = median(row["cpu_time"] / length for row, length in zip(runs, durations))
         peaks = [row["rss_peak"] for row in runs if row["rss_peak"] is not None]
         return Prediction(min(weight, max(MIN_CORES, cores)), max(peaks) if peaks else None,
-                          median(durations), level, len(runs))
-    recent = [row[0] for row in conn.execute(f"SELECT ended - started FROM tasks WHERE {RAN} ORDER BY ended DESC "
-                                             "LIMIT ?", (RECENT,))]
-    duration = median(recent) if recent else DEFAULT_DURATION
-    cpus = os.cpu_count() or 1
-    if weight >= cpus:
-        return Prediction(min(weight, typical_exclusive(conn, cpus)), None, duration, "exclusive", 0)
-    return Prediction(weight, None, duration, "none", 0)
+                          int(percentile(peaks, 0.9)) if peaks else None, median(durations),
+                          percentile(durations, 0.9), level, len(runs))
+    recent = conn.execute(f"SELECT ended - started, rss_peak FROM tasks WHERE {RAN} ORDER BY ended DESC "
+                          "LIMIT ?", (RECENT,)).fetchall()
+    durations = [row[0] for row in recent]
+    peaks = [row[1] for row in recent if row[1] is not None]
+    duration = median(durations) if durations else DEFAULT_DURATION
+    duration_p90 = percentile(durations, 0.9) if durations else DEFAULT_DURATION
+    rss_p90 = int(percentile(peaks, 0.9)) if peaks else None
+    cpus = cpu_capacity()
+    exclusive_limit = max(1.0, cpus)
+    if weight >= exclusive_limit:
+        return Prediction(min(weight, typical_exclusive(conn, exclusive_limit)), None, rss_p90, duration,
+                          duration_p90, "exclusive", 0)
+    return Prediction(weight, None, rss_p90, duration, duration_p90, "none", 0)
 
 
 TYPICAL_RUNS = 20  # The finished exclusive jobs whose median use stands in for one without history.
@@ -1056,13 +1087,13 @@ TYPICAL_MIN = 3  # Fewer finished exclusive jobs than this: TYPICAL_CORES stands
 TYPICAL_CORES = 1.0
 
 
-def typical_exclusive(conn: sqlite3.Connection, cpus: int) -> float:
+def typical_exclusive(conn: sqlite3.Connection, cpus: float) -> float:
     """The cores an exclusive job without history is predicted to use: the median of the average cores of the last 20
     exclusive jobs that ran, whatever their signature, or 1 core while fewer than 3 have. Most exclusive jobs are
     one-off scripts with new signatures, and they used 0.5 to 1.2 of 8 cores; counted at their whole weight, each
     would hold every job but the tiny ones for its whole run."""
     runs = conn.execute(f"SELECT started, ended, cpu_time FROM tasks WHERE weight >= ? AND {RAN} "
-                        "ORDER BY ended DESC LIMIT ?", (cpus, TYPICAL_RUNS)).fetchall()
+                        "ORDER BY ended DESC LIMIT ?", (max(1.0, cpus), TYPICAL_RUNS)).fetchall()
     if len(runs) < TYPICAL_MIN:
         return TYPICAL_CORES
     return max(MIN_CORES, median(row["cpu_time"] / max(row["ended"] - row["started"], 0.05) for row in runs))
@@ -1119,15 +1150,17 @@ def describe_hold(row: sqlite3.Row, box) -> str:
     kind = "exclusive, " if exclusive(row["weight"], box) else ""
     if row["pred_cores"] is None:
         return f"{kind}holds {number(row['weight'])} cores, its weight (no prediction)"
-    return (f"{kind}predicted {cores_text(cores(row, box))}, {memory(row['pred_rss'])} at peak, "
-            f"{span(row['pred_duration'])} ({row['pred_from']})")
+    return (f"{kind}predicted {cores_text(cores(row, box))}, {memory(row['pred_rss'])} max and "
+            f"{memory(row['pred_rss_p90'])} p90 memory, p50 {span(row['pred_duration'])} ({row['pred_from']}), "
+            f"p90 {span(duration_p90(row))}")
 
 
 def describe_prediction(row: sqlite3.Row) -> str:
     if row["pred_cores"] is None:
         return "no prediction"
-    return (f"{row['pred_cores']:.1f} cores, {memory(row['pred_rss'])} at peak, {span(row['pred_duration'])}, from "
-            f"{row['pred_from']}")
+    return (f"{row['pred_cores']:.1f} cores, {memory(row['pred_rss'])} max and "
+            f"{memory(row['pred_rss_p90'])} p90 memory, p50 {span(row['pred_duration'])}, "
+            f"p90 {span(duration_p90(row))}, from {row['pred_from']}")
 
 
 # MARK: - Processes
@@ -1288,7 +1321,7 @@ class Settings:
     memory_limit: str = "warning"
     backfill_wait: float = 300.0
     small_weight: float = 1.0
-    cpu_budget: float | None = None  # the running jobs' predicted cores; None: the CPU count
+    cpu_budget: float | None = None  # the running jobs' predicted cores; None: effective CPU capacity
     memory_budget: int | None = None  # KiB of used memory; None: the memory minus 2 GiB; 0: no gate
     aging: float = 1.0  # seconds of predicted run time forgiven for each second a job waits
     job_qos: str = "utility"  # the QoS of every job but the exclusive ones
@@ -1525,7 +1558,7 @@ class Gauge:
 
 @dataclass
 class Machine:
-    cpus: int
+    cpus: float
     budget: float  # the predicted cores that running jobs may take together
     capacity: float | None  # the declared cores that running jobs may take together; None: no cap
     settings: Settings
@@ -1544,8 +1577,59 @@ def load_average() -> float | None:
         return None
 
 
+def cpu_capacity(cpu_count: int | None = None, affinity: int | None = None,
+                 quota: tuple[int, int] | None = None) -> float:
+    """Available CPU capacity, limited by process affinity and a Linux cgroup v2 quota.
+
+    Optional values make the calculation deterministic in tests. A missing or unlimited quota does not
+    constrain the affinity or host CPU count.
+    """
+    host = cpu_count if cpu_count is not None else (os.cpu_count() or 1)
+    limits = [float(host)]
+    if affinity is None and hasattr(os, "sched_getaffinity"):
+        try:
+            affinity = len(os.sched_getaffinity(0))
+        except OSError:
+            pass
+    if affinity is not None and affinity > 0:
+        limits.append(float(affinity))
+    if quota is None and sys.platform.startswith("linux"):
+        quota = _cgroup_v2_cpu_quota()
+    if quota is not None:
+        amount, period = quota
+        if amount > 0 and period > 0:
+            limits.append(amount / period)
+    return min(limits)
+
+
+def _cgroup_v2_cpu_quota(cgroup_root: str | Path = "/sys/fs/cgroup",
+                         proc_cgroup: str | Path = "/proc/self/cgroup") -> tuple[int, int] | None:
+    """Read the tightest visible cgroup v2 CPU quota for this process."""
+    try:
+        entries = Path(proc_cgroup).read_text().splitlines()
+        relative = next(line.split("::", 1)[1].lstrip("/") for line in entries if line.startswith("0::"))
+    except (OSError, StopIteration, IndexError):
+        return None
+    root = Path(cgroup_root)
+    directory = root / relative
+    quotas = []
+    while True:
+        try:
+            fields = (directory / "cpu.max").read_text().split()
+            if len(fields) == 2 and fields[0] != "max":
+                quota, period = int(fields[0]), int(fields[1])
+                if quota > 0 and period > 0:
+                    quotas.append((quota, period))
+        except (OSError, ValueError):
+            pass
+        if directory == root or directory.parent == directory:
+            break
+        directory = directory.parent
+    return min(quotas, key=lambda pair: pair[0] / pair[1]) if quotas else None
+
+
 def machine(settings: Settings, signals: Signals | None = None) -> Machine:
-    cpus = os.cpu_count() or 1
+    cpus = cpu_capacity()
     return Machine(cpus, settings.cpu_budget or float(cpus), settings.capacity, settings, signals,
                    memory_budget(settings))
 
@@ -1564,16 +1648,16 @@ def memory_budget(settings: Settings) -> int | None:
 
 
 def check_weight(weight: float) -> float:
-    cpus = os.cpu_count() or 1
-    if weight > cpus:
-        raise WorkError(f"--weight {weight:g} is more than the {cpus} CPUs of this machine")
+    cpus = cpu_capacity()
+    limit = max(1.0, cpus)
+    if weight > limit:
+        raise WorkError(f"--weight {weight:g} is more than the {limit:g} effective CPUs of this machine")
     return weight
 
 
 def exclusive(weight: float, box: Machine) -> bool:
-    """Whether a job is as heavy as the CPU count: a timing measurement, which runs at the default QoS and gets a
-    bounded quiet drain and quiet window (`quiet_blocker`)."""
-    return weight >= box.cpus
+    """Whether a job is as heavy as the effective CPU capacity (at least 1), for timing measurements and quiet windows."""
+    return weight >= max(1.0, box.cpus)
 
 
 def cores(row, box: Machine) -> float:
@@ -1634,7 +1718,7 @@ def taken(need: float, used: float, box: Machine) -> tuple[str, str]:
 def pressure(box: Machine) -> tuple[str, str] | None:
     """Why the machine itself holds jobs back, as (cause, reason) naming the signal, or None. Memory pressure at or
     above the settings' memory_limit holds them; so does used memory above the memory budget; so does idle CPU below
-    idle_min; so does, on Linux only, a load average at or above the CPU count times load_factor. An unknown signal
+    idle_min; so does, on Linux only, a load average at or above the effective CPU capacity times load_factor. An unknown signal
     holds nothing."""
     signals, settings = box.signals, box.settings
     if signals is None:
@@ -1652,6 +1736,20 @@ def pressure(box: Machine) -> tuple[str, str] | None:
     return None
 
 
+def memory_reservation(row, running: list, box: Machine) -> tuple[str, str] | None:
+    """Whether the predicted p90 memory peak would exceed the budget after this job starts."""
+    signals = box.signals
+    if box.memory_budget is None or signals is None or signals.memory_used is None:
+        return None
+    reserved = sum(max(0, max(0, item["pred_rss_p90"] or 0) - max(0, item["rss"] or 0))
+                   for item in running)
+    projected = signals.memory_used + reserved + max(0, row["pred_rss_p90"] or 0)
+    if projected > box.memory_budget:
+        return "memory", (f"projected memory is {projected} KiB, above the memory budget of "
+                          f"{box.memory_budget} KiB")
+    return None
+
+
 def admission(row, running: list, box: Machine) -> tuple[str, str] | None:
     """Why a job cannot start now beside the `running` jobs, as (cause, reason), or None when it can: its predicted
     cores must fit the CPU budget beside theirs, unless it is tiny, its declared weight the capacity, when one is set,
@@ -1663,6 +1761,9 @@ def admission(row, running: list, box: Machine) -> tuple[str, str] | None:
     if box.capacity is not None and over(row["weight"], declared, box.capacity):
         return "capacity", (f"declared weights of {number(declared)} of the capacity of {number(box.capacity)} "
                             f"cores are taken and this job declares {number(row['weight'])}")
+    memory_hold = memory_reservation(row, running, box)
+    if memory_hold is not None:
+        return memory_hold
     return pressure(box)
 
 
@@ -1682,22 +1783,47 @@ def describe_machine(box: Machine) -> str:
     memory_rule = "not a gate" if settings.memory_limit == "off" else f"jobs start below {settings.memory_limit}"
     load_rule = f"jobs start below {box.load_limit:.2f}" if signals and signals.load_gate else \
         "not a gate here: it counts threads waiting on memory and disk"
-    return (f"machine: {box.cpus} CPUs; CPU {idle} idle (jobs start at {settings.idle_min:g}% or more); "
+    return (f"machine: {number(box.cpus)} effective CPUs; CPU {idle} idle (jobs start at {settings.idle_min:g}% or more); "
             f"memory used {used} ({budget_rule}); memory pressure {memory} ({memory_rule}); load {load} ({load_rule})")
+
+
+def duration_p90(row: sqlite3.Row) -> float:
+    """The job's p90 duration, falling back to its p50 or the default for rows from older databases."""
+    if row["pred_duration_p90"] is not None:
+        return row["pred_duration_p90"]
+    return row["pred_duration"] if row["pred_duration"] is not None else DEFAULT_DURATION
+
+
+def head_start_estimate(head_need: float, running: list, box: Machine, now: float) -> float | None:
+    """Estimate when running jobs release enough predicted cores for the head; None when no finite estimate is safe.
+
+    - Complexity: O(R log R) time and O(R) space for R running jobs.
+    """
+    used = sum(cores(item, box) for item in running)
+    if not over(head_need, used, box.budget):
+        return now
+    completions = []
+    for item in running:
+        started = item["started"]
+        end = None if started is None else started + duration_p90(item)
+        # A live job already past its p90 has an unknown finish time, so it cannot support a finite reservation.
+        if end is None or end < now:
+            continue
+        completions.append((end, cores(item, box)))
+    completions.sort()
+    for end, released in completions:
+        used -= released
+        if not over(head_need, used, box.budget):
+            return end
+    return None
 
 
 def backfill(row: sqlite3.Row, ahead: list[sqlite3.Row], running: list[sqlite3.Row], box: Machine,
              now: float) -> tuple[str, str] | None:
-    """Why a job behind the head of the line may not start before it, or None when it may, by the EASY rule in
-    predicted cores: only when the head cannot start for want of cores, never when there is room for it. Run times
-    are predicted too roughly to reserve the head a start time, so its reservation is kept in cores: whatever runs now
-    may end before the head can start, but a job that started while the head waited may still run then. So a job may
-    start past the head when it fits in the free cores now and
-      - it fits in the cores the head leaves free: the head's cores, the cores of the jobs that started while the
-        head waited, and its own, fit the budget together, so it can never delay the head; or
-      - it is small (at most small_weight predicted cores) and no validity job is ahead of it: it may delay the head,
-        but only until the head has waited backfill_wait.
-    Once the head has waited backfill_wait, nothing starts before it, so no job starves. O(R + A) for R running and
+    """Whether a job behind the head may start without delaying its predicted start, or under the bounded small-job
+    exception. The head's earliest start is estimated from running jobs' p90 completion times. Jobs already backfilled
+    since the head requested capacity remain reserved against it; other running jobs may release cores by the estimate.
+    Once the head has waited backfill_wait, nothing starts before it, so no job starves. O(R log R + A) for R running and
     A waiting jobs ahead."""
     head, settings, need = ahead[0], box.settings, cores(row, box)
     head_need = cores(head, box)
@@ -1715,11 +1841,16 @@ def backfill(row: sqlite3.Row, ahead: list[sqlite3.Row], running: list[sqlite3.R
     spare = box.budget - head_need - since
     if need <= spare + 1e-9:
         return None
+    head_estimate = head_start_estimate(head_need, running, box, now)
+    if head_estimate is not None and now + duration_p90(row) <= head_estimate + 1e-9:
+        return None
     validity = next((item for item in ahead if item["kind"].lower() in order_tasks.VALIDITY_KINDS), None)
     if need <= settings.small_weight + 1e-9 and validity is None:
         return None
+    estimate = (f"the head is estimated to start in {span(max(0.0, head_estimate - now))}"
+                if head_estimate is not None else "the head has no finite start estimate")
     reason = (f"job {head['id']} is ahead of it and needs {number(head_need)} of the {number(box.budget)} cores, "
-              f"which leaves {number(max(0.0, spare))} for jobs behind it; this job needs {number(need)}")
+              f"which leaves {number(max(0.0, spare))} for jobs behind it; this job needs {number(need)}; {estimate}")
     if validity is not None and need <= settings.small_weight + 1e-9:
         reason += f", and job {validity['id']}, validity work, keeps its place"
     return "ahead", reason
@@ -1758,7 +1889,7 @@ def quiet_blocker(conn: sqlite3.Connection, row, running: list, quiet: list, box
                          f"one quiet window at a time")
     end = drain_start(conn, row) + settings.quiet_drain
     if now >= end:
-        return pressure(box)
+        return memory_reservation(row, running, box) or pressure(box)
     busy = [item["id"] for item in running if heavy(item, box)]
     if busy:
         return "quiet", (f"it drains: {'job' if len(busy) == 1 else 'jobs'} {enumerate_ids(busy)}, predicted above "
@@ -1832,8 +1963,9 @@ class Supervisor:
             # made once, from the history known now.
             guess = predict(conn, row, row["weight"])
             conn.execute("UPDATE tasks SET requested = ?, pred_cores = ?, pred_rss = ?, pred_duration = ?, "
-                         "pred_from = ? WHERE id = ?", (time.time(), guess.cores, guess.rss_kib, guess.duration,
-                                                        guess.basis, self.task_id))
+                         "pred_duration_p90 = ?, pred_rss_p90 = ?, pred_from = ? WHERE id = ?",
+                         (time.time(), guess.cores, guess.rss_kib, guess.duration, guess.duration_p90,
+                          guess.rss_p90_kib, guess.basis, self.task_id))
         row = self.wait_for_capacity(conn)
         return 0 if row is None else self.execute(conn, row)
 
@@ -1924,9 +2056,11 @@ class Supervisor:
         """The running jobs in the order they started, and the waiting jobs whose supervisor lives, with this one, in
         the order they asked."""
         running = estimated(conn, conn.execute(
-            "SELECT id, weight, pred_cores, cpu, started, quiet_until, sig_full, sig_head, sig_prog, sig_tool "
+            "SELECT id, weight, pred_cores, pred_rss_p90, pred_duration, pred_duration_p90, cpu, rss, started, quiet_until, "
+            "sig_full, sig_head, sig_prog, sig_tool "
             "FROM tasks WHERE state = 'running' ORDER BY started, seq").fetchall())
-        waiting = conn.execute("SELECT id, kind, requested, seq, owner, weight, pred_cores, pred_duration "
+        waiting = conn.execute("SELECT id, kind, requested, seq, owner, weight, pred_cores, pred_duration, "
+                               "pred_duration_p90, pred_rss_p90 "
                                "FROM tasks WHERE state = 'claimed' AND requested IS NOT NULL "
                                "ORDER BY requested, seq").fetchall()
         return running, [item for item in waiting if item["id"] == row["id"] or exists(item["owner"])]
@@ -2966,7 +3100,7 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
               "aging": settings.aging, "job_qos": settings.job_qos, "quiet_drain": settings.quiet_drain,
               "quiet_max": settings.quiet_max})
         return 0
-    budget_default = " (the default: the CPU count)" if settings.cpu_budget is None else ""
+    budget_default = " (the default: the effective CPU capacity)" if settings.cpu_budget is None else ""
     capacity = "off (the default): no cap on declared weights" if box.capacity is None else \
         f"{box.capacity:g} cores; the running jobs' declared weights fit it"
     memory_rule = "not a gate" if settings.memory_limit == "off" else f"jobs start below {settings.memory_limit}"
@@ -2985,7 +3119,7 @@ def cmd_settings(ctx: Context, args: argparse.Namespace, command: list[str] | No
           f"idle min: {settings.idle_min:g}%; jobs start while the CPU is at least this idle\n"
           f"memory limit: {settings.memory_limit}; {memory_rule} memory pressure\n"
           f"load factor: {settings.load_factor:g}; on Linux only, jobs start below load {box.load_limit:.2f} on "
-          f"{box.cpus} CPUs\n"
+          f"{number(box.cpus)} effective CPUs\n"
           f"load wait: {span(settings.load_wait)}; a job that the machine's pressure alone holds back longer fails\n"
           f"aging: {settings.aging:g}; waiting jobs go shortest predicted run time first, less this many seconds "
           f"for each second waited\n"
@@ -3207,7 +3341,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = command("settings", cmd_settings, "show or set the capacity and limits that every agent's jobs share",
                   agent=True)
     sub.add_argument("--cpu-budget", type=budget_setting, metavar="CORES",
-                     help="predicted cores that running jobs may take together, or auto for the CPU count")
+                     help="predicted cores that running jobs may take together, or auto for the effective CPU capacity")
     sub.add_argument("--capacity", type=capacity_setting,
                      help="a cap on the declared cores that running jobs may take together, or off (the default)")
     sub.add_argument("--idle-min", type=percent, metavar="PERCENT",
