@@ -491,7 +491,7 @@ When you find a regression, find its type first:
 - It breaks the correctness, the safety, or the data: repair it now, before the work lands.
 - It changes only the performance, or the work misses a performance target: let the work land, and add the regression to the end of the queue, with its measurement and where you found it.
 Tell the user each item that you add to the queue.
-To order a list of tasks, run `scripts/order_tasks.py` from the `planner` skill. It applies this order, respects the dependencies between tasks, and can plan the work of several agents.
+To order a list of tasks, run `work order --task …` or `work order --tasks FILE` (`scripts/work.py` from the `planner` skill; it needs no database for these). It applies this order, respects the dependencies between tasks, and `work plan --agents K` plans the work of several agents.
 When other agents work on the same machine, share the queue with `scripts/work.py` from the `planner` skill: `work add` queues a task, and `work next` gives you the next task that no other agent holds.
 Run a queued command only after you read it with `work show` and accept it with `work accept`, with the digest that `work show` prints.
 Do this also for a command queued under your own name. Another agent can use your name.

@@ -20,7 +20,7 @@ You are an adaptive planning, routing, and execution agent. You assess the user'
 §DISCOVER run discover-skills.sh BEFORE routing ⇒ ¬assume-catalog
 §ATOMIC   ∀task ! atomic ∧ independently-verifiable
 §EVIDENCE project-mode claim ⇒ ! citation ∨ ⚑unsupported
-§ORDER    validity ≻ rest · FIFO ∀tier · perf-regression ⇒ queue ¬block ⇒ scripts/order_tasks.py
+§ORDER    validity ≻ rest · FIFO ∀tier · perf-regression ⇒ queue ¬block ⇒ work order|plan (scripts/work.py)
           shared-machine ⇒ scripts/work.py · queued command ⇒ show ∧ accept --digest BEFORE run
 §WAIT     ¬fixed-sleep ⇒ harness-notify | work run|wait (scripts/work.py)
 §LANES    building-agents ≤ cores ÷ build-cores · worktree ∷ per-area ∧ long-lived ¬per-task ·
@@ -329,24 +329,27 @@ new items go to its end; take the oldest first. Two classes jump or leave the li
 - **A regression or missed target that costs only performance:** the work lands, and the regression joins the end of
   the queue with its measurement and origin. It does not block the work.
 
-`scripts/order_tasks.py` applies this order to a task list, validity first, then arrival, and respects `after`
-dependencies. A prerequisite inherits the urgency of the task waiting on it, so an urgent fix never waits behind
-its own prerequisite. Tasks come as JSON (`--tasks FILE` or `-`) or as `--task id=…,kind=…,after=a+b,files=src/x`.
+`work order` and `work plan` (`scripts/work.py`) apply this order to a task list, validity first, then arrival, and
+respect `after` dependencies. A prerequisite inherits the urgency of the task waiting on it, so an urgent fix never
+waits behind its own prerequisite. Without a list they order the shared queue below; given a list, as JSON
+(`--tasks FILE` or `-`) or as `--task id=…,kind=…,after=a+b,files=src/x` (both repeatable), they order exactly those
+tasks and touch no database. `--json` prints JSON.
 
 | Question | Command | Method |
 |---|---|---|
-| In what order does one agent work? | `order_tasks.py --tasks queue.json` | Priority topological sort (Kahn) |
+| In what order does one agent work? | `work order --tasks queue.json` | Priority topological sort (Kahn) |
 | Value per effort within a tier? | `--policy wsjf` (fields `value`, `size`) | Smith's rule |
-| Shortest finish for K agents? | `--agents K --policy critical-path` | Graham's list scheduling, HLFET priorities; tasks whose `files` overlap never run together |
-| What does each agent take next? | `--assign --agents K` | Congestion game; best-response dynamics reach a pure Nash equilibrium |
+| Shortest finish for K agents? | `work plan --agents K --policy critical-path --tasks queue.json` | Graham's list scheduling, HLFET priorities; tasks whose `files` overlap never run together |
+| What does each agent take next? | `work plan --assign --agents K --tasks queue.json` (not for the shared queue: `work next` claims there) | Congestion game; best-response dynamics reach a pure Nash equilibrium |
 
-It exits with 2 and names the problem for an unknown or duplicate id, a cycle (with its path), or a bad number. Its
-tests: `python3 -m unittest discover -s scripts/tests`.
+It exits with 2 and names the problem for an unknown or duplicate id, a cycle (with its path), or a bad number.
+`--conflict-cost C` with `--assign` sets the penalty for two agents on tasks that change the same files. The tests:
+`python3 -m unittest discover -s scripts/tests`.
 
 **Agents that share a machine share one queue.** `scripts/work.py` (`work` below) keeps, in one SQLite database
 (`$AGENT_WORK_HOME`, a private directory, default `~/.local/state/agent-work`), what each scope works on, the queued
 tasks and commands, who holds which task and which files, and the CPU and memory of each running job; it orders the
-queue with `order_tasks.py`. Name yourself with `WORK_AGENT`, and point `WORK_SCOPE` at the scope you share with the other
+queue with the same rules. Name yourself with `WORK_AGENT`, and point `WORK_SCOPE` at the scope you share with the other
 agents, a project or a conversation. `--scope S` means S and every scope under it; `--scope ''` means every scope.
 Neither is needed: without `WORK_AGENT` your name is `agent-<parent pid>`, the shell that runs `work`, which
 changes with each new shell, so set `WORK_AGENT` to claim a task in one call and run or close it in another.

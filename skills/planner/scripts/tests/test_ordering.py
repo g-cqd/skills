@@ -1,4 +1,6 @@
-"""Tests for scripts/order_tasks.py. Run: python3 -m unittest discover -s scripts/tests"""
+"""Tests for the ordering in scripts/work.py: the order, the schedule and the assignment, and `work order` and
+`work plan` on tasks given with --tasks and --task, which use no database. Run: python3 -m unittest discover -s
+scripts/tests"""
 
 import io
 import json
@@ -6,14 +8,16 @@ import os
 import random
 import subprocess
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, SCRIPTS)
 
-import order_tasks as ot  # noqa: E402
+import work as ot  # noqa: E402
 
-SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "order_tasks.py")
+SCRIPT = os.path.join(SCRIPTS, "work.py")
 
 
 def graph(*specs):
@@ -30,7 +34,8 @@ def random_graph(rng, count, with_files):
         if prerequisites:
             fields.append("after=" + "+".join(prerequisites))
         if with_files:
-            fields.append("files=" + "+".join(rng.sample(["src/a", "src/b", "src/c", "src/a/x", "docs"], rng.randint(1, 2))))
+            paths = rng.sample(["src/a", "src/b", "src/c", "src/a/x", "docs"], rng.randint(1, 2))
+            fields.append("files=" + "+".join(paths))
         specs.append(",".join(fields))
     rng.shuffle(specs)
     return graph(*specs)
@@ -45,7 +50,8 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(ot.order(graph("id=second", "id=first")), ["second", "first"])
 
     def test_validity_goes_before_older_work(self):
-        tasks = graph("id=perf,kind=performance", "id=docs,kind=docs", "id=crash,kind=crash", "id=wrong,kind=correctness")
+        tasks = graph("id=perf,kind=performance", "id=docs,kind=docs", "id=crash,kind=crash",
+                      "id=wrong,kind=correctness")
         self.assertEqual(ot.order(tasks), ["crash", "wrong", "perf", "docs"])
 
     def test_a_task_comes_after_its_prerequisites(self):
@@ -64,7 +70,8 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(ot.order(tasks), ["early", "late"])
 
     def test_wsjf_puts_value_per_size_first_and_keeps_arrival_on_ties(self):
-        tasks = graph("id=big,size=8,value=8", "id=quick,size=1,value=4", "id=tie,size=8,value=8", "id=low,size=4,value=1")
+        tasks = graph("id=big,size=8,value=8", "id=quick,size=1,value=4", "id=tie,size=8,value=8",
+                      "id=low,size=4,value=1")
         self.assertEqual(ot.order(tasks, "wsjf"), ["quick", "big", "tie", "low"])
 
     def test_wsjf_still_puts_validity_first(self):
@@ -219,47 +226,107 @@ class AssignTests(unittest.TestCase):
 
 
 class CommandLineTests(unittest.TestCase):
-    def run_main(self, *argv, stdin=None):
+    def run_main(self, *argv, stdin=None, environ=None):
         output, errors = io.StringIO(), io.StringIO()
         old_stdin = sys.stdin
         try:
             if stdin is not None:
                 sys.stdin = io.StringIO(stdin)
             with redirect_stdout(output), redirect_stderr(errors):
-                status = ot.main(list(argv))
+                status = ot.main(list(argv), environ)
         finally:
             sys.stdin = old_stdin
         return status, output.getvalue(), errors.getvalue()
 
     def test_task_arguments_give_a_numbered_order(self):
-        status, output, _ = self.run_main("--task", "id=perf,kind=performance", "--task", "id=crash,kind=validity")
+        status, output, _ = self.run_main("order", "--task", "id=perf,kind=performance",
+                                          "--task", "id=crash,kind=validity")
         self.assertEqual(status, 0)
         self.assertEqual(output.splitlines(), ["1. crash (validity)", "2. perf (performance)"])
 
     def test_json_from_stdin_gives_json(self):
         document = json.dumps({"tasks": [{"id": "b", "after": ["a"]}, {"id": "a"}]})
-        status, output, _ = self.run_main("--tasks", "-", "--format", "json", stdin=document)
+        status, output, _ = self.run_main("order", "--tasks", "-", "--json", stdin=document)
         self.assertEqual(status, 0)
         self.assertEqual([row["id"] for row in json.loads(output)["order"]], ["a", "b"])
 
+    def test_json_files_and_task_arguments_combine_in_the_order_given(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for name, tasks in (("one.json", [{"id": "a"}]), ("two.json", {"tasks": [{"id": "b"}]})):
+                paths.append(os.path.join(directory, name))
+                with open(paths[-1], "w", encoding="utf-8") as handle:
+                    json.dump(tasks, handle)
+            status, output, _ = self.run_main("order", "--tasks", paths[0], "--tasks", paths[1], "--task", "id=c")
+        self.assertEqual(status, 0)
+        self.assertEqual(output.splitlines(), ["1. a (other)", "2. b (other)", "3. c (other)"])
+
     def test_agents_and_assign_render(self):
         tasks = ["--task", "id=a,size=2", "--task", "id=b", "--task", "id=c,after=a"]
-        status, output, _ = self.run_main(*tasks, "--agents", "2")
+        status, output, _ = self.run_main("plan", *tasks, "--agents", "2")
         self.assertEqual(status, 0)
         self.assertIn("makespan 3", output)
-        status, output, _ = self.run_main(*tasks, "--agents", "2", "--assign")
+        status, output, _ = self.run_main("plan", *tasks, "--agents", "2", "--assign")
         self.assertEqual(status, 0)
         self.assertIn("Nash equilibrium", output)
+        status, output, _ = self.run_main("plan", *tasks, "--agents", "2", "--assign", "--conflict-cost", "0.5",
+                                          "--json")
+        self.assertEqual(status, 0)
+        self.assertTrue(json.loads(output)["equilibrium"])
 
     def test_input_errors_exit_with_2(self):
-        status, _, errors = self.run_main("--task", "id=a,after=missing")
+        status, _, errors = self.run_main("order", "--task", "id=a,after=missing")
         self.assertEqual(status, 2)
-        self.assertIn("unknown task", errors)
-        self.assertEqual(self.run_main()[0], 2)
+        self.assertEqual(errors.strip(), "work: task 'a' is after unknown task 'missing'")
+        for argv, stdin, message in (
+            (("order", "--tasks", "-"), "[]", "no tasks"),
+            (("order", "--tasks", "-"), "[1]", "must be an object"),
+            (("order", "--tasks", "-"), "{", "Expecting"),
+            (("order", "--tasks", "-", "--tasks", "-"), "[]", "once"),
+            (("order", "--tasks", "/nonexistent/tasks.json"), None, "No such file"),
+            (("order", "--task", "nonsense"), None, "not key=value"),
+            (("order", "--task", "id=a", "--scope", "proj"), None, "--scope"),
+            (("plan", "--agents", "2", "--task", "id=a", "--conflict-cost", "1"), None, "needs --assign"),
+        ):
+            with self.subTest(argv=argv):
+                status, output, errors = self.run_main(*argv, stdin=stdin)
+                self.assertEqual((status, output), (2, ""))
+                self.assertTrue(errors.startswith("work: ") and message in errors, errors)
+
+    def test_given_tasks_use_no_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = os.path.join(directory, "absent", "agent-work")
+            environ = {"AGENT_WORK_HOME": home, "WORK_SCOPE": "no-such-scope"}
+            runs = (("order", "--task", "id=a"), ("plan", "--agents", "2", "--task", "id=a", "--task", "id=b"),
+                    ("plan", "--agents", "2", "--assign", "--task", "id=a"), ("order", "--task", "id=a,after=a"))
+            for argv in runs:
+                with self.subTest(argv=argv):
+                    self.run_main(*argv, environ=environ)
+                    self.assertFalse(os.path.lexists(os.path.dirname(home)))
+            result = subprocess.run([sys.executable, SCRIPT, "order", "--task", "id=a"], capture_output=True, text=True,
+                                    timeout=30, env={**os.environ, "AGENT_WORK_HOME": home})
+            self.assertEqual((result.returncode, result.stdout), (0, "1. a (other)\n"), result.stderr)
+            self.assertFalse(os.path.lexists(os.path.dirname(home)))
+
+    def test_the_queue_refuses_assign(self):
+        with tempfile.TemporaryDirectory() as directory:
+            environ = {"AGENT_WORK_HOME": os.path.join(directory, "home")}
+            for extra in (["--assign"], ["--conflict-cost", "1"]):
+                with self.subTest(extra=extra):
+                    status, _, errors = self.run_main("plan", "--agents", "2", *extra, environ=environ)
+                    self.assertEqual(status, 2)
+                    self.assertIn("need --tasks or --task", errors)
+
+    def test_control_characters_in_a_title_are_escaped(self):
+        document = json.dumps([{"id": "a", "title": "x\x1b[2Jy"}])
+        status, output, _ = self.run_main("order", "--tasks", "-", stdin=document)
+        self.assertEqual(status, 0)
+        self.assertNotIn("\x1b", output)
+        self.assertIn("x\\x1b[2Jy", output)
 
     def test_the_script_runs_as_a_program(self):
         result = subprocess.run(
-            [sys.executable, SCRIPT, "--task", "id=x"], capture_output=True, text=True, timeout=30)
+            [sys.executable, SCRIPT, "order", "--task", "id=x"], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "1. x (other)")
 
