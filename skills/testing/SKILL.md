@@ -279,6 +279,9 @@ struct UserServiceTests {
 
 Migrate **one class at a time**; a file may contain both frameworks during the transition.
 
+Not everything migrates: UI tests (`XCUIAutomation`) must stay XCTest, and so must a test method
+that uses `measure { }`; other methods in that same `XCTestCase` can still move.
+
 **Imports** — `import XCTest` → `import Testing`. XCTest re-exports Foundation, so if the file
 uses `URL`, `Data`, `CharacterSet`, `ProcessInfo`, add `import Foundation` explicitly.
 
@@ -339,7 +342,8 @@ state.
 - Convert loops over inputs and near-duplicate tests into `@Test(arguments:)`.
 - Convert multi-word camelCase `@Test` names to sentence-case raw identifiers.
 - Do not use underscore-prefixed API such as `#_sourceLocation`; use the full
-  `SourceLocation(fileID:filePath:line:column:)`.
+  `SourceLocation(fileID:filePath:line:column:)`. Leave an existing `#_sourceLocation` in place.
+- Split the work across agents when the modernization is large.
 
 Do **not** apply migration when the user is writing new tests from scratch, asking only about
 XCTest features, running tests or reading results, adding coverage for new functionality, or

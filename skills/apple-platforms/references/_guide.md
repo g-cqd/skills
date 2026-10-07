@@ -29,7 +29,9 @@ WWDC 2025 APIs for iOS 26/macOS 26. Always gate new APIs with `#available` and p
 - Overview → `swiftui-features.md`
 
 ### Framework Updates
-- AppIntents → `AppIntents-Updates.md`
+- AppIntents overview (WWDC 2025) → `AppIntents-Updates.md`
+- App Intents best practices and traps → `app-intents/` (routing table in `SKILL.md` §2.1)
+- App Intents iOS 26 and 27 APIs → `app-intents-27/` (same table)
 - StoreKit → `StoreKit-Updates.md`
 - SwiftData inheritance → `SwiftData-Class-Inheritance.md`
 - MapKit GeoToolbox → `MapKit-GeoToolbox-PlaceDescriptors.md`

@@ -285,6 +285,21 @@ Two approaches:
   Clients adopting the flag benefit at no runtime cost to you. Not applicable if there are no
   headers.
 
+Ask the user which approach they want before advising, and read
+`references/c-bounds-safety/adoption-strategies.md`, `language-overview.md` and
+`common-patterns-and-pitfalls.md` before any source edit. Adoption commits at several review
+checkpoints, so it has two prerequisites:
+
+- **A clean working tree under version control.** Detect the VCS (the innermost one if several)
+  without asking and record its status, diff, stage-by-path, commit and discard-file commands; use
+  those throughout rather than assuming git. With no VCS, or a dirty tree, stop and ask the user
+  to fix that and retry; pre-existing changes would be bundled into adoption commits.
+- **Under Xcode, one build system as the source of truth:** the shallowest `.xcworkspace`
+  (preferred) or `.xcodeproj` in the tracked tree, asking when several tie. SwiftPM cannot attach
+  per-file C flags, so it is not a valid source of truth; any other system (a Makefile, say) must
+  support per-file flags, and you record its mechanism. A generated project (xcodegen, Tuist, a
+  generator script) silently loses per-file flags on regeneration, so warn before starting.
+
 Full adoption is an iterative loop, per file: enable, compile, read diagnostics, annotate, repeat.
 The four change kinds:
 
