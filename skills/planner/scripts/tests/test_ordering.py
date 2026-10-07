@@ -108,6 +108,15 @@ class InputErrorTests(unittest.TestCase):
         with self.assertRaises(ot.InputError):
             graph("id=a,queued=1", "id=b,queued=2026-09-24")
 
+    def test_whole_and_fractional_arrivals_are_all_numbers(self):
+        tasks = ot.load_tasks([[{"id": "a", "queued": 2}, {"id": "b", "queued": 1.5}]], [])
+        self.assertEqual(ot.order(ot.Graph(tasks)), ["b", "a"])
+
+    def test_an_arrival_must_be_a_number_or_a_time(self):
+        for queued in ({"at": 1}, [1], True):
+            with self.subTest(queued=queued), self.assertRaises(ot.InputError):
+                ot.load_tasks([[{"id": "a", "queued": queued}]], [])
+
     def test_a_title_may_hold_commas(self):
         task = ot.load_tasks([], ["id=a,title=Fix the parser, then the lexer,kind=validity"])[0]
         self.assertEqual(task.title, "Fix the parser, then the lexer")
@@ -250,6 +259,15 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual([row["id"] for row in json.loads(output)["order"]], ["a", "b"])
 
+    def test_a_file_that_is_not_utf_8_is_an_input_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "tasks.json")
+            with open(path, "wb") as handle:
+                handle.write(b'[{"id": "\xff"}]')
+            status, _, errors = self.run_main("order", "--tasks", path)
+        self.assertEqual(status, 2)
+        self.assertTrue(errors.startswith("work: "), errors)
+
     def test_json_files_and_task_arguments_combine_in_the_order_given(self):
         with tempfile.TemporaryDirectory() as directory:
             paths = []
@@ -326,7 +344,7 @@ class CommandLineTests(unittest.TestCase):
 
     def test_the_script_runs_as_a_program(self):
         result = subprocess.run(
-            [sys.executable, SCRIPT, "order", "--task", "id=x"], capture_output=True, text=True, timeout=30)
+            [sys.executable, "-I", SCRIPT, "order", "--task", "id=x"], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "1. x (other)")
 

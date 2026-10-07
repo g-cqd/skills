@@ -830,7 +830,8 @@ class MachineGateTests(WorkTestCase):
         box.memory_budget = 1_048_576
         box.signals = work.Signals(90.0, "normal", None, False, 838_861)
         candidate = {"weight": 1, "pred_cores": 1, "pred_rss_p90": 262_144}
-        running = [{"weight": 1, "pred_cores": 1, "rss": 100, "pred_rss_p90": 100}]
+        running = [{"weight": 1, "pred_cores": 1, "rss": 100, "pred_rss_p90": 100, "pred_duration_p90": 60,
+                    "started": time.time()}]
         self.assertEqual(work.admission(candidate, running, box),
                          ("reserved", "used memory, the running jobs' predicted growth and this job's predicted peak "
                                       "come to 1.1 GiB, above the memory budget of 1.0 GiB"))
@@ -839,11 +840,34 @@ class MachineGateTests(WorkTestCase):
     def test_a_memory_reservation_is_not_machine_pressure(self):
         self.assertNotIn("reserved", work.MACHINE_CAUSES, "it ends as the other jobs end: no load-wait failure")
 
+    def test_a_running_job_grows_only_until_its_p90_run_time_passes(self):
+        box = self.box()
+        box.memory_budget = 1_000_000
+        box.signals = work.Signals(90.0, "normal", None, False, 500_000)
+        now = time.time()
+        server = {"weight": 1, "pred_cores": 1, "rss": 100_000, "pred_rss_p90": 900_000, "pred_duration_p90": 60,
+                  "started": now - 30}
+        candidate = {"weight": 1, "pred_cores": 1, "pred_rss_p90": 100_000}
+        self.assertEqual(work.admission(candidate, [server], box, now)[0], "reserved")
+        self.assertIsNone(work.admission(candidate, [server], box, now + 31),
+                          "past its p90 run time, a long-lived job no longer holds the line for its predicted peak")
+        unknown = dict(server, pred_duration_p90=None)
+        self.assertIsNone(work.admission(candidate, [unknown], box, now), "no history, no growth")
+
+    def test_used_memory_above_the_budget_is_pressure_not_a_reservation(self):
+        box = self.box()
+        box.memory_budget = 1_000_000
+        box.signals = work.Signals(90.0, "normal", None, False, 1_100_000)
+        running = [{"weight": 1, "pred_cores": 1, "rss": 0, "pred_rss_p90": None}]
+        self.assertEqual(work.admission({"weight": 1, "pred_cores": 1, "pred_rss_p90": 1}, running, box)[0],
+                         "memory", "the machine's own pressure, which fails a job after the load wait")
+
     def test_admission_reserves_only_running_jobs_predicted_memory_growth(self):
         box = self.box()
         box.memory_budget = 1_100_000
         box.signals = work.Signals(90.0, "normal", None, False, 800_000)
-        running = [{"weight": 1, "pred_cores": 1, "rss": 200_000, "pred_rss_p90": 400_000}]
+        running = [{"weight": 1, "pred_cores": 1, "rss": 200_000, "pred_rss_p90": 400_000, "pred_duration_p90": 60,
+                    "started": time.time()}]
         candidate = {"weight": 1, "pred_cores": 1, "pred_rss_p90": 100_000}
         self.assertIsNone(work.admission(candidate, running, box),
                           "800 used + 200 growth + 100 candidate is exactly the budget")
@@ -873,6 +897,16 @@ class MachineGateTests(WorkTestCase):
             beside = [{"id": "light", "weight": 0.2, "pred_cores": 0.2, "rss": 0, "pred_rss_p90": None,
                        "quiet_until": None, "started": 50}]
             self.assertEqual(work.quiet_blocker(ctx.conn, row, beside, [row], box, 100)[0], "reserved")
+            heavy = [{"id": "heavy", "weight": 1, "pred_cores": 1, "rss": 0, "pred_rss_p90": 300_000,
+                      "pred_duration_p90": 1000, "quiet_until": None, "started": time.time()}]
+            self.call("settings", "--quiet-drain", "600")
+            settings = work.settings_of(ctx.conn)
+            box = work.machine(settings, work.Signals(90.0, "normal", None, False, 800_000))
+            box.memory_budget = 1_000_000
+            row = dict(row, requested=time.time(), pred_rss_p90=0)
+            held = work.quiet_blocker(ctx.conn, row, heavy, [row], box, time.time())
+            self.assertEqual(held[0], "reserved")
+            self.assertNotIn("at the latest", held[1], "past the drain the reservation still holds it")
         finally:
             ctx.close()
 
@@ -1042,8 +1076,8 @@ class BackfillTests(WorkTestCase):
                    {"weight": 1, "pred_cores": 1, "started": now, "pred_duration": None, "pred_duration_p90": 200},
                    {"weight": 1, "pred_cores": 1, "started": None, "pred_duration": None, "pred_duration_p90": None}]
         self.assertEqual(work.head_start_estimate(4, running, box, now), now + 10,
-                         "the job without a start frees its core now, the 2-core job at its p90 end")
-        self.assertEqual(work.head_start_estimate(5, running, box, now), now + 50, "then the median of the next")
+                         "the jobs without a start or a p90 free their cores now, the 2-core job at its p90 end")
+        self.assertEqual(work.head_start_estimate(5, running, box, now), now + 10)
         self.assertEqual(work.head_start_estimate(6, running, box, now), now + 200)
 
     def test_a_small_job_backfills_past_a_blocked_large_head(self):
@@ -1147,6 +1181,7 @@ class BackfillTests(WorkTestCase):
         self.database("UPDATE tasks SET quiet_until = ? WHERE id = 'timing'", time.time() - 1)
         self.assertIsNone(self.why("heavy"), "after the quiet max, the exclusive job runs on as an ordinary one")
 
+    @unittest.skipIf(work.cpu_capacity() < 2, "no job is exclusive under 2 CPUs")
     def test_a_second_exclusive_job_waits_for_the_first_window_to_close_then_drains(self):
         self.call("settings", "--cpu-budget", "8", "--quiet-drain", "60")
         self.exclusive("first", "running", since=50, predicted=1.0)
@@ -1163,6 +1198,7 @@ class BackfillTests(WorkTestCase):
         self.database("UPDATE tasks SET requested = ? WHERE id = 'second'", time.time() - 100)
         self.assertIsNone(self.why("second"), "once the drain has passed, it starts")
 
+    @unittest.skipIf(work.cpu_capacity() < 2, "no job is exclusive under 2 CPUs")
     def test_a_second_exclusive_job_waits_behind_the_first_in_line(self):
         self.call("settings", "--cpu-budget", "8", "--quiet-drain", "60")
         self.job("heavy", 4, "running", since=100, command=("make", "heavy"))
@@ -1202,6 +1238,7 @@ class BackfillTests(WorkTestCase):
         self.tiny("first", 0.3, since=500)
         self.assertIsNone(self.why("head"), "a tiny job waiting longer is not ahead of it")
 
+    @unittest.skipIf(work.cpu_capacity() < 2, "no job is exclusive under 2 CPUs")
     def test_a_tiny_job_still_waits_out_a_quiet_window_when_the_small_weight_is_below_it(self):
         self.call("settings", "--cpu-budget", "8", "--small-weight", "0.1")
         self.job("timing", work.cpu_capacity(), "running", since=10, command=("bench", "timing"))
@@ -1348,19 +1385,21 @@ class PredictionTests(WorkTestCase):
         self.addCleanup(ctx.close)
         self.assertEqual(work.predict(ctx.conn, work.signatures(["swift", "build"], elsewhere), 8).level, "tool")
 
+    @unittest.skipIf(work.cpu_capacity() < 2, "no job is exclusive under 2 CPUs")
     def test_an_exclusive_job_without_history_counts_the_typical_exclusive_use(self):
         cpus = work.cpu_capacity()
         guess = self.predict(["bench", "new"], weight=cpus)
         self.assertEqual((guess.cores, guess.level), (min(1.0, cpus), "exclusive"),
                          "one core while fewer than 3 exclusive jobs have run")
         self.assertEqual(guess.basis, "typical exclusive use; no history")
-        self.ran(["make", "wide"], 6.0, 60, weight=min(6, cpus))  # Not exclusive: it does not count.
+        self.ran(["make", "wide"], 6.0, 60, weight=cpus - 1)  # Not exclusive: it does not count.
         for index, cores in enumerate((0.5, 1.2, 0.8)):
             self.ran(["bench", f"one-off-{index}"], cores, 30, weight=cpus)
         self.assertAlmostEqual(self.predict(["bench", "new"], weight=cpus).cores, 0.8,
                                msg="the median of the last exclusive jobs, whatever their signature")
         self.assertEqual(self.predict(["make", "new"], weight=1).level, "none", "an ordinary job keeps its weight")
 
+    @unittest.skipIf(work.cpu_capacity() < 2, "no job is exclusive under 2 CPUs")
     def test_the_typical_exclusive_use_reads_the_last_20_and_is_capped_by_the_weight(self):
         cpus = work.cpu_capacity()
         for index in range(3):
