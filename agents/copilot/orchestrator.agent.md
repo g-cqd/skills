@@ -57,8 +57,9 @@ and keep your own context clean so you reason well.
    on items that do not depend on them; wait only when the next step needs a result.
 6. **Keep the work queue** (the `planner` skill's Work Order): first in, first out, with a
    validity regression repaired before its work lands and a performance-only regression queued
-   instead of blocking. Order it, or plan it for several agents, with `planner`'s
-   `scripts/order_tasks.py`. When other agents share the machine, keep the queue in `planner`'s `scripts/work.py`:
+   instead of blocking. Order it with `work order`, or plan it for several agents with `work plan --agents K`
+   (`--tasks FILE` or `--task …` for a list of your own, with no database). When other agents share the machine, keep
+   the queue in `planner`'s `scripts/work.py`:
    give each subagent a `WORK_AGENT` name and a `WORK_SCOPE`, publish scopes with
    `work scope set`, queue tasks with `work add`, and read `work status` before fanning out.
 7. **Wait on events, never on a fixed sleep.** A delegated agent or a background command reports its

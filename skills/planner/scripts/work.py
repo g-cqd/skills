@@ -9,12 +9,16 @@ machine has room for it.
 Rules:
   - Scopes: a project, a conversation or an agent, with an optional parent and the task it works on now. --scope S
     means S and every scope under it; it defaults to $WORK_SCOPE, and --scope '' means every scope.
-  - Order: `order`, `plan` and `next` apply order_tasks.py to the queued tasks: validity first, then first in,
-    first out, dependencies with priority inheritance, and the wsjf and critical-path policies.
+  - Order: `order`, `plan` and `next` apply the rules of the Ordering section to the queued tasks: validity first,
+    then first in, first out, dependencies with priority inheritance, and the wsjf and critical-path policies.
+  - Given tasks: `order` and `plan` with --tasks FILE (JSON, - for stdin) or --task key=value,... (both repeatable)
+    order or plan exactly those tasks, with no database and no state directory, and `plan --assign` gives each of
+    --agents K agents the next task. A task has id (required), title, kind, queued, after (ids joined with +), size,
+    value and files (joined with +). Example: work order --task id=perf,kind=performance --task id=crash,kind=validity
   - Claim: `next` takes, in one transaction, the most urgent task whose prerequisites are done and whose files
-    overlap no claimed or running task's files: an agent's best response in the congestion game of
-    order_tasks.assign, given the tasks the other agents hold. File paths are stored absolute, so tasks in two
-    projects conflict only when they change the same files.
+    overlap no claimed or running task's files: an agent's best response in the congestion game of `plan --assign`,
+    given the tasks the other agents hold. File paths are stored absolute, so tasks in two projects conflict only when
+    they change the same files.
   - Claim, then accept: nothing runs on its own. A queued command runs only when the agent that claimed its task
     has read it (`work show`, which prints its digest) and accepted it (`work accept ID --digest D`), whoever queued
     it: agent names are self-declared, so no name proves who wrote a command. Only a command typed inline with
@@ -89,6 +93,7 @@ from __future__ import annotations
 import argparse
 import errno
 import hashlib
+import heapq
 import json
 import math
 import os
@@ -102,12 +107,10 @@ import sys
 import threading
 import time
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from datetime import datetime
 from pathlib import Path
-
-import order_tasks
 
 SCRIPT = os.path.abspath(__file__)
 FINAL = ("done", "failed", "cancelled")
@@ -651,13 +654,390 @@ def new_id(conn: sqlite3.Connection, prefix: str) -> str:
     return f"{prefix}-{number}"
 
 
+# MARK: - Ordering
+
+# The order of the work, for the queued tasks and for tasks given with --tasks or --task. The rules, and where each
+# comes from:
+#   - Validity first (the work-order rule): a task whose kind is validity, correctness, safety, security, data-loss or
+#     crash comes before every other task; within each tier, tasks keep their arrival order.
+#   - Dependencies: an order is a topological order of the "after" relation (Kahn's algorithm, with a priority queue
+#     so that among ready tasks the most urgent goes first). A cycle is an input error, reported with its path.
+#   - Priority inheritance: a task inherits the priority of the most urgent task waiting on it, so an urgent task never
+#     waits behind its own prerequisite's low priority (the fix for priority inversion in real-time scheduling).
+#   - Policy wsjf: within a tier, the highest value per unit of size first (Smith's rule, which minimizes the weighted
+#     sum of completion times on one worker when there are no dependencies; with dependencies it is the usual
+#     list-scheduling heuristic).
+#   - Policy critical-path: within a tier, the task with the longest chain of work after it first (the HLFET list
+#     heuristic, which shortens the makespan of a parallel schedule).
+#   - `plan --agents K`: Graham's list scheduling on K agents, where no two tasks whose "files" overlap run at the same
+#     time. It reports the makespan against a lower bound, the larger of the total work over K and the critical path.
+#   - `plan --assign`: the next task for each of K agents that choose independently, as a congestion game: an agent's
+#     cost is its task's rank, plus a penalty for each other agent on an overlapping task, and more than idling costs
+#     for each other agent on the same task. Pairwise, symmetric penalties make it an exact potential game
+#     (Rosenthal), so best-response dynamics end in a pure Nash equilibrium: no agent can do better by switching alone.
+#
+# Task fields: id (required, unique); title; kind; queued (arrival: a number or an ISO 8601 time, by default the input
+# order); after (ids that must finish first); size (effort, default 1); value (cost of delay, default 1); files (paths
+# or directories the task changes; tasks whose paths are equal or nest conflict).
+
+VALIDITY_KINDS = frozenset({"validity", "correctness", "safety", "security", "data-loss", "crash"})
+POLICIES = ("fifo", "wsjf", "critical-path")
+
+
+class InputError(Exception):
+    """The tasks cannot be ordered as given."""
+
+
+@dataclass
+class Task:
+    id: str
+    title: str = ""
+    kind: str = "other"
+    queued: float | str | None = None
+    index: int = 0
+    after: list[str] = field(default_factory=list)
+    size: float = 1.0
+    value: float = 1.0
+    files: list[str] = field(default_factory=list)
+
+    @property
+    def tier(self) -> int:
+        return 0 if self.kind.lower() in VALIDITY_KINDS else 1
+
+
+def _positive(raw: object, name: str, task_id: str) -> float:
+    try:
+        number = float(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise InputError(f"task {task_id}: {name} must be a number, not {raw!r}") from None
+    if not number > 0:
+        raise InputError(f"task {task_id}: {name} must be greater than zero")
+    return number
+
+
+def _list(raw: object) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [item for item in raw.split("+") if item]
+    if isinstance(raw, list):
+        return [str(item) for item in raw]
+    raise InputError(f"expected a list, not {raw!r}")
+
+
+def make_task(fields: dict, index: int) -> Task:
+    """A task from its fields; `index` is its position in the input, the default arrival order."""
+    task_id = str(fields.get("id", "")).strip()
+    if not task_id:
+        raise InputError(f"task at position {index + 1} has no id")
+    queued = fields.get("queued")
+    if isinstance(queued, str):
+        try:
+            queued = float(queued)
+        except ValueError:
+            pass
+    return Task(
+        id=task_id,
+        title=str(fields.get("title", "")),
+        kind=str(fields.get("kind", "other")),
+        queued=queued,
+        index=index,
+        after=_list(fields.get("after")),
+        size=_positive(fields.get("size", 1), "size", task_id),
+        value=_positive(fields.get("value", 1), "value", task_id),
+        files=_list(fields.get("files")),
+    )
+
+
+def parse_spec(spec: str) -> dict:
+    """Fields from a --task argument, `key=value` pairs separated by commas; lists use `+`. A title may hold commas,
+    because a comma only separates fields when a `key=` follows it."""
+    fields = {}
+    for part in re.split(r",(?=[A-Za-z_-]+=)", spec):
+        key, separator, value = part.partition("=")
+        if not separator:
+            raise InputError(f"--task {spec!r}: {part!r} is not key=value")
+        fields[key.strip()] = value.strip()
+    return fields
+
+
+def load_tasks(documents: list[object], specs: list[str]) -> list[Task]:
+    raw: list[dict] = []
+    for document in documents:
+        items = document.get("tasks") if isinstance(document, dict) else document
+        if not isinstance(items, list):
+            raise InputError("the JSON must be a list of tasks or an object with a \"tasks\" list")
+        if not all(isinstance(item, dict) for item in items):
+            raise InputError("each task in the JSON must be an object")
+        raw.extend(items)
+    raw.extend(parse_spec(spec) for spec in specs)
+    tasks = [make_task(fields, index) for index, fields in enumerate(raw)]
+    arrivals = {type(task.queued) for task in tasks if task.queued is not None}
+    if len(arrivals) > 1:
+        raise InputError("queued values must be all numbers or all timestamps")
+    return tasks
+
+
+def overlap(first: str, second: str) -> bool:
+    """Whether two paths are the same, or one lies inside the other."""
+    first, second = first.rstrip("/"), second.rstrip("/")
+    return first == second or first.startswith(second + "/") or second.startswith(first + "/")
+
+
+def conflict(first: Task, second: Task) -> bool:
+    """Whether two tasks change the same files, so they must not run at the same time."""
+    return first.id == second.id or any(overlap(a, b) for a in first.files for b in second.files)
+
+
+class Graph:
+    """The tasks and their "after" relation, checked for unknown ids, duplicates and cycles."""
+
+    def __init__(self, tasks: list[Task]):
+        self.tasks = {}
+        for task in tasks:
+            if task.id in self.tasks:
+                raise InputError(f"duplicate task id {task.id!r}")
+            self.tasks[task.id] = task
+        self.dependents: dict[str, list[str]] = {task.id: [] for task in tasks}
+        for task in tasks:
+            for prerequisite in task.after:
+                if prerequisite not in self.tasks:
+                    raise InputError(f"task {task.id!r} is after unknown task {prerequisite!r}")
+                if prerequisite == task.id:
+                    raise InputError(f"task {task.id!r} is after itself")
+                self.dependents[prerequisite].append(task.id)
+        self.topological = self._topological()
+
+    def _topological(self) -> list[str]:
+        indegree = {task_id: len(set(task.after)) for task_id, task in self.tasks.items()}
+        ready = [task_id for task_id, degree in indegree.items() if degree == 0]
+        order = []
+        while ready:
+            task_id = ready.pop()
+            order.append(task_id)
+            for dependent in set(self.dependents[task_id]):
+                indegree[dependent] -= 1
+                if indegree[dependent] == 0:
+                    ready.append(dependent)
+        if len(order) < len(self.tasks):
+            raise InputError("the tasks form a cycle: " + " -> ".join(self._cycle(set(self.tasks) - set(order))))
+        return order
+
+    def _cycle(self, remaining: set[str]) -> list[str]:
+        """A cycle among `remaining`, the tasks Kahn's algorithm could not order, found by following prerequisites."""
+        start = min(remaining)
+        path, seen = [start], {start: 0}
+        while True:
+            following = min(p for p in self.tasks[path[-1]].after if p in remaining)
+            if following in seen:
+                return path[seen[following]:] + [following]
+            seen[following] = len(path)
+            path.append(following)
+
+    def bottom_levels(self) -> dict[str, float]:
+        """Each task's size plus the longest chain of work that waits on it: its critical-path length."""
+        levels: dict[str, float] = {}
+        for task_id in reversed(self.topological):
+            after = [levels[dependent] for dependent in self.dependents[task_id]]
+            levels[task_id] = self.tasks[task_id].size + max(after, default=0.0)
+        return levels
+
+
+def _arrival(task: Task) -> tuple:
+    return (0, task.queued, task.index) if task.queued is not None else (1, task.index, task.index)
+
+
+def priorities(graph: Graph, policy: str) -> tuple[dict[str, tuple], dict[str, str | None]]:
+    """Each task's effective priority, the smaller the sooner, with priority inheritance, and the task it inherited
+    from, if any."""
+    levels = graph.bottom_levels()
+    own = {}
+    for task_id, task in graph.tasks.items():
+        if policy == "fifo":
+            own[task_id] = (task.tier, _arrival(task))
+        elif policy == "wsjf":
+            own[task_id] = (task.tier, -task.value / task.size, _arrival(task))
+        elif policy == "critical-path":
+            own[task_id] = (task.tier, -levels[task_id], _arrival(task))
+        else:
+            raise InputError(f"unknown policy {policy!r}")
+    effective, source = dict(own), {task_id: None for task_id in own}
+    for task_id in reversed(graph.topological):
+        for dependent in graph.dependents[task_id]:
+            if effective[dependent] < effective[task_id]:
+                effective[task_id] = effective[dependent]
+                source[task_id] = source[dependent] or dependent
+    return effective, source
+
+
+def order(graph: Graph, policy: str = "fifo") -> list[str]:
+    """One agent's order: always the most urgent task whose prerequisites are done."""
+    effective, _ = priorities(graph, policy)
+    indegree = {task_id: len(set(task.after)) for task_id, task in graph.tasks.items()}
+    ready = [(effective[task_id], task_id) for task_id, degree in indegree.items() if degree == 0]
+    heapq.heapify(ready)
+    result = []
+    while ready:
+        _, task_id = heapq.heappop(ready)
+        result.append(task_id)
+        for dependent in set(graph.dependents[task_id]):
+            indegree[dependent] -= 1
+            if indegree[dependent] == 0:
+                heapq.heappush(ready, (effective[dependent], dependent))
+    return result
+
+
+def schedule(graph: Graph, agents: int, policy: str = "fifo") -> dict:
+    """Graham's list scheduling on `agents` agents: whenever an agent is free, it takes the most urgent ready task
+    that overlaps no running task's files. Sizes are durations."""
+    if agents < 1:
+        raise InputError("--agents must be at least 1")
+    effective, _ = priorities(graph, policy)
+    indegree = {task_id: len(set(task.after)) for task_id, task in graph.tasks.items()}
+    ready = [(effective[task_id], task_id) for task_id, degree in indegree.items() if degree == 0]
+    heapq.heapify(ready)
+    running: list[tuple[float, int, str]] = []
+    free = list(range(agents))
+    lanes: list[list[dict]] = [[] for _ in range(agents)]
+    now = 0.0
+    while ready or running:
+        waiting = []
+        while free and ready:
+            key, task_id = heapq.heappop(ready)
+            task = graph.tasks[task_id]
+            if any(conflict(task, graph.tasks[other]) for _, _, other in running):
+                waiting.append((key, task_id))
+                continue
+            agent = free.pop(0)
+            heapq.heappush(running, (now + task.size, agent, task_id))
+            lanes[agent].append({"id": task_id, "start": now, "end": now + task.size})
+        for item in waiting:
+            heapq.heappush(ready, item)
+        if not running:
+            break
+        now = running[0][0]
+        while running and running[0][0] == now:
+            _, agent, task_id = heapq.heappop(running)
+            free.append(agent)
+            for dependent in set(graph.dependents[task_id]):
+                indegree[dependent] -= 1
+                if indegree[dependent] == 0:
+                    heapq.heappush(ready, (effective[dependent], dependent))
+        free.sort()
+    total = sum(task.size for task in graph.tasks.values())
+    lower_bound = max(total / agents, max(graph.bottom_levels().values(), default=0.0))
+    makespan = max((lane[-1]["end"] for lane in lanes if lane), default=0.0)
+    return {"agents": agents, "makespan": makespan, "lower_bound": lower_bound, "lanes": lanes}
+
+
+def assign(graph: Graph, agents: int, policy: str = "fifo", conflict_cost: float | None = None) -> dict:
+    """The next task for each of `agents` agents that choose independently: a pure Nash equilibrium of the
+    congestion game described above, reached by best-response dynamics from a greedy start."""
+    if agents < 1:
+        raise InputError("--agents must be at least 1")
+    ranked = [task_id for task_id in order(graph, policy) if not graph.tasks[task_id].after]
+    rank = {task_id: position for position, task_id in enumerate(ranked)}
+    idle = float(len(ranked))
+    # Taking a task another agent took duplicates the work, which never beats idling, whatever the conflict cost.
+    duplicate = float(len(ranked) + 1)
+    penalty = float(len(ranked) + 1) if conflict_cost is None else conflict_cost
+
+    def clash(first: str, second: str) -> float:
+        if first == second:
+            return duplicate
+        return penalty if conflict(graph.tasks[first], graph.tasks[second]) else 0.0
+
+    def cost(choice: str | None, others: list[str | None]) -> float:
+        if choice is None:
+            return idle
+        return rank[choice] + sum(clash(choice, other) for other in others if other is not None)
+
+    choices: list[str | None] = []
+    options = [None, *ranked]
+    for _ in range(agents):
+        choices.append(min(options, key=lambda option: (cost(option, choices), rank.get(option, idle))))
+    changed, rounds = True, 0
+    while changed:
+        changed, rounds = False, rounds + 1
+        for agent in range(agents):
+            others = choices[:agent] + choices[agent + 1:]
+            best = min(options, key=lambda option: (cost(option, others), rank.get(option, idle)))
+            if cost(best, others) < cost(choices[agent], others):
+                choices[agent], changed = best, True
+    interactions = sum(
+        clash(choices[first], choices[second])
+        for first in range(agents)
+        for second in range(first + 1, agents)
+        if choices[first] is not None and choices[second] is not None
+    )
+    potential = sum(idle if choice is None else rank[choice] for choice in choices) + interactions
+    return {
+        "agents": agents,
+        "assignment": [
+            {"agent": agent, "task": choice, "cost": cost(choice, choices[:agent] + choices[agent + 1:])}
+            for agent, choice in enumerate(choices)
+        ],
+        "potential": potential,
+        "rounds": rounds,
+        "equilibrium": True,
+    }
+
+
+def _describe(task: Task, inherited: str | None) -> str:
+    parts = [task.kind]
+    if task.queued is not None:
+        parts.append(f"queued {task.queued}")
+    if inherited:
+        parts.append(f"moved up for {inherited}")
+    title = f" {task.title}" if task.title else ""
+    return f"{task.id}{title} ({', '.join(parts)})"
+
+
+def render(graph: Graph, policy: str = "fifo", agents: int = 1, assignment: bool = False,
+           conflict_cost: float | None = None, as_json: bool = False) -> str:
+    """The graph as text or JSON: the next task for each agent with `assignment`, else a schedule for several
+    `agents`, else one agent's order. Text has its control and invisible characters escaped."""
+    if assignment:
+        result = assign(graph, agents, policy, conflict_cost)
+        if as_json:
+            return json.dumps(result, indent=2)
+        lines = [f"agent {row['agent'] + 1}: {row['task'] or 'idle'}" for row in result["assignment"]]
+        lines.append(f"Nash equilibrium after {result['rounds']} rounds; potential {result['potential']:g}")
+    elif agents > 1:
+        result = schedule(graph, agents, policy)
+        if as_json:
+            return json.dumps(result, indent=2)
+        lines = []
+        for agent, lane in enumerate(result["lanes"]):
+            steps = ", ".join(f"{step['id']} [{step['start']:g}-{step['end']:g}]" for step in lane) or "idle"
+            lines.append(f"agent {agent + 1}: {steps}")
+        lines.append(f"makespan {result['makespan']:g}; lower bound {result['lower_bound']:g}")
+    else:
+        ordered = order(graph, policy)
+        _, source = priorities(graph, policy)
+        if as_json:
+            return json.dumps(
+                {
+                    "policy": policy,
+                    "order": [
+                        {"id": task_id, "tier": graph.tasks[task_id].tier, "moved_up_for": source[task_id]}
+                        for task_id in ordered
+                    ],
+                },
+                indent=2,
+            )
+        lines = [f"{position}. {_describe(graph.tasks[task_id], source[task_id])}"
+                 for position, task_id in enumerate(ordered, start=1)]
+    return "\n".join(printable(line) for line in lines)
+
+
 # MARK: - Tasks
 
 
-def order_task(row: sqlite3.Row, index: int, after: list[str] = ()) -> order_tasks.Task:
-    """The order_tasks view of a row; `index` is its arrival rank and `after` the prerequisites to keep. The title is
-    escaped, since order_tasks.render prints it as it is."""
-    return order_tasks.make_task({
+def order_task(row: sqlite3.Row, index: int, after: list[str] = ()) -> Task:
+    """The ordering view of a row; `index` is its arrival rank and `after` the prerequisites to keep. The title is
+    escaped, since render prints it as it is."""
+    return make_task({
         "id": row["id"], "title": printable(row["title"]), "kind": row["kind"], "after": list(after),
         "size": row["size"], "value": row["value"], "files": json.loads(row["files"]),
     }, index)
@@ -720,7 +1100,7 @@ def task_json(row: sqlite3.Row, now: float | None = None) -> dict:
     rounded = lambda value: None if value is None else round(value, 3)  # noqa: E731
     return {
         "id": row["id"], "title": row["title"], "kind": row["kind"],
-        "tier": order_tasks.Task(row["id"], kind=row["kind"]).tier,
+        "tier": Task(row["id"], kind=row["kind"]).tier,
         "scope": row["scope"], "author": row["author"], "state": row["state"], "agent": row["agent"],
         "accepted_by": row["accepted"], "needs_acceptance": needs_acceptance(row),
         "after": json.loads(row["after"]), "size": row["size"], "value": row["value"],
@@ -742,11 +1122,11 @@ def task_json(row: sqlite3.Row, now: float | None = None) -> dict:
 
 @dataclass
 class Queue:
-    """The queued tasks of a scope: their rows, their order_tasks graph over the queued prerequisites, and for each
+    """The queued tasks of a scope: their rows, their ordering graph over the queued prerequisites, and for each
     task the prerequisites that are not done yet, with their states."""
 
     rows: dict[str, sqlite3.Row]
-    graph: order_tasks.Graph
+    graph: Graph
     waits: dict[str, list[tuple[str, str]]]
 
 
@@ -761,20 +1141,20 @@ def queue(conn: sqlite3.Connection, scope: str | None) -> Queue:
         waits[row["id"]] = [(item, states.get(item, "unknown")) for item in after if states.get(item) != "done"]
         tasks.append(order_task(row, index, [item for item in after if item in queued]))
     try:
-        graph = order_tasks.Graph(tasks)
-    except order_tasks.InputError as error:
+        graph = Graph(tasks)
+    except InputError as error:
         raise refusal(f"the queue cannot be ordered: {error}") from None
     return Queue({row["id"]: row for row in rows}, graph, waits)
 
 
-def holders(conn: sqlite3.Connection) -> list[tuple[order_tasks.Task, sqlite3.Row]]:
+def holders(conn: sqlite3.Connection) -> list[tuple[Task, sqlite3.Row]]:
     """The claimed and running tasks that hold files, which no other task may change until they end."""
     rows = conn.execute("SELECT * FROM tasks WHERE state IN ('claimed', 'running') AND files != '[]'").fetchall()
     return [(order_task(row, index), row) for index, row in enumerate(rows)]
 
 
-def holder_of(task: order_tasks.Task, held: list[tuple[order_tasks.Task, sqlite3.Row]]) -> sqlite3.Row | None:
-    return next((row for other, row in held if order_tasks.conflict(task, other)), None)
+def holder_of(task: Task, held: list[tuple[Task, sqlite3.Row]]) -> sqlite3.Row | None:
+    return next((row for other, row in held if conflict(task, other)), None)
 
 
 def take(conn: sqlite3.Connection, row: sqlite3.Row, agent: str) -> None:
@@ -1849,7 +2229,7 @@ def backfill(row: sqlite3.Row, ahead: list[sqlite3.Row], running: list[sqlite3.R
     head_start = head_start_estimate(head_need, running, box, now)
     if row["pred_duration_p90"] is not None and now + row["pred_duration_p90"] <= head_start + 1e-9:
         return None
-    validity = next((item for item in ahead if item["kind"].lower() in order_tasks.VALIDITY_KINDS), None)
+    validity = next((item for item in ahead if item["kind"].lower() in VALIDITY_KINDS), None)
     if need <= settings.small_weight + 1e-9 and validity is None:
         return None
     reason = (f"job {head['id']} is ahead of it and needs {number(head_need)} of the {number(box.budget)} cores, "
@@ -1862,14 +2242,14 @@ def backfill(row: sqlite3.Row, ahead: list[sqlite3.Row], running: list[sqlite3.R
 
 
 def waiting_order(row, aging: float = 1.0) -> tuple:
-    """A waiting job's place in line: validity first, as in order_tasks' work order, then the shortest predicted run
+    """A waiting job's place in line: validity first, as in the work order, then the shortest predicted run
     time less `aging` times the time waited, then the order in which the jobs asked. Shortest first cuts the total
     wait; aging bounds each job's: a job predicted to run P seconds goes ahead of every job that asks more than P /
     aging seconds after it. The time waited is the same for every job at one moment, so the key is the predicted run
     time plus aging times the request time, and the order changes only when a job asks or leaves. A job without a
     prediction counts as the default run time."""
     duration = row["pred_duration"] if row["pred_duration"] is not None else DEFAULT_DURATION
-    return (0 if row["kind"].lower() in order_tasks.VALIDITY_KINDS else 1, duration + aging * row["requested"],
+    return (0 if row["kind"].lower() in VALIDITY_KINDS else 1, duration + aging * row["requested"],
             row["requested"], row["seq"])
 
 
@@ -2716,11 +3096,11 @@ def cmd_add(ctx: Context, args: argparse.Namespace, command: list[str] | None) -
 def insert_task(conn: sqlite3.Connection, task_id: str, title: str, kind: str, scope: str | None, author: str,
                 after: list[str], size: float, value: float, files: list[str], command: list[str] | None, cwd: str,
                 weight: float, state: str = "queued") -> None:
-    # order_tasks.make_task checks the fields the ordering reads, with the ordering's own rules.
+    # make_task checks the fields the ordering reads, with the ordering's own rules.
     try:
-        order_tasks.make_task({"id": task_id, "kind": kind, "after": after, "size": size, "value": value,
+        make_task({"id": task_id, "kind": kind, "after": after, "size": size, "value": value,
                                "files": files}, 0)
-    except order_tasks.InputError as error:
+    except InputError as error:
         raise WorkError(str(error)) from None
     now = time.time()
     # A job typed inline with `work run -- ...` is claimed and accepted by its author as it is created: the caller
@@ -2755,8 +3135,8 @@ def cmd_order(ctx: Context, args: argparse.Namespace, command: list[str] | None)
     scope = ctx.scope(args.scope)
     with reading(ctx.conn):
         view = queue(ctx.conn, scope)
-    ordered = order_tasks.order(view.graph, args.policy)
-    _, source = order_tasks.priorities(view.graph, args.policy)
+    ordered = order(view.graph, args.policy)
+    _, source = priorities(view.graph, args.policy)
     if args.json:
         emit({"policy": args.policy, "scope": scope, "order": [
             {**task_json(view.rows[task_id]), "position": position, "moved_up_for": source[task_id],
@@ -2772,6 +3152,10 @@ def cmd_order(ctx: Context, args: argparse.Namespace, command: list[str] | None)
 
 
 def cmd_plan(ctx: Context, args: argparse.Namespace, command: list[str] | None) -> int:
+    if args.assign or args.conflict_cost is not None:
+        raise WorkError("--assign and --conflict-cost need --tasks or --task: the queue's tasks are claimed one at a "
+                        "time with `work next`, which takes the prerequisites and the files other agents hold into "
+                        "account")
     scope = ctx.scope(args.scope)
     with reading(ctx.conn):
         view = queue(ctx.conn, scope)
@@ -2784,9 +3168,7 @@ def cmd_plan(ctx: Context, args: argparse.Namespace, command: list[str] | None) 
         else:
             say("nothing is queued" + (f" in scope {scope}" if scope else ""))
         return 0
-    options = argparse.Namespace(assign=False, agents=args.agents, policy=args.policy, conflict_cost=None,
-                                 format="json" if args.json else "text")
-    rendered = order_tasks.render(view.graph, options)
+    rendered = render(view.graph, args.policy, args.agents, as_json=args.json)
     if args.json:
         result = json.loads(rendered)
         result["waits_outside_the_queue"] = {task_id: [{"id": item, "state": state} for item, state in waits]
@@ -2796,6 +3178,33 @@ def cmd_plan(ctx: Context, args: argparse.Namespace, command: list[str] | None) 
     print(rendered)
     for task_id, waits in outside.items():
         print(f"note: {task_id} also waits for " + ", ".join(f"{item} ({state})" for item, state in waits))
+    return 0
+
+
+def cmd_given_tasks(ctx: None, args: argparse.Namespace, command: list[str] | None) -> int:
+    """`order` or `plan` for the tasks given with --tasks and --task, which touches no database and no state directory,
+    so `main` calls it without a Context. The text and the JSON are those of `render`."""
+    if args.scope is not None:
+        raise WorkError("--scope does not apply to tasks given with --tasks or --task")
+    if args.conflict_cost is not None and not args.assign:
+        raise WorkError("--conflict-cost needs --assign")
+    if args.tasks.count("-") > 1:
+        raise WorkError("--tasks - reads the standard input once")
+    try:
+        documents = []
+        for path in args.tasks:
+            if path == "-":
+                documents.append(json.load(sys.stdin))
+            else:
+                with open(path, encoding="utf-8") as handle:
+                    documents.append(json.load(handle))
+        tasks = load_tasks(documents, args.task)
+        if not tasks:
+            raise InputError("no tasks were given")
+        rendered = render(Graph(tasks), args.policy, args.agents, args.assign, args.conflict_cost, args.json)
+    except (InputError, json.JSONDecodeError, OSError) as error:
+        raise WorkError(printable(str(error))) from None
+    print(rendered, flush=True)
     return 0
 
 
@@ -2809,7 +3218,7 @@ def cmd_next(ctx: Context, args: argparse.Namespace, command: list[str] | None) 
         view = queue(conn, scope)
         held = holders(conn)
         chosen = None
-        for task_id in order_tasks.order(view.graph, args.policy):
+        for task_id in order(view.graph, args.policy):
             if view.waits[task_id]:
                 blocked += 1
             elif holder_of(view.graph.tasks[task_id], held) is not None:
@@ -2984,7 +3393,7 @@ def cmd_run(ctx: Context, args: argparse.Namespace, command: list[str] | None) -
                 task_id = check_name(args.id, "task") if args.id else new_id(conn, "job")
                 if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone():
                     raise WorkError(f"task {task_id} exists already")
-                holder = holder_of(order_tasks.make_task({"id": task_id, "files": files}, 0), holders(conn))
+                holder = holder_of(make_task({"id": task_id, "files": files}, 0), holders(conn))
                 if holder is not None:
                     raise refusal(f"job {task_id} changes files that task {holder['id']} holds "
                                   f"({describe_state(holder)})")
@@ -3287,12 +3696,25 @@ def build_parser() -> argparse.ArgumentParser:
     for name, help_text in (("order", "the queued tasks in work order"),
                             ("plan", "a schedule of the queued tasks for several agents")):
         sub = command(name, cmd_order if name == "order" else cmd_plan, help_text, scope=True)
-        sub.add_argument("--policy", choices=order_tasks.POLICIES, default="fifo")
+        sub.add_argument("--policy", choices=POLICIES, default="fifo")
+        sub.add_argument("--tasks", action="append", default=[], metavar="FILE",
+                         help="order only the tasks in this JSON file (a list, or an object with a \"tasks\" list), "
+                              "or - for stdin, with no database; repeatable")
+        sub.add_argument("--task", action="append", default=[], metavar="SPEC",
+                         help="order only this task, key=value pairs separated by commas (id, title, kind, queued, "
+                              "after, size, value, files; lists joined with +), with no database; repeatable")
         if name == "plan":
             sub.add_argument("--agents", type=counting(1), required=True)
+            sub.add_argument("--assign", action="store_true",
+                             help="with --tasks or --task: the next task for each agent, as a Nash equilibrium")
+            sub.add_argument("--conflict-cost", type=duration, metavar="COST",
+                             help="with --assign: the penalty for two agents on tasks that change the same files "
+                                  "(default more than idling costs)")
+        else:
+            sub.set_defaults(agents=1, assign=False, conflict_cost=None)
 
     sub = command("next", cmd_next, "claim the most urgent ready task whose files are free", scope=True, agent=True)
-    sub.add_argument("--policy", choices=order_tasks.POLICIES, default="fifo")
+    sub.add_argument("--policy", choices=POLICIES, default="fifo")
     command("claim", cmd_claim, "claim this task", agent=True).add_argument("id")
     sub = command("accept", cmd_accept, "accept the command of a task you claimed, after reading it with show",
                   agent=True)
@@ -3403,9 +3825,11 @@ def main(argv: list[str] | None = None, environ: dict[str, str] | None = None) -
     if command is not None and arguments.command_name not in ("add", "run"):
         print("work: only add and run take a command after --", file=sys.stderr)
         return 2
-    ctx = Context(env)
+    given = arguments.command_name in ("order", "plan") and bool(arguments.tasks or arguments.task)
+    # Tasks given on the command line are ordered with no state: no Context, so $AGENT_WORK_HOME is never touched.
+    ctx = None if given else Context(env)
     try:
-        return arguments.handler(ctx, arguments, command)
+        return (cmd_given_tasks if given else arguments.handler)(ctx, arguments, command)
     except WorkError as error:
         print(f"work: {error}", file=sys.stderr, flush=True)
         return error.status
@@ -3415,7 +3839,8 @@ def main(argv: list[str] | None = None, environ: dict[str, str] | None = None) -
     except KeyboardInterrupt:
         return 130
     finally:
-        ctx.close()
+        if ctx is not None:
+            ctx.close()
 
 
 if __name__ == "__main__":

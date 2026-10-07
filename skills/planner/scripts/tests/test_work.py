@@ -20,7 +20,6 @@ from collections import Counter, namedtuple
 SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SCRIPTS)
 
-import order_tasks  # noqa: E402
 import work  # noqa: E402
 
 SCRIPT = os.path.join(SCRIPTS, "work.py")
@@ -257,17 +256,17 @@ class ScopeTests(WorkTestCase):
 
 
 class OrderTests(WorkTestCase):
-    def test_add_then_order_follows_the_order_tasks_rules(self):
+    def test_add_then_order_follows_the_ordering_rules(self):
         specs = ["id=old,kind=performance", "id=docs,kind=docs", "id=refactor,kind=structure",
                  "id=fix,kind=validity,after=refactor", "id=crash,kind=crash"]
         for spec in specs:
-            fields = order_tasks.parse_spec(spec)
+            fields = work.parse_spec(spec)
             after = ["--after", fields["after"]] if "after" in fields else []
             added = self.work("add", "--id", fields["id"], "--kind", fields["kind"], *after, agent="a")
             self.assertEqual(added.status, 0)
         status, result = self.json("order")
         order = [row["id"] for row in result["order"]]
-        self.assertEqual(order, order_tasks.order(order_tasks.Graph(order_tasks.load_tasks([], specs))))
+        self.assertEqual(order, work.order(work.Graph(work.load_tasks([], specs))))
         self.assertEqual(order, ["refactor", "fix", "crash", "old", "docs"])
         self.assertEqual({row["id"]: row["moved_up_for"] for row in result["order"]}["refactor"], "fix")
         self.assertEqual(self.work("order").out.splitlines()[0], "1. refactor (structure; moved up for fix)")
