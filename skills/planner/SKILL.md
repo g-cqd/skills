@@ -374,36 +374,40 @@ changes with each new shell, so set `WORK_AGENT` to claim a task in one call and
   agent names are self-declared, and a subagent inherits its parent's. Accept only a command you would run
   yourself. A command typed inline with `work run -- ...` needs no acceptance. Commands are stored as argument
   lists and run without a shell, with stdin closed.
-- **Capacity.** A job's weight (`--weight`, default 1, at most the CPU count) is a cap and a cold-start estimate, not
-  a booking: `work` admits a job on the cores its command used in its recent runs, the median of the last 5 runs of
-  the same command signature, which worktrees of one repository share, capped by the weight. The weight counts whole
-  only until that history exists. So declare the most a job may use: a build with `--jobs N` or a test run on N
-  workers weighs N. A job starts while the running jobs' predicted cores plus its own fit the CPU budget
-  (`--cpu-budget`, default the CPU count), used memory is at or below the memory budget (`--memory-budget`, default
-  the memory minus 2 GiB), the CPU is at least 10% idle (`--idle-min`), and memory pressure is below warning
-  (`--memory-limit`). The load average gates only on Linux (`--load-factor`, default 1.5 per CPU): macOS counts
-  threads waiting on memory and disk in it, so a machine at load 90 can be half idle. `--capacity`, off by default,
-  also caps the declared weights. A tiny job, predicted at half a core or less (a script's unit tests, a git command,
-  a small check), starts whenever the idle and memory gates are open, whatever the budget, and keeps no place in line.
-  Waiting jobs start validity work first, then the shortest predicted run time less the time waited (`--aging`, 1), so
-  short jobs pass long ones and none waits forever, with backfill in predicted cores; once the head of the line has
-  waited `--backfill-wait` (5 min), nothing starts before it. Jobs run at the utility QoS (`--job-qos`), their
-  children too, so the user's own work comes first under contention. Exclusive runs are for a task's final absolute
-  numbers only: at most one per task, holding every figure the report states (`performance-engineering`). In
-  benchmarks, prefer CPU time to wall time where the harness allows, and interleave A and B runs, iterating at weight
-  2 or 3: the machine is never idle. An exclusive job, as heavy as the CPU count, no longer stops the queue: it counts
-  its predicted cores as any job does and runs at the default QoS. Without history of its own, it counts the typical
-  exclusive use, the median of the last 20 exclusive jobs (1 core while fewer than 3 have run), capped by its weight,
-  not its whole weight. While it waits it holds new jobs predicted above the small weight for `--quiet-drain` (60 s)
-  at most, then starts even if such jobs still run; while it runs, no new job predicted above the small weight starts,
-  for `--quiet-max` (3 min) at most, after which it runs on as an ordinary job. Light jobs start throughout, and one
-  quiet window is open at a time. Its log records the load, the idle CPU and the other running jobs as it starts and
-  ends, so its numbers carry their context. A repository-wide quiet check runs once per landing, and only when the
-  change can affect it (Landing), not in each agent's iterations. A job that the machine's pressure alone holds back
-  longer than the load wait (30 min) fails. These values live in the database, so every agent's jobs share them: `work
-  settings`. `work status` shows each job's prediction, the budgets, the signals, and an open quiet window or drain
-  with the time it has left and what it holds; each waiting job's reason names the rule that holds it. The evidence:
-  `references/work-scheduling.md`.
+- **Capacity.** A job's weight (`--weight`, default 1, at most the effective CPU capacity: the tightest of the CPU
+  count, the affinity and a Linux cgroup v2 quota) is a cap and a cold-start estimate, not a booking: `work` admits a
+  job on the cores its command used in its recent runs, the median of the last 5 runs of the same command signature,
+  which worktrees of one repository share, capped by the weight; the same runs give its memory peak and p90 run time.
+  The weight counts whole only until that history exists. So declare the most a job may use: a build with `--jobs N` or
+  a test run on N workers weighs N. A job starts while the running jobs' predicted cores plus its own fit the CPU budget
+  (`--cpu-budget`, default the effective CPU capacity); beside other jobs, the used memory plus their predicted growth
+  to their p90 peaks, until their p90 run times pass, plus its own p90 peak fits the memory budget (the reason says
+  reserved, and it never fails the job); used memory is at or below the memory budget (`--memory-budget`, default the
+  memory minus 2 GiB), the CPU is at least 10% idle (`--idle-min`), and memory pressure is below warning
+  (`--memory-limit`). The load average gates only on Linux (`--load-factor`, default 1.5 per CPU): macOS counts threads
+  waiting on memory and disk in it, so a machine at load 90 can be half idle. `--capacity`, off by default, also caps
+  the declared weights. A tiny job, predicted at half a core or less (a script's unit tests, a git command, a small
+  check), starts whenever the idle and memory gates are open, whatever the budget, and keeps no place in line. Waiting
+  jobs start validity work first, then the shortest predicted run time less the time waited (`--aging`, 1), so short
+  jobs pass long ones and none waits forever, with backfill: a job may pass the head if it fits in the cores the head
+  leaves free, or if its own p90 run time, known from history, ends before the head's earliest start; once the head of
+  the line has waited `--backfill-wait` (5 min), nothing starts before it. Jobs run at the utility QoS (`--job-qos`),
+  their children too, so the user's own work comes first under contention. Exclusive runs are for a task's final
+  absolute numbers only: at most one per task, holding every figure the report states (`performance-engineering`). In
+  benchmarks, prefer CPU time to wall time where the harness allows, and interleave A and B runs, iterating at weight 2
+  or 3: the machine is never idle. An exclusive job, as heavy as the effective CPU capacity when that is 2 or more, no
+  longer stops the queue: it counts its predicted cores as any job does and runs at the default QoS. Without history of
+  its own, it counts the typical exclusive use, the median of the last 20 exclusive jobs (1 core while fewer than 3 have
+  run), capped by its weight, not its whole weight. While it waits it holds new jobs predicted above the small weight
+  for `--quiet-drain` (60 s) at most, then starts even if such jobs still run; while it runs, no new job predicted above
+  the small weight starts, for `--quiet-max` (3 min) at most, after which it runs on as an ordinary job. Light jobs
+  start throughout, and one quiet window is open at a time. Its log records the load, the idle CPU and the other running
+  jobs as it starts and ends, so its numbers carry their context. A repository-wide quiet check runs once per landing,
+  and only when the change can affect it (Landing), not in each agent's iterations. A job that the machine's pressure
+  alone holds back longer than the load wait (30 min) fails. These values live in the database, so every agent's jobs
+  share them: `work settings`. `work status` shows each job's prediction, the budgets, the signals, and an open quiet
+  window or drain with the time it has left and what it holds; each waiting job's reason names the rule that holds it.
+  The evidence: `references/work-scheduling.md`.
 - **Limits.** A job whose log passes the log limit (256 MiB) is stopped. `status` and `run` delete events, and the
   logs of ended tasks, older than 14 days.
 - **Waiting.** `work run` and `work wait` return the moment the job ends, with its own exit status (127 for a

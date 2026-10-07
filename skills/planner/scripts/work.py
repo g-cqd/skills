@@ -23,45 +23,44 @@ Rules:
     has read it (`work show`, which prints its digest) and accepted it (`work accept ID --digest D`), whoever queued
     it: agent names are self-declared, so no name proves who wrote a command. Only a command typed inline with
     `work run -- ...` needs no acceptance. Commands are stored as argument lists and run without a shell.
-  - Capacity: a job declares a weight, the cores it may use (default 1, at most the effective CPU capacity: the
-    tightest of the CPU count, the process's affinity and a Linux cgroup v2 cpu.max quota, and at least 1, so that a
-    job can run alone under a fractional quota), but it is admitted on the cores it is predicted to use, from the
-    history of its command: the median average cores (CPU time over run time) of the last 5 runs of the most specific
-    signature that has enough of them, capped by the declared weight, which is the estimate while there is no
-    history. The same runs give the memory peak and the median and nearest-rank p90 run times (of 5 runs, the p90 is
-    the longest). A signature normalizes the command, with paths reduced to their last component and ids masked, and
-    its directory counts as its repository and the path inside it, so worktrees share history. A job starts only
-    while the running jobs' predicted cores plus its own fit the CPU budget (default the effective CPU capacity), and
-    their declared weights plus its own fit the capacity when one is set (off by default), or when no job runs, or
-    when the job is tiny, predicted at half a core or less, as unit tests of scripts, git commands and small checks
-    are; while, beside other jobs, the used memory plus their predicted growth to their peaks plus its own predicted
-    peak fits the memory budget; and while the machine is not under pressure: the CPU at least idle-min idle (10%,
-    measured over the supervisor's last poll), used memory at or below the memory budget (the memory minus 2 GiB; on
-    macOS the active, wired and compressed pages, on Linux MemTotal minus MemAvailable), memory pressure below the
-    memory limit (warning, from the kernel), and, on Linux only, the load average below the effective CPU capacity
-    times the load factor (1.5). macOS counts threads that wait on memory and disk in its load average, so there it
-    is shown, not used. Tiny jobs keep no place in line. The other jobs that wait for room start in work order:
-    validity first, then the shortest predicted run time (the median of the same runs) less the aging (1) times the
-    time waited, then the order in which they asked, with backfill against the head of the line: a job behind it may
-    start first if it fits now and either it fits in the cores the head leaves free, or its own p90 run time, known
-    from its history, ends before the head's estimated start (when the running jobs' p90 ends free the head's cores; a
-    job past its p90 may end any moment), or it is small (small weight, 1 predicted core) while the head has waited
-    less than the backfill wait (300 s) and no validity job is ahead of it. A head past the backfill wait keeps every
-    job behind it, so none starves. Exclusive jobs, as heavy as the effective CPU capacity when it is 2 or more, are
-    timing measurements, and they no longer drain the machine: one counts its predicted cores as any job does.
-    Without history of its own, it counts the typical exclusive use, the median of the last 20 exclusive jobs (1 core
-    while fewer than 3 have run), capped by its weight, not its whole weight. While it waits it holds new jobs
-    predicted above the small weight, for the quiet drain (60 s) at most, then starts even if such jobs still run;
-    while it runs, no new job predicted above the small weight starts, for the quiet max (180 s) at most, after which
-    it runs on as an ordinary job. Light jobs start throughout, and one quiet window is open at a time: a second
-    exclusive job waits for the first window to close.
-    Its log records, as it starts and as it ends, the load average, the idle CPU and the other running jobs with their
-    predicted cores, so that its timings carry their context. A job that the machine's pressure alone holds back past
-    the load wait fails. `work settings` shows and sets these values, kept in the database so that every agent's jobs
-    are admitted alike: CPU budget, capacity, memory budget, idle min, memory limit, load factor, aging, job QoS,
-    quiet drain, quiet max, backfill wait, small weight, load wait (1800 s), log limit, and how long events and logs
-    are kept; `work status` shows the signals beside them and each job's prediction, and a waiting job's reason names
-    the rule that holds it.
+  - Capacity: a job declares a weight, the cores it may use (default 1, at most the effective CPU capacity: the tightest
+    of the CPU count, the process's affinity and a Linux cgroup v2 cpu.max quota, and at least 1, so that a job can run
+    alone under a fractional quota), but it is admitted on the cores it is predicted to use, from the history of its
+    command: the median average cores (CPU time over run time) of the last 5 runs of the most specific signature that
+    has enough of them, capped by the declared weight, which is the estimate while there is no history. The same runs
+    give the memory peak and the median and nearest-rank p90 run times (of 5 runs, the p90 is the longest). A signature
+    normalizes the command, with paths reduced to their last component and ids masked, and its directory counts as its
+    repository and the path inside it, so worktrees share history. A job starts only while the running jobs' predicted
+    cores plus its own fit the CPU budget (default the effective CPU capacity), and their declared weights plus its own
+    fit the capacity when one is set (off by default), or when no job runs, or when the job is tiny, predicted at half a
+    core or less, as unit tests of scripts, git commands and small checks are; while, beside other jobs, the used memory
+    plus their predicted growth to their p90 peaks (until their p90 run times pass) plus its own p90 peak fits the
+    memory budget; and while the machine is not under pressure: the CPU at least idle-min idle (10%, measured over the
+    supervisor's last poll), used memory at or below the memory budget (the memory minus 2 GiB; on macOS the active,
+    wired and compressed pages, on Linux MemTotal minus MemAvailable), memory pressure below the memory limit (warning,
+    from the kernel), and, on Linux only, the load average below the effective CPU capacity times the load factor (1.5).
+    macOS counts threads that wait on memory and disk in its load average, so there it is shown, not used. Tiny jobs
+    keep no place in line. The other jobs that wait for room start in work order: validity first, then the shortest
+    predicted run time (the median of the same runs) less the aging (1) times the time waited, then the order in which
+    they asked, with backfill against the head of the line: a job behind it may start first if it fits now and either it
+    fits in the cores the head leaves free, or its own p90 run time, known from its history, ends before the head's
+    estimated start (when the running jobs' p90 ends free the head's cores; a job without a p90, or past it, may end any
+    moment), or it is small (small weight, 1 predicted core) while the head has waited less than the backfill wait (300
+    s) and no validity job is ahead of it. A head past the backfill wait keeps every job behind it, so none starves.
+    Exclusive jobs, as heavy as the effective CPU capacity when it is 2 or more, are timing measurements, and they no
+    longer drain the machine: one counts its predicted cores as any job does. Without history of its own, it counts the
+    typical exclusive use, the median of the last 20 exclusive jobs (1 core while fewer than 3 have run), capped by its
+    weight, not its whole weight. While it waits it holds new jobs predicted above the small weight, for the quiet drain
+    (60 s) at most, then starts even if such jobs still run (once the memory reservation lets it); while it runs, no new
+    job predicted above the small weight starts, for the quiet max (180 s) at most, after which it runs on as an
+    ordinary job. Light jobs start throughout, and one quiet window is open at a time: a second exclusive job waits for
+    the first window to close. Its log records, as it starts and as it ends, the load average, the idle CPU and the
+    other running jobs with their predicted cores, so that its timings carry their context. A job that the machine's
+    pressure alone holds back past the load wait fails. `work settings` shows and sets these values, kept in the
+    database so that every agent's jobs are admitted alike: CPU budget, capacity, memory budget, idle min, memory limit,
+    load factor, aging, job QoS, quiet drain, quiet max, backfill wait, small weight, load wait (1800 s), log limit, and
+    how long events and logs are kept; `work status` shows the signals beside them and each job's prediction, and a
+    waiting job's reason names the rule that holds it.
   - Jobs: a detached supervisor starts the command in its own process group with stdin closed, at the job QoS
     (utility, on macOS through taskpolicy -c, which its children inherit, so the user's own work comes first under
     contention; an exclusive job at the default QoS, so its timings are not distorted), writes its output whole to a
@@ -736,6 +735,8 @@ def make_task(fields: dict, index: int) -> Task:
     if not task_id:
         raise InputError(f"task at position {index + 1} has no id")
     queued = fields.get("queued")
+    if queued is not None and (isinstance(queued, bool) or not isinstance(queued, (int, float, str))):
+        raise InputError(f"task {task_id}: queued must be a number or an ISO 8601 time")
     if isinstance(queued, str):
         try:
             queued = float(queued)
@@ -777,7 +778,7 @@ def load_tasks(documents: list[object], specs: list[str]) -> list[Task]:
         raw.extend(items)
     raw.extend(parse_spec(spec) for spec in specs)
     tasks = [make_task(fields, index) for index, fields in enumerate(raw)]
-    arrivals = {type(task.queued) for task in tasks if task.queued is not None}
+    arrivals = {isinstance(task.queued, str) for task in tasks if task.queued is not None}
     if len(arrivals) > 1:
         raise InputError("queued values must be all numbers or all timestamps")
     return tasks
@@ -2128,16 +2129,22 @@ def pressure(box: Machine) -> tuple[str, str] | None:
     return None
 
 
-def memory_reservation(row, running: list, box: Machine) -> tuple[str, str] | None:
+def memory_reservation(row, running: list, box: Machine, now: float | None = None) -> tuple[str, str] | None:
     """Why a job cannot start beside the `running` jobs for memory, as ("reserved", reason), or None: the used memory,
     the running jobs' predicted growth from their sampled memory to their p90 peaks, and this job's p90 peak must fit
-    the memory budget together. Only jobs with history have a p90 peak. A job starts alone whatever its prediction, as
-    `over` lets it; `pressure` still holds it while the used memory itself is above the budget. The hold ends as the
-    other jobs end, so it is not the machine's pressure, which fails a job after the load wait."""
+    the memory budget together. Only jobs with history have p90s, and a running job grows only until its p90 run time
+    has passed: past it, its prediction says nothing more, so a long-lived job cannot hold the line for its whole run.
+    A job starts alone whatever its prediction, as `over` lets it. While the used memory itself is above the budget,
+    `pressure` names that instead. The hold ends as the other jobs end or pass their p90 run times, so it is not the
+    machine's pressure, which fails a job after the load wait."""
     signals = box.signals
-    if not running or box.memory_budget is None or signals is None or signals.memory_used is None:
+    if not running or box.memory_budget is None or signals is None or signals.memory_used is None \
+            or signals.memory_used > box.memory_budget:
         return None
-    growth = sum(max(0, (item["pred_rss_p90"] or 0) - (item["rss"] or 0)) for item in running)
+    now = time.time() if now is None else now
+    growth = sum(max(0, item["pred_rss_p90"] - (item["rss"] or 0)) for item in running
+                 if item["pred_rss_p90"] is not None and item["pred_duration_p90"] is not None
+                 and item["started"] is not None and now < item["started"] + item["pred_duration_p90"])
     projected = signals.memory_used + growth + (row["pred_rss_p90"] or 0)
     if projected > box.memory_budget:
         return "reserved", (f"used memory, the running jobs' predicted growth and this job's predicted peak come to "
@@ -2145,7 +2152,7 @@ def memory_reservation(row, running: list, box: Machine) -> tuple[str, str] | No
     return None
 
 
-def admission(row, running: list, box: Machine) -> tuple[str, str] | None:
+def admission(row, running: list, box: Machine, now: float | None = None) -> tuple[str, str] | None:
     """Why a job cannot start now beside the `running` jobs, as (cause, reason), or None when it can: its predicted
     cores must fit the CPU budget beside theirs, unless it is tiny, its declared weight the capacity, when one is set,
     beside theirs, its predicted memory peak the memory budget beside their predicted growth (`memory_reservation`),
@@ -2157,7 +2164,7 @@ def admission(row, running: list, box: Machine) -> tuple[str, str] | None:
     if box.capacity is not None and over(row["weight"], declared, box.capacity):
         return "capacity", (f"declared weights of {number(declared)} of the capacity of {number(box.capacity)} "
                             f"cores are taken and this job declares {number(row['weight'])}")
-    return memory_reservation(row, running, box) or pressure(box)
+    return memory_reservation(row, running, box, now) or pressure(box)
 
 
 def gib(kib: int) -> str:
@@ -2183,15 +2190,15 @@ def describe_machine(box: Machine) -> str:
 
 def head_start_estimate(head_need: float, running: list, box: Machine, now: float) -> float:
     """The earliest time the head of the line, needing `head_need` cores, can start: when the running jobs, each
-    ending at its start plus its p90 run time, have freed enough cores for it. A job without a p90 counts its median,
-    or the default run time; a job past its end may end any moment, so it frees its cores now. Earliest is the
-    safe side: a job behind the head that ends before it cannot delay it. O(R log R) for R running jobs."""
+    ending at its start plus its p90 run time, have freed enough cores for it. A job without a p90, having no history,
+    or past its end, may end any moment, so it frees its cores now. Earliest is the safe side: a job behind the head
+    that ends before it cannot delay it. O(R log R) for R running jobs."""
     used = sum(cores(item, box) for item in running)
     ends = []
     for item in running:
-        length = next((value for value in (item["pred_duration_p90"], item["pred_duration"]) if value is not None),
-                      DEFAULT_DURATION)
-        ends.append((now if item["started"] is None else max(now, item["started"] + length), cores(item, box)))
+        p90 = item["pred_duration_p90"]
+        ends.append((now if item["started"] is None or p90 is None else max(now, item["started"] + p90),
+                     cores(item, box)))
     if not over(head_need, used, box.budget):
         return now
     ends.sort()
@@ -2223,7 +2230,9 @@ def backfill(row: sqlite3.Row, ahead: list[sqlite3.Row], running: list[sqlite3.R
                          f"{span(settings.backfill_wait)}, so no job starts before it")
     used = sum(cores(item, box) for item in running)
     if not over(head_need, used, box.budget):
-        return "ahead", f"job {head['id']} is ahead of it, and there is room for it"
+        held = memory_reservation(head, running, box, now)
+        return "ahead", (f"job {head['id']} is ahead of it and waits for memory: {held[1]}" if held else
+                         f"job {head['id']} is ahead of it, and there is room for it")
     if used + need > box.budget + 1e-9:
         return taken(need, used, box)
     since = sum(cores(item, box) for item in running if item["started"] is not None
@@ -2269,7 +2278,8 @@ def quiet_blocker(conn: sqlite3.Connection, row, running: list, quiet: list, box
     this one included) and for an open window. Then it drains for the quiet drain at most, counted from when it asked
     or the last window closed: while jobs predicted above the small weight still run, or its predicted cores do not fit
     the budget, it waits, and no new heavy job starts. Past the drain it starts whatever runs, once the machine is not
-    under pressure; as it starts its quiet window opens, for the quiet max at most."""
+    under pressure and the memory reservation lets it; as it starts its quiet window opens, for the quiet max at
+    most."""
     settings = box.settings
     if quiet and quiet[0]["id"] != row["id"]:
         return "quiet", f"job {quiet[0]['id']}, exclusive too, is ahead of it: one quiet window at a time"
@@ -2279,14 +2289,14 @@ def quiet_blocker(conn: sqlite3.Connection, row, running: list, quiet: list, box
                          f"one quiet window at a time")
     end = drain_start(conn, row) + settings.quiet_drain
     if now >= end:
-        return memory_reservation(row, running, box) or pressure(box)
+        return memory_reservation(row, running, box, now) or pressure(box)
     busy = [item["id"] for item in running if heavy(item, box)]
     if busy:
         return "quiet", (f"it drains: {'job' if len(busy) == 1 else 'jobs'} {enumerate_ids(busy)}, predicted above "
                          f"{cores_text(settings.small_weight)}, still {'runs' if len(busy) == 1 else 'run'}; it starts "
                          f"in {span(end - now)} at the latest")
-    held = admission(row, running, box)
-    if held is not None and held[0] in ("cores", "capacity", "reserved"):
+    held = admission(row, running, box, now)
+    if held is not None and held[0] in ("cores", "capacity"):
         return held[0], f"{held[1]}; it starts in {span(end - now)} at the latest"
     return held
 
@@ -2440,7 +2450,7 @@ class Supervisor:
             held = backfill(row, ahead, running, box, now)
             if held is not None:
                 return held
-        return admission(row, running, box)
+        return admission(row, running, box, now)
 
     def lines(self, conn: sqlite3.Connection, row: sqlite3.Row) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
         """The running jobs in the order they started, and the waiting jobs whose supervisor lives, with this one, in
@@ -3207,7 +3217,7 @@ def cmd_given_tasks(ctx: None, args: argparse.Namespace, command: list[str] | No
         if not tasks:
             raise InputError("no tasks were given")
         rendered = render(Graph(tasks), args.policy, args.agents, args.assign, args.conflict_cost, args.json)
-    except (InputError, json.JSONDecodeError, OSError) as error:
+    except (InputError, json.JSONDecodeError, UnicodeDecodeError, OSError) as error:
         raise WorkError(printable(str(error))) from None
     print(rendered, flush=True)
     return 0
