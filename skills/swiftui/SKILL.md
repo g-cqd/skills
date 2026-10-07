@@ -67,6 +67,8 @@ not document.
   index.
 - Isolate `.onChange` side effects — a side effect buried in a modifier chain is invisible at the
   call site.
+- A binding projection that takes no arguments is a computed property (`$model.isPlaying`), not a
+  subscript keyed by a marker enum.
 - `@Binding`: prefer KeyPath-based bindings to closure-based ones where both work; closures
   capture and can extend lifetimes unexpectedly.
 - `@Environment` is a dependency channel, not a general store. Closures in the environment and
@@ -162,6 +164,11 @@ produces bugs that look like rendering glitches.
 - **Conditional modifiers change identity.** An `if` that swaps which modifier applies can make
   SwiftUI treat the result as a different view and discard its state. Prefer a modifier that takes
   an optional or a neutral value over branching around the modifier.
+- When the branches of a style ternary are different `ShapeStyle` types (`.primary` versus
+  `.tint`), keep one view and wrap each branch in `AnyShapeStyle`. Branching the whole view with
+  `if`/`else` loses identity, resets state and breaks animation. `AnyShapeStyle` is a cheap value
+  type, not the discouraged `AnyView`. Do not flag a ternary that already unifies
+  (`isOn ? .red : .blue`).
 
 ## 6. Animation
 
