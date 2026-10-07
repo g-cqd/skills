@@ -1731,6 +1731,22 @@ class StatusTests(WorkTestCase):
         predicted = self.task_in(home, "after")["predicted"]
         self.assertEqual(predicted["from"], "no history: the declared weight")
 
+    def test_a_database_of_version_15_forgets_the_p90s_it_borrowed_without_history(self):
+        home = self.old_database(15)
+        with contextlib.closing(sqlite3.connect(os.path.join(home, "work.db"))) as conn:
+            conn.execute("UPDATE tasks SET pred_cores = 2, pred_duration = 20, pred_duration_p90 = 265, "
+                         "pred_rss_p90 = 3395616, pred_from = 'no history: the declared weight' WHERE id = 'old'")
+            conn.execute("UPDATE tasks SET pred_cores = 1, pred_duration = 50, pred_duration_p90 = 110, "
+                         "pred_rss = 2000, pred_rss_p90 = 2000, pred_from = '5 runs of the same command' "
+                         "WHERE id = 'later'")
+            conn.commit()
+        self.assertEqual(self.json("show", "old", env={"AGENT_WORK_HOME": home})[0], 0)
+        with contextlib.closing(sqlite3.connect(os.path.join(home, "work.db"))) as conn:
+            rows = dict((row[0], row[1:]) for row in conn.execute(
+                "SELECT id, pred_duration, pred_duration_p90, pred_rss_p90 FROM tasks"))
+        self.assertEqual(rows["old"], (20, None, None), "other commands' p90s say nothing of this one")
+        self.assertEqual(rows["later"], (50, 110, 2000), "a p90 from the job's own history stays")
+
     def task_in(self, home, task_id):
         return self.json("show", task_id, env={"AGENT_WORK_HOME": home})[1]
 

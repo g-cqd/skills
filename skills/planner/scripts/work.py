@@ -258,6 +258,11 @@ MIGRATIONS = ((
 ), (
     # P90 memory predictions let admission reserve the likely peak for waiting jobs.
     "ALTER TABLE tasks ADD COLUMN pred_rss_p90 INTEGER",
+), (
+    # Version 15 gave a job without history the p90s of every recent command, and its waiting and running jobs keep
+    # them: a first build could claim to end before the head, and a script hold others for gigabytes it never uses.
+    "UPDATE tasks SET pred_duration_p90 = NULL, pred_rss_p90 = NULL "
+    "WHERE pred_from IN ('no history: the declared weight', 'typical exclusive use; no history')",
 ))
 SCHEMA_VERSION = len(MIGRATIONS)
 
