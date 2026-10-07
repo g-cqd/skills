@@ -433,7 +433,7 @@ Check before upgrading.
 
 ## References
 
-`references/settings-and-entitlements-catalog.md` (full catalog with scope column),
+`references/security-settings-reference.md` (full settings list with scope column),
 `references/enhanced-security.md` (key list, defaults, deprecated keys, version migration,
 supported product types), `references/pointer-authentication.md`, `references/typed-allocators.md`,
 `references/stack-zero-init.md`, `references/readonly-platform-memory.md`,
