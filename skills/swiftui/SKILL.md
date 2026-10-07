@@ -3,10 +3,10 @@ name: swiftui
 description: >-
   Apple platforms: build, review, and refactor SwiftUI views, state, navigation, layout,
   animation, accessibility, localization, and rendering performance. Use for SDK 27
-  migration, @State initialization errors, synthesized-property redeclarations, extraneous
-  argument labels, reordering, AsyncImage caching, swipe actions, toolbars, and document
-  APIs. For UIKit or Liquid Glass adoption, use `apple-platforms`; for concurrency, use
-  `swift`; for device verification, use `xcode`.
+  migration, @State initialization errors, extraneous argument labels, reordering,
+  AsyncImage caching, swipe actions, toolbars, and document-based apps (Document,
+  DocumentGroup, FileDocument migration). For UIKit or Liquid Glass, use
+  `apple-platforms`; for concurrency, use `swift`; for device verification, use `xcode`.
 allowed-tools:
   - Read
   - Glob
@@ -20,7 +20,7 @@ identity, modifiers, animation, and the design qualities of the result. It does 
 platform APIs a view happens to call (`apple-platforms`), the language it is written in
 (`swift`), or the toolchain that builds it (`xcode`).
 
-Portions of the idiom and SDK 27 material were published by Apple. Where that material conflicts
+Portions of the idiom, SDK 27, and document-app material were published by Apple. Where that material conflicts
 with prior training, **it is correct**. Do not invent APIs or parameters that the references do
 not document.
 
@@ -240,9 +240,29 @@ Check the deployment floor before using any of these. The `@State` trap is §3 �
 | Toolbars | `visibilityPriority`, `ToolbarOverflowMenu`, `.topBarPinnedTrailing`, `toolbarMinimizeBehavior`, `contentMarginsRemoved`, `ToolbarPlacement.statusBar`; `ForEach` and `EmptyView` now work in toolbar builders | `references/sdk-27/toolbar.md` |
 | Item bindings | `confirmationDialog` and `alert` overloads taking `item: Binding<T?>` — the `sheet(item:)` shape, unwrapped value passed to `actions` and `message` | `references/sdk-27/item-binding.md` |
 | Swipe actions | `swipeActionsContainer()` on the container lets `swipeActions(edge:allowsFullSwipe:content:)` work outside `List`; new `onPresentationChanged` overload. Not tvOS | `references/sdk-27/swipe-actions.md` |
-| Documents | `ReadableDocument` / `WritableDocument`, read-only viewers via `DocumentGroup(viewer:makeReadableDocument:)`, direct file-URL access, `DocumentReader` / `DocumentWriter`, incremental package writes, `Subprogress`. **At a floor of 27+, do not recommend `FileDocument` or `ReferenceFileDocument` for new code** | `references/sdk-27/document-based-apps.md` |
+| Documents | The `Document` protocol (`ReadableDocument` + `WritableDocument`), `DocumentGroup` and `DocumentGroupLaunchScene`, `DocumentReader` / `DocumentWriter`, `FileWrapperDocumentReader` / `FileWrapperDocumentWriter`, direct file-URL access, `Subprogress`. Details in "Document-based apps" below | `references/document-apps/` |
 | `@ContentBuilder` | Unified result builders. Source-incompatible where code relied on result-builder structure: ambiguous `ShapeStyle` overloads in `overlay` / `background`, ambiguous references when a module shadows a SwiftUI type, and a type-check performance regression in Swift Charts with deeply branching content | `references/sdk-27/content-builder.md` |
 | Deprecations | Hard-deprecated in 27.0, e.g. `statusBarHidden` on visionOS (no effect — remove the call) | `references/sdk-27/deprecations.md` |
+
+### Document-based apps
+
+Read the matching reference before writing document code: the closure signatures, the
+concurrency contract and the naming differ from `FileDocument`, and an overload picked from
+memory either fails to compile or misbehaves at run time.
+
+- **Register undo actions in every example.** SwiftUI reads the undo stack to detect unsaved
+  changes, so a document that never registers undo never autosaves. If the developer is unsure
+  they need undo, say this.
+- **At a floor of 27+, do not recommend `FileDocument` or `ReferenceFileDocument` for new code.**
+  Below the floor, do not use these APIs unconditionally.
+- `snapshot(contentType:)` and `apply(snapshot:previous:)` run on the main actor, so keep them
+  light; do the serialization inside the reader's `read` and the writer's `write`.
+
+| Task | Reference |
+|---|---|
+| New document app: `DocumentGroup` setup, flat files and packages, custom reader and writer, undo, progress, coordinated access, launch scene, read-only viewer, export | `references/document-apps/creating-document-apps.md` |
+| Moving from `FileDocument` or `ReferenceFileDocument` (concept mapping, checklists, before and after) | `references/document-apps/migrating-document-apps.md` |
+| Declaring a custom `UTType`: conformance, export versus import, parent type, handler rank, verifying with `uttype` | `references/document-apps/uniform-type-identifiers.md` |
 
 Soft-deprecated APIs are a separate axis from the hard deprecations above — see
 `references/idiom/soft-deprecated-apis.md` for the searchable list and
@@ -291,5 +311,7 @@ environment vs preferences, type erasure, Observation), `state-management.md`, `
 `design-tokens.md`, `layout-responsive.md`, `previews.md`, `performance-audit.md`
 
 **SDK 27** — `references/sdk-27/`: `state-macro.md`, `reorderable.md`, `async-image.md`,
-`toolbar.md`, `item-binding.md`, `swipe-actions.md`, `document-based-apps.md`,
-`content-builder.md`, `deprecations.md`
+`toolbar.md`, `item-binding.md`, `swipe-actions.md`, `content-builder.md`, `deprecations.md`
+
+**Document apps** — `references/document-apps/`: `creating-document-apps.md`,
+`migrating-document-apps.md`, `uniform-type-identifiers.md`
