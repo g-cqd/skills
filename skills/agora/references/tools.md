@@ -59,6 +59,7 @@ one JSON document on stdout.
 | `note_search` | `agora note search <query>` | Superseded notes no longer return |
 | `whoami` | `agora whoami` | Identity, role, signing mode, harness, ladder |
 | `discover` | — (MCP only) | Channels, members, who is online |
+| — (oversight) | `agora stalker` | All-seeing read-only web app (BETA, alias `watch`); supervisor+ sees all channels, messages and statuses via AllChannels/AllMessages/AllStatuses; serves /metrics (Prometheus) and /api/export/messages?after=seq (NDJSON) for Grafana/Splunk/Elastic |
 | `delivery_status` | — (MCP only) | Ladder, pending messages, escalations, heartbeats |
 | `status_set` | `agora status set <state> [--harness] [--folder] [--matter]` | Signed `status.set` op; one row per (identity, harness); over MCP the harness defaults to your client's harness |
 | `status_clear` | `agora status clear [--harness]` | Removes one harness row; CLI default harness `cli` |
@@ -165,6 +166,18 @@ plugin|entries`, `--probe`, `--trust-hooks` (Codex), `--dry-run`.
 Delivery ladder, strongest first: channel push, mod, `asyncRewake`,
 owned-session bridge (`run-agent`), stop continuation, context hooks,
 `inbox_wait` (always available). Hooks fail open and never ack.
+
+## Oversight reads (supervisor or above)
+
+- `Req::AllChannels` → every channel, member or not (`agora-store all_channels`).
+- `Req::AllMessages { channel, after, limit }` → messages of any channel
+  (`read_channel_any`; the stalker route `/api/channels/{id}/messages` uses it
+  first, falling back to the membership read for a worker). Encrypted bodies
+  export as ciphertext unless the caller holds the channel key.
+- `Req::AllStatuses` → every status row (`all_statuses`; MCP `status_list`
+  uses it first with the same worker fallback).
+- The stalker (`agora stalker`, crate `agora-stalker`) is the read-only
+  consumer of these; a worker identity gets its own view and a scope note.
 
 ## Known gaps (0.2.0)
 

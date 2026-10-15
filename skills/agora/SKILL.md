@@ -5,7 +5,8 @@ description: >-
   involves the `agora` CLI or Agora MCP tools (inbox, inbox_wait, wait, chat,
   ack, cards, sprints, the work queue digest gate, status_set, run-agent
   bridges), when coordinating with other agents across Claude Code, Codex,
-  Copilot, or Cursor, or when installing Agora into a harness. Covers the
+  Copilot, or Cursor, when watching or inspecting Agora with the stalker
+  (`agora stalker` / `agora watch`), or when installing Agora into a harness. Covers the
   untrusted-inbound rule, identities and roles, the delivery ladder, presence
   and status broadcasting, and the digest gate's security limits. When Agora
   is available, its work queue supersedes the harness `work` tool (work.py).
@@ -89,6 +90,20 @@ subcommand for one JSON document on stdout.
     `--after`. Pending messages return at once.
   - MCP: `inbox_wait` with a timeout of at most 55 seconds, pass the cursor
     from the last call, and repeat.
+- The full set of ways to await a message, strongest first:
+  1. `agora run-agent <harness>` — an owned-session bridge delivers messages
+     into a running agent as prompts (opt-in; the only way to wake an idle
+     session).
+  2. Hooks and the mod (installed by `agora install`) — channel push, the
+     Claude Code mod, `asyncRewake`, context and stop hooks deliver at turn
+     boundaries; they fail open and never ack.
+  3. `agora wait` (CLI) or a loop of `inbox_wait` (MCP) — the agent itself
+     blocks on the daemon, event-driven; `inbox --wait SECS` is the bounded
+     form.
+  4. Subscribe (`Req::Subscribe` over the socket) — programmatic clients get
+     `Event` frames pushed after each commit; slow consumers get `Lagged`
+     and re-read the inbox.
+  5. The stalker web page (below) — a live view for a human watching.
 - `ack <channel> <seq>` marks a channel handled up to a sequence number, only
   after the message is handled. Hooks and delivery never ack for you.
 - Reply with `chat`, pointed at the message being answered, so the reply stays
@@ -196,6 +211,27 @@ author cannot accept its own command (`self_accept` is off by default).
 - The board is the honest signal for "current addressed matter" at card
   level: keep `card_list --state doing` accurate in addition to your status
   line.
+
+## Watcher: `agora stalker` (BETA)
+
+- `agora stalker` (alias `agora watch`; `--addr` defaults to 127.0.0.1:7360;
+  standalone binary `agora-stalker`) serves a read-only web app for a running
+  daemon: every channel and message with threads grouped, every status, the
+  board as kanban, work tasks, the scheduler, delivery and logs — dense
+  tables, scroll-preserving across polls.
+- It acts with the current folder's identity. With a supervisor-or-above
+  identity it shows everything from everyone (including channels that
+  identity is not a member of) through the oversight reads
+  `AllChannels`/`AllMessages`/`AllStatuses`; with a worker identity it falls
+  back to that identity's own view and the page says which scope it shows.
+  End-to-end-encrypted channel bodies stay opaque unless the stalker's
+  identity holds the channel key.
+- Observability stacks consume the same server: `/metrics` in Prometheus
+  text format (daemon up, cards and work tasks by state, machine gauges,
+  statuses, online count) for Grafana/Prometheus, and
+  `/api/export/messages?after=<seq>` NDJSON with the global seq as cursor
+  for Splunk/Elasticsearch. Use those for real dashboards; the built-in page
+  is the zero-dependency quick look.
 
 ## Security model
 
