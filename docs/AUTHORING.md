@@ -140,8 +140,9 @@ a reader knows within one line whether it applies to them:
 | Tier | Opens with | Example |
 |---|---|---|
 | Generic | `Language-agnostic:` | `algorithms`, `debugging` |
-| Apple | `Apple platforms:` | `swift`, `swiftui`, `xcode` |
+| Apple | `Apple platforms:` | `swiftui`, `xcode`, `apple-docs` |
 | Mixed | `Language-agnostic <domain>, with an Apple-platform section covering …:` | `memory-safety`, `secure-coding`, `testing` |
+| Named language or domain | Opens with the language or domain itself, when it is not tied to Apple platforms | `swift` (also Linux, servers, embedded), `graphics` (cross-platform, Metal section) |
 
 A **mixed** skill orders its body generic-first, Apple-last:
 
