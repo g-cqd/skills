@@ -86,13 +86,9 @@ later errors are usually cascades.
 
 ### Run and profile
 
-```bash
-xcrun simctl boot "<device>"
-xcrun simctl install booted <App.app>
-xcrun simctl launch booted <bundle-id>
-xcrun devicectl device install app --device <id> <App.app>   # physical device
-xcrun xctrace record --template 'Time Profiler' --launch <App.app>
-```
+Boot a simulator and install and launch with `xcrun simctl`, install on a physical device with
+`xcrun devicectl device install app`, and profile with `xcrun xctrace record --template`. Read
+`references/run-and-profile.md` for the commands.
 
 ### `xcodebuild` vs SwiftPM — default to `xcodebuild`
 
@@ -115,23 +111,15 @@ code, where they give a faster inner loop and Linux parity.
 
 ## 3. Agent integration
 
-- **MCP bridge** — Xcode exposes its tools over MCP via `xcrun mcpbridge`: build and test,
-  diagnostics, Swift REPL, preview rendering, doc search. Xcode 27 additionally announced debugger
-  state, scheme and destination switching, and build-setting / entitlement / `Info.plist`
-  inspection; verify against your release notes. Requires **Settings → Intelligence → Allow
-  external agents to use Xcode tools**.
-  Running `xcrun mcpbridge` with no arguments **starts the stdio MCP server** and fails if Xcode
-  is not running — wire it into an MCP client config, do not invoke it interactively.
-- **Project instructions** — Xcode reads `AGENTS.md` at the repo root automatically; some coding
-  agents read `CLAUDE.md`. Keep one canonical `AGENTS.md` and alias `CLAUDE.md` to it (a symlink, as
-  the install script does, or an import).
-- **Skills** — Xcode 27 reads Agent Skills in this `SKILL.md` format from
-  `~/Library/Developer/Xcode/CodingAssistant/<agent-config>/skills/`, and ships Apple-authored
-  skills for SwiftUI, document apps, App Intents, UIKit resizability, security-settings auditing,
-  C bounds safety, test modernization, and device interaction — mirrored in this harness by
-  `swiftui`, `apple-platforms`, `memory-safety`, `testing`, and §6 and §7 of this skill.
-- **Plans** — Xcode's plan mode produces editable Markdown. When working alongside it, write plans
-  as Markdown artifacts the user can edit.
+- **MCP bridge** — `xcrun mcpbridge` exposes Xcode's tools over MCP. Running it with no arguments
+  **starts the stdio MCP server** and fails if Xcode is not running: wire it into an MCP client
+  config, do not invoke it interactively.
+- **Project instructions, skills, plans** — Xcode reads `AGENTS.md` at the repo root (alias
+  `CLAUDE.md` to it), reads Agent Skills in this `SKILL.md` format, and produces editable Markdown
+  plans.
+
+Read `references/agent-integration.md` when setting up the MCP bridge, the Settings toggle it needs,
+project instructions, skills directories, or plan mode.
 
 ---
 
@@ -186,87 +174,47 @@ DeviceInteractionStartWorkspaceSession   bound to the workspace; start early, ru
 Pass a device identifier to select a device, or omit it for the current destination. Pass an
 empty string to get the list of available targets.
 
-`DeviceInteractionInstallAndRun` takes optional `commandLineArguments` and `environmentVariables`.
-Use `$(inherited)` to preserve the scheme's existing values —
-`["$(inherited)", "--reset-state"]`, or `{"$(inherited)": "", "DEBUG_MODE": "1"}`.
-**Prefer these over editing the scheme**: they apply to one run and leave the user's configuration
-untouched.
+`DeviceInteractionInstallAndRun` takes optional `commandLineArguments` and `environmentVariables`;
+prefer them over editing the scheme (they apply to one run). Read
+`references/device-interaction.md#run-arguments` for the `$(inherited)` syntax.
 
 ### Read the hierarchy, never the screenshot
 
-Hierarchy dumps carry a calculated `hitPoint` per element:
-
-```
-UIView {{100, 200}, {60, 30}}, hitPoint: {130.0, 215.0}
-  UIButton "Login" {{110, 205}, {30, 20}}, hitPoint: {125.0, 215.0}
-```
-
-`{100, 200}` is the origin, `{60, 30}` the size, `hitPoint:` the best point to tap.
+Hierarchy dumps carry a calculated `hitPoint` per element (annotated example in
+`references/device-interaction.md#hierarchy-dump-format`).
 **Tap the hitPoint from the hierarchy.** Fall back to a position estimated from the screenshot
 only after a hitPoint tap, confirmed by a recapture, had no effect. An element marked
 `isRemoteLeafPlaceholder` reports no children, so it also needs the screenshot fallback. If the
 thumbnail is too coarse to judge a visual issue, open the full-size screenshot.
 
-When windows from more than one app overlap, each element line carries
-`activationBundleId: <id>`. Interacting with such an element needs `activationBundleId` passed to
-`DeviceEventSynthesize` first (it may be passed with no command). Activation is expensive, so pass
-it only for those elements.
+When windows from more than one app overlap, each element line carries `activationBundleId`; pass it
+to `DeviceEventSynthesize` first, only for those elements. Read
+`references/device-interaction.md#overlapping-apps` for the rule.
 
 Capture before interacting and again after, every time. For compound controls, inspect nested
 elements — a `Switch` or `Slider` child is usually the real control.
 
 ### Interaction syntax
 
-| Command | Meaning |
-|---|---|
-| `t <x> <y> [duration]` | Tap, optional hold |
-| `d <x> <y>` | Double tap |
-| `t <x1> <y1> f <x2> <y2> [duration]` | Swipe |
-| `b h/p/u/d [duration]` | Hardware button: Home, Power, VolUp, VolDown |
-| `drag <x1> <y1> <x2> <y2> [hold] [move]` | Press-and-hold, then move slowly: list reordering, drag-and-drop |
-| `mt [x y, ...] dur [x y, ...] dur ...` | Multi-touch keyframes (each `[...]` lists the touches, the number after it is the travel time to the next keyframe, the last one the hold before lifting). `"mt [100 300, 300 300] 0.5 [175 300, 225 300] 0.5"` is a two-finger pinch |
-| `sender keyboard kbd <text>` | Type text — **must be last in the chain**; everything after `kbd ` is verbatim, multiple spaces preserved |
-| `w <duration>` | Wait |
-| `orientation <value>` | iOS only: `faceDown`, `faceUp`, `landscapeLeft`, `landscapeRight`, `portrait`, `portraitUpsideDown` |
-| `b c/s/a [duration]`, `c <turns>` | watchOS only: Digital Crown press, side button, Action button (some devices); rotate the crown (1.0 is one revolution, the sign sets direction) |
-| `r up/down/left/right/select/menu/playpause/home` | tvOS only: Siri Remote |
+Commands are chained in one string: taps (`t`), double tap (`d`), swipes, hardware buttons (`b`),
+drag, multi-touch keyframes (`mt`), text entry (`sender keyboard kbd`, which must be last in the
+chain), waits (`w`), and platform-only commands for orientation (iOS), Digital Crown (watchOS) and
+the Siri Remote (tvOS). tvOS is focus-based: coordinate taps do not apply.
 
-```
-"t 200 600 f 200 200 0.3"          swipe up (scroll down the content)
-"b h b h"                          home twice → app switcher
-"b h w 0 b h"                      wake and unlock (no-passcode devices)
-"sender keyboard kbd submit\u{000A}"   type, then Return
-```
-
-Special characters use `\u{XXXX}`: `\u{000A}` return, `\u{0009}` tab.
-
-### tvOS
-
-tvOS is focus-based: coordinate taps do not apply, and only the focused element can be activated.
-Read the hierarchy for the focusable elements and the one marked `Focused`, move with `r up/down/left/right`,
-activate with `r select`, go back with `r menu`. Chain the presses in one command and capture
-once: `r right r right r right`, then capture to confirm where focus landed.
+Read `references/device-interaction.md#interaction-syntax` when composing a command chain (the full
+command table and examples), and `references/device-interaction.md#tvos` before driving tvOS.
 
 ### Judging what you see
 
-| Category | Action |
-|---|---|
-| **Functional bug** — no response to tap, wrong navigation, crash, missing or empty data | **Report** |
-| **Visual bug** — overlapping or truncated text, off-screen elements, wrong colors, broken alignment | **Report** |
-| **Unexpected exit** — crash or termination; track the pid and capture stdout | **Report** |
-| **Transient state** — spinners, animations, keyboard transitions | Do not report; recapture after it settles |
-| **Expected behavior** — empty-state placeholders, disabled buttons on incomplete forms, permission dialogs | Do not report |
+Report functional bugs, visual bugs and unexpected exits; do not report transient states or expected
+behavior (empty-state placeholders, disabled buttons on incomplete forms, permission dialogs). Read
+`references/device-interaction.md#judging-what-you-see` for the table.
 
 ### Timing and retries
 
-- **After launch**, the app may take seconds. Capture and confirm the hierarchy holds meaningful
-  UI before interacting; a launch screen or empty tree means capture again.
-- **After an interaction that did nothing**, recapture and retry **once** — the element may have
-  moved mid-animation. If it fails again, report it rather than looping.
-- **Wait for a loading element to settle before interacting.** A tap on a spinner lands on
-  whatever replaces it.
-- Runtime logs help; if a timing bug is suspected, suggest to the main agent that temporary `print`
-  statements would isolate it.
+After launch, confirm the hierarchy holds meaningful UI before interacting; after an interaction
+that did nothing, recapture and retry once, then report; wait for a loading element to settle. Read
+`references/device-interaction.md#timing-and-retries` for the full rules.
 
 When reporting, state only what the run, the hierarchy, the screenshot, or the log showed, and
 say what was not exercised. "Works on device" is a claim about the flows you actually drove.
@@ -287,82 +235,42 @@ When `XcodeGlob`, `XcodeGrep`, `XcodeRead`, and `XcodeLS` are available, use the
 project root, name, and active scheme are already in system-prompt context: do not `ls` to
 "verify" the layout.
 
-| Symptom | Cause | Response |
-|---|---|---|
-| `XcodeGlob "**/*.xcodeproj"` returns 0 matches | The `.xcodeproj` is not a project-indexed file | Use the project name from context — **do not** fall back to `find`/`ls` |
-| `XcodeRead` fails for `.entitlements`, `.xcsettings`, `.xcconfig` | Some on-disk artifacts are not navigable by project path | Prepend the project root from context and use `Read`/`Edit` |
-
-Fall back to Bash only for what the Xcode tools cannot do — `plutil`, git.
-
-- Tool names may carry an MCP server prefix (`mcp__<server>__XcodeGlob`). Look the prefix up once
-  in the tool registry and reuse it; do not guess it.
-- `XcodeListTargets` enumerates targets with `PRODUCT_TYPE_IDENTIFIER` and role flags
-  (`IS_AGGREGATE`, `IS_TEST_TARGET`, `IS_APP_EXTENSION`); do not parse `project.pbxproj`. Skip
-  aggregate targets, which have no product type.
-- A target's entitlements path is the evaluated `CODE_SIGN_ENTITLEMENTS` from
-  `GetTargetBuildSettings`. Do not rebuild it from the navigator or glob `**/*.entitlements`:
-  orphaned files exist, and several targets can share one file.
-- Write entitlements with `AddEntitlement` (`targetName`, `entitlementKey`,
-  `entitlementValueType`, value), not `XcodeUpdate`, `Edit` or `plutil`. It adds and updates only;
-  it cannot remove a key.
+Read `references/audit-workflow.md#use-the-xcode-tools-not-shell-equivalents` when an Xcode tool
+returns no match or fails on an `.entitlements`, `.xcsettings` or `.xcconfig` file, and before
+resolving targets or entitlements paths or writing an entitlement (`AddEntitlement`).
 
 ### 7.2 Workflow
 
 Print the phase list to the user as a bullet list, and mirror it into `TaskCreate`. Mark each
 phase `▶` on entry and `✓` on completion with a terse outcome.
 
-**Phase 1 — analyze.** Silent. Locate the project; find any existing decision document
-(`**/xcode-security-settings.md`) and read prior decisions with their rationale. Check for source
-control (`.git`, `.hg`, `.svn`); with none, recommend setting it up first, since this audit edits
-build settings and entitlements and rollback is otherwise manual. Detect languages by extension
-(`.c`, `.cpp/.cxx/.cc`, `.m`, `.mm`, `.swift`); Objective-C++ implies C++, and a
-`sourcecode.cpp.*` file type in `project.pbxproj` overrides the extension. Enumerate targets with
-product type, platform (`SDKROOT` / `SUPPORTED_PLATFORMS`), and the resolved
-`CODE_SIGN_ENTITLEMENTS` path. Join each target's evaluated build settings (filter large dumps with
-`scripts/filter_build_settings.py`) with the explicit occurrences in `*.xcconfig` and
-`project.pbxproj`; `references/reading-build-settings.md` defines the columns and the predicates
-*already hardened*, *at default OFF* and *deliberately disabled*.
+**Phase 1 — analyze.** Silent. Locate the project, read any decision document, check source control,
+detect languages, enumerate targets, and join evaluated build settings with explicit occurrences.
+Read `references/audit-workflow.md#phase-1-analyze` first for the full procedure.
 
 **Phase 2 — apply**, most applicable first. Check what is already set; if everything is enabled,
 say so and stop.
 
-How to write a setting:
-
-- **Project uses `.xcconfig`** → edit the xcconfig.
-- **`.pbxproj` only** → `UpdateTargetBuildSetting` for target-level settings. No tool writes a
-  project-level setting: ask the user to set it in Build Settings (All / Combined, the project
-  column), then verify by grepping `project.pbxproj` and ask again until the grep matches.
-- **Mixed** → xcconfig where the target has one, tools otherwise. Match the method the project
-  already uses rather than introducing a new one; two sources of truth for one setting is how
-  settings drift.
-
-Change the one setting, not the file: a targeted edit to a build setting or an `.xcconfig` line
-leaves the rest of the project or config file byte-identical and the diff reviewable.
+How to write a setting: edit the xcconfig when the project uses one; use
+`UpdateTargetBuildSetting` for target-level settings in a `.pbxproj`-only project (no tool writes a
+project-level setting: ask the user, then verify by grep); in a mixed project match the method
+already in use. Read `references/audit-workflow.md#phase-2-how-to-write-a-setting` before writing.
 
 Prefer project level. `ENABLE_ENHANCED_SECURITY` is set at project level, since it cascades to
 every target (§7.3).
 
-**Phase 3 — inquire.** Find tracked settings (`references/security-settings-reference.md`) that are
-*deliberately disabled*: not at a hardened value and set explicitly, as opposed to Xcode's default
-OFF, which is never a question. Restrict to settings whose scope covers a detected language.
-Flag an unconditional `ENABLE_POINTER_AUTHENTICATION = NO`, and
-`ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE = NO` on a target that could otherwise take it.
-If the decision document records a rationale, note it and move on; otherwise ask the user, and
-record whatever they answer.
+**Phase 3 — inquire.** Find tracked settings that are *deliberately disabled* (explicitly set, not at
+a hardened value), restricted to detected languages; ask about each unless the decision document
+records a rationale. Read `references/audit-workflow.md#phase-3-inquire` for the full rules and the
+settings to flag.
 
-**Phase 4 — validate.** Re-read each modified target's settings and confirm the expected value.
-A missing or unexpected value may mean the current Xcode does not support it — flag it.
+**Phase 4 — validate.** Re-read each modified target's settings and confirm the expected value; flag
+anything missing. Read `references/audit-workflow.md#phase-4-validate` for the exact rule.
 
-**Phase 5 — report** and update the decision document: enabled, per-target Enhanced Security
-status, already-active, and the outcome of each inquiry. Tell the user to test on real hardware
-that supports every enabled protection and to fix the crashes and simulated crash reports before
-shipping, since hardening turns latent bugs into crashes.
-
-**Phase 6 — optional follow-ups**, offered one at a time as separate yes/no questions: additional
-diagnostic settings (higher false-positive rate), and bounds-safety programming models —
-`ENABLE_C_BOUNDS_SAFETY` for C (the `memory-safety` skill carries the adoption workflow),
-`ENABLE_CPLUSPLUS_BOUNDS_SAFE_BUFFERS` for C++ (clang's SafeBuffers documentation). This step
-emits guidance only and applies no change.
+**Phase 5 — report** and update the decision document, then tell the user to test on real hardware.
+**Phase 6 — optional follow-ups** are offered one at a time as separate yes/no questions and apply
+no change. Read `references/audit-workflow.md#phase-5-report` and
+`references/audit-workflow.md#phase-6-optional-follow-ups` when you reach them.
 
 ### 7.3 Enhanced Security
 
@@ -396,13 +304,10 @@ Two traps:
 > a simulator SDK's architectures, which define none. Do not pre-write `NO` for the simulator or
 > for a platform; every device platform defines `arm64e`.
 
-**Libraries and frameworks** (`framework`, `framework.static`, `library.static`, `library.dynamic`)
-take no entitlements, because those are granted per process from the executable. They still get
-the cascaded build settings. Keep pointer authentication on: it appends `arm64e` to
-`ARCHS_STANDARD`, so the target ships a universal `arm64`/`arm64e` binary, and only one slice is
-loaded at run time, so the larger file costs no RAM or speed. Warn when a library's Release
-configuration sets `ONLY_ACTIVE_ARCH = YES`, which forces every consumer onto one slice; confirm
-the slices with `lipo -archs`. See `references/universal-binaries-for-libraries.md`.
+**Libraries and frameworks** take no entitlements but still get the cascaded build settings; keep
+pointer authentication on and warn on `ONLY_ACTIVE_ARCH = YES` in Release. Read
+`references/hardening-checks.md#libraries-and-frameworks` when the audit includes a library or
+framework target.
 
 Do not auto-enable default-OFF sub-options (the MTE family) — report their state and offer them.
 
@@ -410,30 +315,11 @@ Confirm once via `AskUserQuestion` — "Apply all", "Apply to a subset", "Skip" 
 the protection gained and the code changes it may force. If every target is already up to date,
 say so in one line and proceed without asking.
 
-**Hardware memory tagging** (`com.apple.security.hardened-process.checked-allocations`, with
-`soft-mode` for a non-fatal rollout; soft mode alone does nothing) applies to `macosx`,
-`iphoneos`/`iphonesimulator`, `watchos`, and `xros`/`xrsimulator` targets. Hardware backing is an
-A19 chip or later (iPhone, iPad), M5 or later (Mac, Vision Pro), or S11 or later (Apple Watch).
-Offer it only if Enhanced Security was applied to a matching target.
-
-**Checked pointer arithmetic** makes capable hardware poison a pointer whose arithmetic overflows
-into the tag bits, which closes the way around memory tagging. It needs four things on an app
-target: `ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE = YES` (adds the `arm64e.x1` slice;
-defaults to `NO`, never cascades, set per target), `com.apple.security.hardened-process`,
-`...checked-allocations` (run time enforcement requires memory tagging), and
-`...checked-allocations.enforce-checked-pointer-arithmetic-overflow`. Keep
-`ENABLE_POINTER_AUTHENTICATION = YES` too: with it off, the slice ships without an `arm64e`
-fallback for devices that lack the hardware. Enforcement needs iOS on A20 Pro or later, or watchOS on S11 or later. A
-library or framework sets the build setting only, and the consuming app's entitlements enforce it.
-
-- Offer it only after memory tagging is on, or is being applied in the same run, and apply it
-  last, since it reads the settings and entitlements the earlier steps write. Skip a target whose
-  pointer authentication or Enhanced Security is explicitly off, or that opted out of the slice.
-- **There is no soft mode**, and memory tagging's does not cover these faults: a latent
-  pointer-arithmetic bug (a difference between pointers into two allocations, `uintptr_t`
-  subtraction, an offset from a NULL base) terminates the app. Say so before enabling it.
-- Verify with `lipo -archs`: `arm64 arm64e arm64e.x1`. Details in
-  `references/checked-pointer-arithmetic.md`.
+**Hardware memory tagging** (`...checked-allocations`) and **checked pointer arithmetic**
+(`ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE`) are offers, not defaults: memory tagging only
+if Enhanced Security was applied to a matching target, checked pointer arithmetic only after memory
+tagging, and it has no soft mode. Read `references/hardening-checks.md#hardware-memory-tagging` and
+`references/hardening-checks.md#checked-pointer-arithmetic` before offering either.
 
 DriverKit targets take build settings but **no** entitlement changes.
 
@@ -442,41 +328,16 @@ DriverKit targets take build settings but **no** entitlement changes.
 Apply without asking when C, C++, Objective-C, or Objective-C++ is present. Skip entirely for pure
 Swift.
 
-- `GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR`
-- `GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE`
-- `CLANG_WARN_IMPLICIT_FALLTHROUGH = YES`
-- `GCC_WARN_64_TO_32_BIT_CONVERSION = YES`
-- `GCC_TREAT_IMPLICIT_FUNCTION_DECLARATIONS_AS_ERRORS = YES` — C/ObjC/ObjC++ only
-- `CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES` (runs in Build and analyze only)
-- `CLANG_ANALYZER_SECURITY_INSECUREAPI_RAND = YES` (Build and analyze only)
-- `CLANG_ANALYZER_SECURITY_INSECUREAPI_STRCPY = YES` (Build and analyze only)
-- `CLANG_TIDY_BUGPRONE_REDUNDANT_BRANCH_CONDITION = YES` (Build and analyze only; installs nothing)
+Settings to apply: the return-type, uninitialized-autos, implicit-fallthrough, 64-to-32-bit
+conversion and implicit-function-declaration warnings, plus four Build-and-analyze-only analyzer and
+clang-tidy checks. Read `references/hardening-checks.md#clang-safety-warnings` for the exact list and
+values before applying.
 
 ### 7.5 Entitlement and Info.plist review surface
 
-A pentester extracts the app's **effective entitlements** early, because they map the attack
-surface. Auditing the same surface is a defensive win. Read the effective set from the signed
-binary, not just a stray `.entitlements` file — they can differ:
-
-```bash
-codesign -d --entitlements :- "Payload/Target.app"
-security cms -D -i "Payload/Target.app/embedded.mobileprovision"
-```
-
-Flag, and confirm each is intended:
-
-- **`get-task-allow = true`** in a release build — the app is debuggable, so another process can
-  attach and read its memory. Must be false in production.
-- **Associated Domains** (`applinks:`) — each domain is a Universal Link entry point; cross-check
-  against the AASA audit in `secure-coding` §8.4.
-- **App Groups** and **keychain access groups** — every group is a shared container or shared
-  keychain reachable by other targets and extensions. A wider group than needed widens the blast
-  radius (`secure-coding` §8.1).
-- **Unusual capabilities** and extension points beyond what the feature set justifies.
-
-In `Info.plist`, review `CFBundleURLTypes` (registered custom schemes), `LSApplicationQueriesSchemes`,
-`NSAppTransportSecurity`, `WKAppBoundDomains`, and `.appex` declarations — each is a surface the
-`secure-coding` §8 controls govern.
+Read the effective entitlements from the signed binary (`codesign -d --entitlements :-`), not a
+stray `.entitlements` file. Read `references/hardening-checks.md#entitlement-and-infoplist-review-surface`
+for what to flag (`get-task-allow`, Associated Domains, App Groups, `Info.plist` keys).
 
 ### 7.6 Talking to the user
 
@@ -533,3 +394,6 @@ settings dump linearly), `references/checked-pointer-arithmetic.md`,
 `references/universal-binaries-for-libraries.md`. These files come from Apple's audit workflow and
 cite its phase numbers ("Phase 3 Step 4"); the matching steps here are the Phase 1 analysis and the
 Phase 2 apply in §7.2.
+
+Detail moved out of the body: `references/agent-integration.md` (§3), `run-and-profile.md` (§2),
+`device-interaction.md` (§6), `audit-workflow.md` (§7.1-7.2), `hardening-checks.md` (§7.3-7.5).

@@ -17,10 +17,11 @@ Complete templates for all artifact types. Each template shows the full structur
 10. [PI Objectives](#pi-objectives)
 11. [Iteration Goals](#iteration-goals)
 12. [ADR — MADR](#adr--madr)
-13. [Design Doc / RFC](#design-doc--rfc)
-14. [Tech Debt Entry](#tech-debt-entry)
-15. [Multi-PR Tracking Issue](#multi-pr-tracking-issue)
-16. [Release Notes](#release-notes)
+13. [ADR — Nygard](#adr--nygard)
+14. [Design Doc / RFC](#design-doc--rfc)
+15. [Tech Debt Entry](#tech-debt-entry)
+16. [Multi-PR Tracking Issue](#multi-pr-tracking-issue)
+17. [Release Notes](#release-notes)
 
 ---
 
@@ -572,6 +573,28 @@ Team average: {X}/5 — {proceed / re-plan if <3}
 - Related ADR: {link}
 - Design doc: {link}
 - PR: {link}
+```
+
+---
+
+## ADR — Nygard
+
+Lightweight ADR format.
+
+```markdown
+# ADR [number]: [Title]
+
+## Status
+[Proposed | Accepted | Deprecated | Superseded by ADR-XXX]
+
+## Context
+[What forces are at play? Technical, political, social, project-specific.]
+
+## Decision
+[What change are we making?]
+
+## Consequences
+[What becomes easier? Harder? What are the trade-offs?]
 ```
 
 ---

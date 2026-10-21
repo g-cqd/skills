@@ -199,30 +199,17 @@ Produce summaries at multiple granularities:
 | **T**estable | Can you write a test for it now? |
 
 ### Requesting Perspective
-```
-As a [persona],
-I want [capability],
-So that [benefit].
 
-Acceptance Criteria (Gherkin):
-  Given [precondition]
-  When [action]
-  Then [expected outcome]
-
-Context: [business context, customer quotes, data]
-Design: [link to Figma/mockup]
-Priority Rationale: [why now vs other backlog items]
-```
+The requesting form is the "As a / I want / So that" statement, Gherkin acceptance criteria
+(Given / When / Then), context, design link, and priority rationale. Read
+`references/templates.md#user-story--requesting` for the full template, including open questions and
+the Definition of Ready checklist.
 
 ### Reporting Perspective (Completion Notes)
-```
-Implementation Summary: [approach taken]
-Technical Decisions: [chose A over B because ...]
-Files Changed: [key files or link to PR]
-Test Coverage: [unit/integration/E2E status]
-Regression Risk: [areas that could be affected]
-Follow-up Items: [PROJ-XXX: deferred tech debt]
-```
+
+Completion notes cover the implementation summary, technical decisions, files changed, test
+coverage, regression risk, and follow-up items. Read `references/templates.md#user-story--reporting`
+for the template.
 
 ### Story Splitting Techniques
 1. By workflow steps (happy path vs edge cases vs errors)
@@ -239,63 +226,29 @@ Follow-up Items: [PROJ-XXX: deferred tech debt]
 ## Epics
 
 ### Requesting Perspective
-```
-EPIC: [Name]
 
-Business Objective: [what business goal?]
-Target Users: [who benefits?]
-Hypothesis: We believe [capability] for [users] will result in [outcome].
-  We'll know when [measurable signal].
-
-Scope:
-  In: [capabilities]
-  Out: [explicitly excluded]
-
-Stories: [numbered list with brief descriptions]
-Definition of Done: [all stories accepted, tests passing, docs updated, demo done, metrics baselined]
-Success Metrics: [metric: current → target]
-Dependencies: [other epics/teams/systems]
-Risks: [risk: mitigation]
-```
+An epic definition states the business objective, target users, a hypothesis ("We believe
+[capability] for [users] will result in [outcome]. We'll know when [measurable signal]"), in and
+out of scope, stories, definition of done, success metrics (current to target), dependencies, and
+risks with mitigations. Read `references/templates.md#epic--requesting` for the template.
 
 ### Reporting Perspective (Completion Summary)
-```
-Outcome: [delivered vs original scope]
-Metrics: [metric: baseline → current (target was X)]
-Deferred/Descoped: [items and why, where tracked]
-Key Technical Decisions: [decision: context, options, rationale]
-Lessons Learned: [what went well, what we'd change]
-Documentation Updated: [links]
-```
+
+A completion summary covers the outcome against original scope, metrics (baseline, current, target),
+deferred or descoped items and where they are tracked, key technical decisions, lessons learned,
+and documentation updated. Read `references/templates.md#epic--reporting` for the template.
 
 ---
 
 ## Bugs
 
 ### Requesting Perspective
-```
-TITLE: [Component] — [Symptom in user terms]
 
-Severity: Critical / Major / Minor / Trivial
-Priority: P0 (immediate) / P1 (next sprint) / P2 (backlog) / P3 (nice to fix)
-
-Environment:
-  - App version: [version/SHA]
-  - OS/Browser: [e.g., Chrome 120 on macOS 14.2]
-  - Environment: [prod / staging / local]
-
-Steps to Reproduce:
-  1. Navigate to [URL]
-  2. Click [element]
-  3. Enter [specific input]
-  4. Submit
-
-Expected: [what should happen]
-Actual: [what happens, exact error messages]
-Frequency: Always / Intermittent (~X%) / Once
-Impact: [users affected, revenue impact, workaround?]
-Logs/Evidence: [stack trace, screenshot, video, HAR]
-```
+A bug report has a title of the form "[Component] — [Symptom in user terms]", severity (Critical /
+Major / Minor / Trivial), priority (P0 (immediate) / P1 (next sprint) / P2 (backlog) / P3 (nice to
+fix)), environment, steps to reproduce, expected and actual results (exact error messages),
+frequency (Always / Intermittent (~X%) / Once), impact (users affected, revenue impact, workaround),
+and logs or evidence. Read `references/templates.md#bug--requesting` for the template.
 
 ### Severity/Priority Matrix
 |  | High Impact | Low Impact |
@@ -306,167 +259,64 @@ Logs/Evidence: [stack trace, screenshot, video, HAR]
 Note: Severity (how bad) and Priority (how soon) are separate axes. Low-severity, high-priority is real (cosmetic bug on homepage = brand impact).
 
 ### Reporting Perspective (Resolution Notes)
-```
-Root Cause: [technical explanation]
-Fix: [what was changed]
-Why This Fix: [alternatives considered, why rejected]
-Verification: [reproduced in X, verified in Y, regression suite passed]
-Prevention: [systemic change — new test, monitoring, etc.]
-```
 
-### Root Cause Analysis (5 Whys)
-```
-Problem: [symptom]
-Why 1: [immediate cause]
-Why 2: [cause of cause]
-...
-Root Cause: [systemic issue]
-Corrective Actions:
-  1. [this bug fix]
-  2. [follow-up story for systemic fix]
-  3. [monitoring/alerting addition]
-```
+Resolution notes cover root cause, the fix, why this fix over the alternatives, verification, and
+prevention (a systemic change such as a new test or monitoring). For a root cause analysis, use the
+5 Whys chain ending in a systemic root cause and a list of corrective actions: the bug fix, a
+follow-up story for the systemic fix, and a monitoring or alerting addition. Read
+`references/templates.md#bug--reporting` for both templates.
 
 ---
 
 ## Tasks & Spikes
 
 ### Technical Task
-```
-TITLE: [Verb] [Object] [Context]
 
-Type: Task / Sub-task / Tech Debt / Infrastructure
-Description: [what and why, link to parent story/epic]
-Technical Approach: [step-by-step plan, key decisions pre-made, files expected to change]
-Acceptance Criteria:
-  - [ ] [specific, verifiable criterion]
-  - [ ] Tests pass
-  - [ ] No performance regression (threshold: X)
-Dependencies: [blocked by / blocks]
-Estimate: [points or t-shirt size]
-```
+A task has a title of the form "[Verb] [Object] [Context]", a type (Task / Sub-task / Tech Debt /
+Infrastructure), a description linked to the parent, a technical approach with key decisions
+pre-made and files expected to change, verifiable acceptance criteria, dependencies, and an
+estimate. Read `references/templates.md#technical-task` for the template.
 
 ### Spike
-```
-TITLE: Spike — [Question to Answer]
-Timebox: [X days / points]
-Context: [why investigate? what decision depends on outcome?]
-Questions: [numbered list of specific questions]
-Approach: [prototype / PoC / vendor eval / benchmarking]
 
---- OUTCOME (after spike) ---
-Findings: [answers to each question]
-Recommendation: [what to do based on findings]
-Unknowns Remaining: [what we still don't know]
-Follow-up Stories: [links]
-Artifacts: [prototype repo / design doc / benchmark results]
-```
+A spike has the title "Spike — [Question to Answer]", a timebox, context (what decision depends on
+the outcome), numbered questions, and an approach; after the spike it gains an outcome section with
+findings per question, a recommendation, unknowns remaining, follow-up stories, and artifacts. Read
+`references/templates.md#spike` for the template.
 
 ---
 
 ## PI & DI Artifacts
 
 ### PI Objectives (SAFe)
-```
-PI [Number]: [Theme]
-Duration: [start] — [end] (8-12 weeks)
-Team: [name]
 
-Objectives:
-  # | Objective | Business Value (1-10) | Iterations | Committed?
-  1 | [description] | 8 | 1-2 | Committed
-  2 | [description] | 6 | 2-3 | Committed
-  3 | [stretch] | 9 | 3-4 | Uncommitted
-
-Business Value Scoring:
-  10 = critical to business viability this PI
-  7-9 = important strategic value
-  4-6 = meaningful but not urgent
-  1-3 = minor or speculative
-
-Dependencies:
-  - [our team] depends on [other team] for [what] by [iteration]
-
-Risks (ROAM):
-  - Resolved: [addressed]
-  - Owned: [someone managing]
-  - Accepted: [consciously living with]
-  - Mitigated: [plan in place]
-
-Confidence Vote: [1-5 team average. <3 triggers re-planning]
-```
+A PI plan names the PI number and theme, duration (8-12 weeks), and team; lists objectives with
+business value (1-10), iterations, and committed or uncommitted status; records dependencies in both
+directions and risks in ROAM categories (Resolved: addressed; Owned: someone managing; Accepted:
+consciously living with; Mitigated: plan in place); and ends with a confidence vote (team average
+1-5; below 3 triggers re-planning). Read `references/templates.md#pi-objectives` for the template
+and the business value scoring scale.
 
 ### Iteration Goals (DI)
-```
-Iteration: Sprint N ([start] — [end])
-Capacity: [X points / Y person-days]
 
-Goals:
-  1. [goal tied to PI objective]
-  2. [goal]
-
-Planned Work:
-  | Ticket | Title | Points | Owner | Goal # |
-  |--------|-------|--------|-------|--------|
-
-Velocity: last 3 sprints avg [X], this sprint planned [Y]
-Carry-over: [tickets and reasons]
-Risks/Blockers: [risk and mitigation]
-```
+An iteration plan states the sprint dates and capacity, goals tied to PI objectives, planned work
+(ticket, title, points, owner, goal number), velocity of the last 3 sprints against this sprint's
+plan, carry-over with reasons, and risks or blockers with mitigations. Read
+`references/templates.md#iteration-goals` for the template.
 
 ---
 
 ## Architecture Decisions
 
 ### ADR — Nygard Format (lightweight)
-```markdown
-# ADR [number]: [Title]
 
-## Status
-[Proposed | Accepted | Deprecated | Superseded by ADR-XXX]
-
-## Context
-[What forces are at play? Technical, political, social, project-specific.]
-
-## Decision
-[What change are we making?]
-
-## Consequences
-[What becomes easier? Harder? What are the trade-offs?]
-```
+Status, Context, Decision, Consequences. Read `references/templates.md#adr--nygard` for the template.
 
 ### ADR — MADR Format (structured)
-```markdown
-# [Title]
 
-## Status
-[Accepted | Proposed | Rejected | Deprecated | Superseded]
-
-## Context and Problem Statement
-[Why are we making this decision?]
-
-## Decision Drivers
-- [e.g., performance requirement]
-- [e.g., team expertise]
-
-## Considered Options
-1. [Option 1]
-2. [Option 2]
-
-## Decision Outcome
-Chosen: "[Option X]", because [justification].
-
-### Positive Consequences
-- [benefit]
-
-### Negative Consequences
-- [cost]
-
-## Pros and Cons of the Options
-### Option 1
-- Good, because [...]
-- Bad, because [...]
-```
+Status, Context and Problem Statement, Decision Drivers, Considered Options, Decision Outcome with
+positive and negative consequences, and pros and cons per option. Read
+`references/templates.md#adr--madr` for the template.
 
 ### Design Doc / RFC
 Read `references/templates.md` § "Design Doc Template" for the full Google-style structure: Objective, Background, Detailed Design, Alternatives, Cross-cutting Concerns, Rollout Plan.
@@ -497,21 +347,11 @@ If the repo uses Conventional Commits (`feat:`, `fix:`, `docs:`, etc.), leverage
 
 ## Tech Debt
 
-```
-# TD-[number]: [Title]
-
-Type: Code / Architecture / Test / Documentation / Infrastructure
-Severity: High / Medium / Low
-Age: [when introduced]
-Owner: [team]
-
-Description: [what is the debt? why does it exist?]
-Impact: [how does it slow us down?]
-Cost of Delay: [what happens if we don't fix it? does it worsen?]
-Remediation Plan: [high-level approach]
-Estimated Effort: [points or t-shirt]
-Trigger: [event that should cause prioritization, e.g., "when we add a 4th payment provider"]
-```
+A tech debt entry (`TD-[number]: [Title]`) records type (Code / Architecture / Test / Documentation
+/ Infrastructure), severity (High / Medium / Low), age, and owner; the description, impact, cost of
+delay, remediation plan, estimated effort; and a trigger, the event that should cause
+prioritization (for example, "when we add a 4th payment provider"). Read
+`references/templates.md#tech-debt-entry` for the template.
 
 ---
 
