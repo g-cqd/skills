@@ -10,7 +10,7 @@ description: >-
 
 # Planner
 
-You are an adaptive planning, routing, and execution agent. You assess the user's request and automatically select the right mode — from skill routing through task decomposition to full project orchestration with parallel agents.
+Classify the request into a mode, then produce that mode's output: skill routing, an execution contract, a task list, a project plan, an orchestration plan with parallel agents, or a second opinion.
 
 ## Contract
 
@@ -29,18 +29,9 @@ You are an adaptive planning, routing, and execution agent. You assess the user'
           synthesize peer-opinions ∅stating-disagreements
 ```
 
-## Before acting
-
-- Quality is more important than speed, so keep the validation steps; a plan that skips them
-  reads well and fails in execution.
-- Run `bash scripts/discover-skills.sh` before routing, because the installed catalog differs
-  between machines and a skill name from memory may not exist here.
-- Present your mode classification and routing decisions before producing output, so the reader
-  can correct the framing before the work is done.
-
 ## Step 0: Classify Mode
 
-Before producing any output, assess which mode fits the request:
+Choose the mode before you produce any output. State the mode and the routing decision first, so the user can correct the framing before the work is done. Keep every validation step that a mode prescribes; a plan without them fails in execution.
 
 | Signal | Mode | What you produce |
 |---|---|---|
@@ -51,46 +42,51 @@ Before producing any output, assess which mode fits the request:
 | Multi-phase work needing parallel agents, locks, logging | **Orchestration Mode** | Phased execution plan with DAG, lock protocol, log protocol, wave strategy |
 | High-impact or contested decision needing external challenge | **Second Opinion Mode** | Consensus, disagreements, recommendation with trade-offs, unresolved risks |
 
-When a request spans modes, compose elements from multiple modes. Use the highest-complexity mode as the structural backbone.
+When a request matches more than one signal, use the matching mode lowest in the table above as the structure and add the elements of the others (see [Mode Composition](#mode-composition)).
+
+Do not engage for:
+- Conversational messages (greetings, thanks, clarifications).
+- Questions about concepts. Answer them directly.
+- Exact, safe one-line edits that the user specified. Make the edit directly.
+- Requests to view or explain an existing plan.
 
 ---
 
 ## Route Mode
 
-Dynamically discover and select the best available skills before execution.
+Select skills from the installed catalog before execution.
 
 ### Step 1: Discover Available Skills
 
-Run `bash scripts/discover-skills.sh` to scan all skill directories:
+Run `bash scripts/discover-skills.sh [project-root]`, with the path to `scripts/` taken from this skill's directory. Pass the project root when the current directory is not the project root. The script scans:
 - Project-level: `./.claude/skills/`, `./.codex/skills/`, `./.copilot/skills/`, `./.opencode/skills/`, `./.agents/skills/`
 - User-level: `~/.claude/skills/`, `~/.codex/skills/`, `~/.copilot/skills/`, `~/.opencode/skills/`, `~/.agents/skills/`
 - Command directories: `./.claude/commands/`, `~/.claude/commands/`
 
-Project-level skills take precedence over user-level skills with the same name.
+If the script cannot run, list the same directories, read the `description` of each `SKILL.md`, and say that you did so.
 
 ### Step 2: Match Intents to Discovered Skills
 
-1. Extract all intents from the request (a single request may have multiple)
-2. For each intent, scan the discovered catalog's `description` fields for best match
-3. Score by keyword overlap, scope alignment, and negative trigger exclusion
-4. Select 1-10 skills ranked by relevance — never reference hardcoded skill names
-5. State selection: `Discovered: N skills. Selected: skill-1, skill-2, ... (reason: rationale per skill)`
+1. Extract each intent from the request. One request can have several.
+2. For each intent, compare it with the `description` fields of the discovered skills.
+3. Score by keyword overlap, scope alignment, and negative-trigger exclusion.
+4. Select 1-10 skills, ranked by relevance.
+5. State the selection: `Discovered: N skills. Selected: skill-1, skill-2, ... (reason: rationale per skill)`
 
 ### Composition Rules
 
-- Select up to 10 relevant skills — as many as the request genuinely needs
-- Identify one primary domain skill, then add supporting skills as warranted
-- Route only to skills present in the discovery output; a skill named from memory may not be installed, and the hand-off would fail silently
-- When two skills cover the same intent, prefer the more specific one (narrower description)
-- If a skill exists at both project and user level, prefer project level
-- Skills from different tools (claude, codex, copilot, opencode, agents) are equivalent — route by capability
-- Re-route only if scope changes materially during execution
+- Choose one primary domain skill. Add a supporting skill only for an intent the primary skill does not cover.
+- Route only to skills in the discovery output. A skill named from memory may not be installed, and the hand-off then fails without an error.
+- When two skills cover the same intent, select the one with the narrower description.
+- When a skill exists at project level and user level with the same name, use the project-level skill.
+- Treat skills from different tools (claude, codex, copilot, opencode, agents) as equal. Route by capability.
+- Re-route during execution only when a new intent appears that no selected skill covers, or a selected skill no longer applies.
 
 ---
 
 ## Execution Mode
 
-Convert development requests into a typed XML execution contract for structured, traceable work.
+Convert a development request into a typed XML execution contract.
 
 ### Type Classification
 
@@ -116,24 +112,22 @@ Convert development requests into a typed XML execution contract for structured,
 
 ### Workflow
 
-1. Classify the request type from the table above
-2. Read the matching XML template from `references/execution-templates/`
-3. Fill placeholders with task-specific values extracted from the user's request
-4. If a required (`fill="required"`) value is missing, make the routine judgement call the wording and the surrounding code most directly support and state the assumption in the contract; ask the user only when different readings would lead to materially different work
-5. If an optional value is missing, omit the element
-6. Present the formulated XML, then execute according to its structure
+1. Classify the request type from the table above.
+2. Read the matching XML template.
+3. Fill the placeholders with values from the user's request.
+4. If a required (`fill="required"`) value is missing, choose the value that the request wording and the surrounding code support most directly, and state the assumption in the contract. Ask the user only when the possible readings lead to different files, deliverables, or behavior.
+5. If an optional value is missing, omit the element.
+6. Present the XML, then execute it in the order of its sections, or delegate each section when you do not edit code.
 
-### Multi-Intent Requests
-
-If a request spans multiple intents (e.g., bug fix plus tests), compose a single request that includes all required sections.
+When a request has more than one intent (for example, a bug fix plus tests), write one contract that contains the required sections of each intent.
 
 ### Formulation Rules
 
-1. Preserve the template hierarchy and tag names
-2. Replace placeholders with concrete, user-specific details
-3. Include only relevant sections; omit irrelevant optional blocks
-4. Keep scope tight to affected modules/files
-5. All templates use dynamic skill resolution — skills are discovered at runtime, never hardcoded
+1. Keep the template's hierarchy and tag names.
+2. Replace each placeholder with a concrete value from the request.
+3. Omit optional blocks that do not apply.
+4. Limit the scope to the affected modules and files.
+5. Leave skill references in the templates dynamic: they resolve from discovery at runtime.
 
 ### Output Format
 
@@ -153,23 +147,25 @@ The label precedes the XML so the reader can tell the contract from the executio
 
 ## Task Mode
 
-Produce a complete, actionable task list before implementation.
+Produce a complete task list before implementation.
 
 ### Workflow
 
-1. **Understand**: Read the request and expected outcomes. Explore enough codebase context to scope accurately. Make routine judgement calls yourself and state them as assumptions in the plan; ask a question only when different readings would lead to materially different work.
-2. **Decompose**: Split into vertical slices with user-visible value. Apply SPIDR when slices are too large (Spike, Path, Interface, Data, Rules). Each task has a single verifiable outcome.
-3. **Connect**: Add explicit dependencies. Order by risk and architectural uncertainty first. Keep tasks independently completable. Where two approaches compete, choose one and commit to it; revisit only on new information that contradicts the reasoning, because re-litigating a settled choice costs more than course-correcting later.
-4. **Validate**: Check for circular dependencies. Check coverage against original request. Present the ordered list for approval.
+1. **Understand**: Read the request and its expected outcomes. Read the code needed to name the files and modules each task touches. Make routine choices yourself and state them as assumptions in the plan. Ask a question only when the possible readings lead to different files, deliverables, or behavior.
+2. **Decompose**: Split the work into vertical slices that each deliver user-visible value. Each task has one verifiable outcome. When a slice fails the atomicity checklist below, split it with SPIDR (Spike, Path, Interface, Data, Rules).
+3. **Connect**: Add explicit dependencies. Put the tasks with the highest risk and architectural uncertainty first. Keep each task completable on its own. When two approaches compete, choose one. Revisit the choice only when new information contradicts its reasoning.
+4. **Validate**: Check that there are no circular dependencies. Check that the tasks cover each part of the original request. Present the ordered list. If the user can answer during the task, wait for approval. Otherwise state the list as the plan of record and continue.
+
+Read `references/task-guidelines.md` when a slice fails the atomicity checklist and you need the SPIDR, INVEST, or per-request-type decomposition patterns.
 
 ### Atomicity Checklist
 
-A task is atomic only if all are true:
-- Single outcome in one sentence
-- Independently verifiable
-- Completes in one focused implementation turn
-- Inputs/dependencies are explicit
-- No hidden multi-step subtask inside
+A task is atomic only if all of these are true:
+- Its outcome fits in one sentence.
+- It can be verified on its own.
+- It completes in one focused implementation turn.
+- Its inputs and dependencies are explicit.
+- It contains no hidden multi-step subtask.
 
 ### Task Format
 
@@ -180,28 +176,25 @@ A task is atomic only if all are true:
 ### Anti-Patterns
 
 - Horizontal slices (`model`, `view`, `tests` as separate top-level tasks)
-- Over-granular line-by-line tasks
-- Vague outcomes with no verification
-- Mixing research and implementation in the same task
-
-Consult `references/task-guidelines.md` for SPIDR splitting, INVEST checklist, and decomposition patterns.
+- Line-by-line tasks
+- Research and implementation in the same task
 
 ---
 
 ## Project Mode
 
-Produce a structured, evidence-based project plan. Every recommendation must be traceable to proven practices.
+Produce a project plan in which each recommendation cites evidence.
 
 ### Workflow
 
-1. **Intake** the user's raw request — extract the what, why, who, and constraints
-2. **Assess context** using the four tailoring knobs (uncertainty, dependency density, regulatory burden, work arrival mode)
-3. **Classify** the project into a delivery context
-4. **Read** the matching template from `references/templates/`
-5. **Read** `references/evidence-base.md` for evidence citations
-6. **Fill** the template with specifics from the user's request
-7. **Present** the formulated plan (collapsed in a code block)
-8. **Produce** the output YAML deliverable
+1. **Intake**: extract the what, why, who, and constraints from the request.
+2. **Assess**: rate the four tailoring knobs below.
+3. **Classify**: choose a delivery context from the table below.
+4. **Read** the matching template from `references/templates/`.
+5. **Read** `references/evidence-base.md` for the citations.
+6. **Fill** the template with values from the request.
+7. **Present** the plan in a collapsed code block.
+8. **Produce** the output YAML deliverable.
 
 ### Context Classification
 
@@ -227,81 +220,66 @@ Produce a structured, evidence-based project plan. Every recommendation must be 
 
 ### Evidence Citations
 
-Give every recommendation a strength label — `[Strong]`, `[Moderate]`, `[Promising]`, or `[Opinion]` — so the reader can weigh it against the evidence rather than take it on authority. Reference `references/evidence-base.md` and cite by ID (e.g., `[E-01]`).
+Give each recommendation a strength label: `[Strong]`, `[Moderate]`, `[Promising]`, or `[Opinion]`. Cite the entry in `references/evidence-base.md` by ID (for example, `[E-01]`). Mark a recommendation with no entry as unsupported.
 
 ---
 
 ## Orchestration Mode
 
-For complex multi-phase work requiring parallel execution, dependency synchronization, and structured progress tracking.
+Use for multi-phase work that needs parallel agents, dependency synchronization, and progress logs.
 
 ### Phase Dependency Graph
 
 Build a DAG of execution phases:
-1. Group tasks into phases by coupling and risk
-2. Define `depends_on` relationships
-3. Identify parallelism
-4. Visualize in ASCII
+1. Group tasks into phases by coupling and risk.
+2. Define the `depends_on` relationships.
+3. Mark the phases that can run in parallel.
+4. Draw the graph in ASCII.
 
 ### Lock and Log Protocols
 
-Phases synchronize through lock files, `P1.lock` through `P{N}.lock`, created at plan start; an agent deletes its
-phase's lock on completion (absence = done), waits on dependencies with `work wait --gone P{N}.lock` rather than a
-fixed sleep, and edits only files in its own phase's scope. Each phase writes a log `P{N}-{name}.log` of timestamped
-START, DONE, and ERROR lines, and a master log tracks phase-level lifecycle events.
+Phases synchronize through lock files `P1.lock` through `P{N}.lock`, created at plan start. An agent deletes its phase's lock when the phase completes; a missing lock means done. On ERROR, write the ERROR line, keep the lock, and report to the lead; the lead follows the failure recovery in `references/orchestration-patterns.md`. An agent waits on a dependency with `work wait --gone P{N}.lock`, not a fixed sleep. An agent edits only files in its own phase's scope. Each phase writes a log `P{N}-{name}.log` of timestamped START, DONE, and ERROR lines. A master log records phase-level lifecycle events.
 
-Read `references/orchestration-protocols.md` when writing lock files or phase logs: the six-step lock protocol and
-the log line format.
+Read `references/orchestration-protocols.md` when writing lock files or phase logs: the six-step lock protocol and the log line format.
 
-A hand-off or compaction summary (when a phase passes to another agent or the context is
-compacted) preserves, so the next context can continue without redoing work: problems met and
-how they were resolved; options tried or set aside and why; everything decided, agreed, ruled
-out, or constrained, stated exactly; where things stand now; what is still open; and
-hard-to-reconstruct specifics — names, numbers, paths, exact wording.
+A hand-off or compaction summary (written when a phase passes to another agent or the context is compacted) contains:
+- problems met and how they were resolved;
+- options tried or set aside, and why;
+- each decision, agreement, exclusion, and constraint, stated exactly;
+- the current state;
+- the open items;
+- names, numbers, paths, and exact wording that are hard to reconstruct.
 
 ### Agent Wave Strategy
 
-1. **Wave 1**: All phases with zero dependencies (parallel background agents)
-2. **Wave N**: Phases whose dependencies are all in prior waves
-3. **Parallelize up to what the machine can build.** On one machine, every agent that builds competes
-   for the same cores, so a wave runs at most as many of them as the machine sustains: about the
-   core count divided by one build's cores, two or three on an 8-core laptop. More agents do not
-   finish sooner; they make every build slower. Agents that only read, research, review or plan
-   do not count against that limit.
+1. **Wave 1**: each phase with zero dependencies, as parallel background agents.
+2. **Wave N**: each phase whose dependencies are all in earlier waves.
+3. **Cap the agents that build.** On one machine, all building agents share the cores. A wave runs at most about core count ÷ one build's cores of them: two or three on an 8-core laptop. More building agents make each build slower. Agents that only read, research, review, or plan do not count against the cap.
 
-Each agent receives: phase plan, file scope, lock/log protocol, depends_on list, recommended agent type.
+Give each agent: its phase plan, its file scope, the lock and log protocol, its `depends_on` list, and the recommended agent type.
 
-Delegate when work can run in parallel, needs isolated context, or is an independent workstream.
-For a single lookup, a sequential single-file change, or work that needs shared context across
-steps, do it directly: spawning an agent is slower than a direct grep and loses the context you
-already hold. While subagents run, the lead keeps working on independent items rather than
-idling; wait only when the next step depends on a result.
+Delegate work that can run in parallel, needs an isolated context, or is an independent workstream. Do the work directly for a single lookup, a sequential single-file change, or steps that need shared context; spawning an agent for these is slower and loses the context you hold. While subagents run, work on independent items. Wait only when the next step needs a result.
 
 ### Worktrees and Landing
 
-An agent that edits code and builds gets a worktree of its own: few and long-lived (one per package area, no more than
-the agents that build at once) so builds stay warm; agents that only read, research, review or plan use the main checkout.
-The agent's last run is the verification: land by fast-forward, rebasing if the main line moved.
+An agent that edits code and builds gets its own worktree. Keep worktrees long-lived and one per package area, and create no more than the number of agents that build at once, so builds stay warm. Agents that only read, research, review, or plan use the main checkout. The agent's last run is the verification: land by fast-forward, and rebase first if the main line moved.
 
 Read `references/orchestration-protocols.md` when creating or removing a worktree, or landing an agent's change.
-Consult `references/orchestration-patterns.md` for full lock lifecycle, failure recovery, wave dispatch, and verification patterns.
+Read `references/orchestration-patterns.md` when a phase fails or leaves a stale lock, when building the wave schedule, or when configuring each phase's agent: it has the full lock lifecycle, failure recovery, wave dispatch, and verification patterns.
 
 ### Work Order and the Queue
 
-Work runs first in, first out: one queue of what is not done, new items to its end, oldest first. Two classes
-jump or leave the line: a regression that breaks validity (correctness, safety, security, data) is repaired
-before the work lands; a regression or missed target that costs only performance joins the end of the queue and
-does not block the work. `work order` and `work plan` (`scripts/work.py`) apply this order to a task list, and
-agents that share a machine share one queue through `work add`, `work next`, `work run`, and `work wait`.
+Work runs first in, first out: one queue of unfinished items, new items at the end, oldest first. Two classes are exceptions:
+- A regression that breaks validity (correctness, safety, security, data) is repaired before the work lands.
+- A regression or missed target that costs only performance joins the end of the queue and does not block the work.
 
-Read `references/work-queue.md` when ordering or scheduling tasks across agents or using the shared queue: the `work`
-command table, claim-then-accept, CPU and memory capacity rules, limits, and waiting.
+`work order` and `work plan` (`scripts/work.py`) apply this order to a task list. Agents that share a machine share one queue through `work add`, `work next`, `work run`, and `work wait`.
+
+Read `references/work-queue.md` when ordering tasks across agents or using the shared queue: the `work` command table, claim-then-accept, CPU and memory capacity rules, limits, and waiting.
 
 ---
 
 ## Mode Composition
-
-Modes compose naturally. Common compositions:
 
 | Request pattern | Modes used |
 |---|---|
@@ -315,16 +293,13 @@ Modes compose naturally. Common compositions:
 
 ## Second Opinion Mode
 
-Gather independent analyses from peer AI CLIs and return one consolidated recommendation. Use for
-high-impact architectural decisions, security or migration plans that benefit from challenge,
-conflicting implementation options, and pre-merge sanity checks on risky changes.
+Collect independent analyses from peer AI CLIs and return one consolidated recommendation. Use for high-impact architectural decisions, security or migration plans, conflicting implementation options, and pre-merge checks on risky changes.
 
 ### Workflow
 
-1. Convert the question into a concise review prompt.
-2. Run `scripts/request_opinions.py --prompt "<your prompt>"` — it auto-detects the current CLI
-   and queries the others that are installed.
-3. Read the outputs, identify overlaps and disagreements, then synthesize.
+1. Write the question as a review prompt in the template below.
+2. Run `scripts/request_opinions.py --prompt "<your prompt>"`. The script detects the current CLI and queries the other installed CLIs.
+3. Read the outputs, list the agreements and disagreements, then write the output contract.
 
 ### Prompt template
 
@@ -340,38 +315,28 @@ Four labelled lines give each peer the decision, its constraints, and the curren
 
 ### Output contract
 
-1. **Consensus** — what every peer agreed on.
-2. **Disagreements** — and why each one matters. Report each one on its own rather than
-   flattening them into a single answer; the disagreement is the signal you paid for.
-3. **Recommendation** — with explicit trade-offs.
-4. **Unresolved risks** requiring empirical validation.
+1. **Consensus**: what all peers agreed on.
+2. **Disagreements**: each one stated separately, with why it matters. Do not merge them into one answer.
+3. **Recommendation**: with explicit trade-offs.
+4. **Unresolved risks** that need empirical validation.
 
 ### Notes
 
-- Depends on local CLI availability (`claude`, `codex`, `gemini`). If one is missing, continue
-  with the available peers and say which were consulted.
-- Keep raw peer output for traceability when the decision is sensitive.
-- A peer opinion is evidence, not authority. Weigh it; do not defer to it.
+- The peers are the local CLIs `claude`, `codex`, and `gemini`. If one is missing, continue with the others and name the peers consulted. If none is installed, say so and give your own analysis, marked as a single opinion.
+- Keep the raw peer output when the decision is hard to reverse or concerns security.
+- Treat a peer opinion as evidence, not authority. Weigh it against the other evidence.
 
 ---
 
-## When not to engage
-
-Skip entirely for:
-- Conversational messages (greetings, thanks, clarifications)
-- Questions about concepts (explain directly)
-- Exact, safe one-line edits directly specified by the user
-- Requests to view or explain an existing plan
-
 ## Presentation Format
 
-Use the format that fits the content:
-
-- ASCII dependency graphs when phases have dependencies to show
-- Tables with ID, severity, and action columns when there are several items to compare
-- Execution timeline visualizations when scheduling matters
-- Collapsed code blocks for XML/YAML artifacts, so prose and contract stay separate
-- Skill selection rationale before any work begins
+| Content | Format |
+|---|---|
+| Phases with dependencies | ASCII dependency graph |
+| Two or more items to compare | Table with ID, severity, and action columns |
+| Work where scheduling matters | Execution timeline |
+| XML or YAML artifacts | Collapsed code block, separate from the prose |
+| Skill selection | Rationale, before any work begins |
 
 ## Boundaries
 
@@ -394,7 +359,7 @@ Use the format that fits the content:
 - `references/orchestration-patterns.md` — lock, log, wave strategy details
 - `references/orchestration-protocols.md` — lock protocol, log format, worktree policy, landing rules
 - `references/work-queue.md` — work order, the `work` command table, and the shared queue's capacity rules
-- `references/routing-matrix.md` — skill routing rules and composition
-- `references/work-scheduling.md` — why `work` admits jobs on predicted use: the simulation and its sources
-- `scripts/discover-skills.sh` — dynamic skill discovery across all tool directories
+- `references/routing-matrix.md` — skill routing rules and composition; read it when two discovered skills conflict for one intent
+- `references/work-scheduling.md` — why `work` admits jobs on predicted use: the simulation and its sources; read it only when changing the `work` admission policy
+- `scripts/discover-skills.sh` — skill discovery across all tool directories
 - `scripts/request_opinions.py` — queries peer AI CLIs for second opinions

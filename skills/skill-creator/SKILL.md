@@ -9,7 +9,7 @@ description: >-
 
 # Skill Creator
 
-Create, test, improve, install, and manage agent skills. Skills follow the [Agent Skills](https://agentskills.io) open standard — portable across 30+ AI tools.
+Create, test, improve, install, and manage agent skills. Skills follow the [Agent Skills](https://agentskills.io) open standard, which 30+ AI tools read. Paths below (`scripts/`, `agents/`, `references/`, `assets/`, `eval-viewer/`) are relative to this skill's directory.
 
 ## Contract
 
@@ -19,7 +19,7 @@ Create, test, improve, install, and manage agent skills. Skills follow the [Agen
 §SELF     SKILL.md ! actionable ∅opening-a-reference
           deep-refs ⇒ long-tail-catalogs only
 §ONE      1 skill ∷ 1 concern ⇒ overlap ⇒ merge ∨ redraw-boundary
-§MUTUAL   "not for X, use Y" ⇒ Y ! states the mirror
+§MUTUAL   "not for X, use Y" ⇒ Y ! owns X · Y ¬must cite back
 §TEST     ? triggering ∀eval BEFORE claiming a skill works
 §BAN      description that could equally describe a neighbour ·
           trigger-term lost in a merge · skill ∅negative-boundary
@@ -36,9 +36,9 @@ Create, test, improve, install, and manage agent skills. Skills follow the [Agen
 | "Install a skill" / "List available skills" | → [Install Skills](#installing-skills) |
 | "Review this skill" / "Audit quality" | → [Review Checklist](#review-checklist) |
 
-For the full specification (frontmatter fields, structure rules, cross-platform compatibility), see `references/specification.md`.
+Read `references/specification.md` when you need a frontmatter field other than `name` and `description`, or a cross-platform compatibility rule.
 
-For design patterns (sequential workflow, multi-MCP, iterative refinement, domain intelligence), see `references/patterns.md`.
+Read `references/patterns.md` when the skill needs a multi-step structure: sequential workflow, multi-MCP coordination, iterative refinement, or domain intelligence.
 
 ---
 
@@ -46,17 +46,17 @@ For design patterns (sequential workflow, multi-MCP, iterative refinement, domai
 
 ### 1. Capture Intent
 
-Understand what the skill should do. If the conversation already contains a workflow ("turn this into a skill"), extract: tools used, step sequence, corrections made, input/output formats.
+If the conversation already contains the workflow ("turn this into a skill"), extract from it: the tools used, the step sequence, the corrections the user made, and the input and output formats.
 
-Clarify:
-- What should this skill enable the agent to do?
-- When should it trigger? (what user phrases/contexts)
-- What's the expected output format?
-- Should we set up test cases? (yes for objectively verifiable output; optional for subjective)
+Get answers to these questions. Take each answer from the conversation first; ask the user only the questions the conversation does not answer:
+- What does the skill enable the agent to do?
+- Which user phrases and contexts trigger it?
+- What is the expected output format?
+- Do we set up test cases? Yes for objectively verifiable output; optional for subjective output.
 
 ### 2. Interview and Research
 
-Ask about edge cases, input/output formats, example files, success criteria, and dependencies. Check available MCPs for research. Come prepared with context.
+Ask about edge cases, input and output formats, example files, success criteria, and dependencies. If an MCP server or documentation tool covers the domain, query it once per open question before asking.
 
 ### 3. Write the SKILL.md
 
@@ -69,7 +69,7 @@ skill-name/
 └── assets/               # Optional — templates, icons, fonts
 ```
 
-**Frontmatter** — the triggering mechanism (see `references/specification.md` for all fields):
+**Frontmatter** is the triggering mechanism (all fields: `references/specification.md`):
 <example>
 ```yaml
 ---
@@ -80,36 +80,36 @@ description: What it does. Use when user says X, mentions Y, or needs Z.
 The description leads with the concern, then names the situations that should load it, because it is the only text the harness reads when deciding whether to load the skill.
 </example>
 
-Keep the parsed description at 1–1,024 characters, targeting at most 500 for this set.
-Use `>-` for wrapped YAML without a trailing newline. Preserve the main triggers and a useful
-negative boundary; keep detailed API lists and procedures in the body. Avoid angle brackets,
-which the bundled validator rejects. Validate the description after each edit.
+Description rules:
+- Keep the parsed description at 1–1,024 characters; target at most 500 for this set.
+- Use `>-` for wrapped YAML without a trailing newline.
+- Keep the main triggers and at least one negative boundary. Put detailed API lists and procedures in the body.
+- Do not use angle brackets; the bundled validator rejects them.
+- Run the validator (step 5) after each description edit.
 
 **Writing guidelines:**
-- Use imperative form in instructions
-- Explain **why** things are important — today's LLMs are smart and respond to reasoning better than rigid commands
-- Keep SKILL.md under 500 lines; move detailed docs to `references/`
-- Include examples to show expected formats
-- Be specific and actionable (not "validate the data" but "run `python scripts/validate.py --input {filename}`")
-- Reference bundled resources clearly with when-to-read guidance
+- Write instructions in the imperative.
+- Keep SKILL.md under 500 lines. Keep rules, decision tables, and known failure cases in SKILL.md, because agents rarely open `references/`. Move only long catalogs and code corpora to `references/`.
+- Write commands, not goals: not "validate the data" but "run `python scripts/validate.py --input {filename}`".
+- Give each reference pointer the condition under which to read the file.
 
-**Prompting rules for the body** — a SKILL.md is system-prompt text, so it follows the same rules as one:
-- Write emphasis in sentence case. Current models follow instructions closely and overtrigger on shouted words (`MUST`, `NEVER`, `CRITICAL`); "use X when …" carries the same weight.
-- State each rule with its reason when the reason is not obvious; the model generalises from the motivation, and a bare rule gets applied literally in the wrong places.
-- Say what to do, not only what to avoid; a prohibition without an alternative leaves the model to guess it.
+**Prompting rules for the body.** A SKILL.md is system-prompt text and follows the same rules:
+- Write emphasis in sentence case. Current models overtrigger on shouted words (`MUST`, `NEVER`, `CRITICAL`); "use X when …" carries the same weight.
+- Give a rule its reason only when the reason changes behavior in a case the rule does not name. Use one clause.
+- Give each prohibition the allowed action. A prohibition without an alternative leaves the model to guess the alternative.
 - Wrap examples of the model's own output (a sample answer, comment, or artifact) in `<example>` tags, several in `<examples>`, each with a one-line rationale. Code that demonstrates an API stays in a fenced block.
-- Formatting rules say when a format is appropriate, not which formats are banned; blanket anti-markdown language suppresses structure the content needs.
-- Prefer general instructions ("verify against the spec before finishing") over hand-written reasoning scripts; numbered steps are for procedures whose order matters.
-- Where the skill ends in a deliverable, ask for a self-check against a named criterion before finishing.
+- Write formatting rules as when a format is appropriate, not as banned formats. Blanket anti-markdown language suppresses structure the content needs.
+- Prefer general instructions ("verify against the spec before finishing") to hand-written reasoning scripts. Use numbered steps only for procedures whose order matters.
+- When the skill ends in a deliverable, require a self-check against a named criterion before finishing.
 
 **Naming:**
-- Kebab-case only: `notion-project-setup` not `NotionProjectSetup`
-- Verb-led phrases preferred: `fix-issue`, `deploy-app`
-- Folder name matches skill name exactly
+- Kebab-case only: `notion-project-setup`, not `NotionProjectSetup`.
+- Prefer verb-led names: `fix-issue`, `deploy-app`.
+- The folder name matches the `name` field exactly.
 
 ### 4. Initialize (New Skills)
 
-For a fresh scaffold:
+For a new scaffold:
 ```bash
 python scripts/init_skill.py <skill-name> --path <output-directory> [--resources scripts,references,assets]
 ```
@@ -120,7 +120,7 @@ python scripts/init_skill.py <skill-name> --path <output-directory> [--resources
 python scripts/quick_validate.py <path/to/skill-folder>
 ```
 
-Checks: YAML frontmatter format, required fields, naming rules.
+The validator checks the YAML frontmatter format, the required fields, and the naming rules.
 
 ---
 
@@ -128,11 +128,11 @@ Checks: YAML frontmatter format, required fields, naming rules.
 
 ### Core Loop
 
-1. **Spawn runs** — for each test case, launch with-skill AND baseline runs in parallel
-2. **Draft assertions** — while runs are in progress, draft quantitative evals
-3. **Capture timing** — save `total_tokens` and `duration_ms` from task notifications to `timing.json`
-4. **Grade, aggregate, view** — grade assertions, aggregate benchmark, launch the viewer
-5. **Read feedback** — collect user feedback, improve, repeat
+1. **Spawn runs**: for each test case, launch a with-skill run and a baseline run in parallel.
+2. **Draft assertions**: while the runs are in progress, draft quantitative evals.
+3. **Capture timing**: save `total_tokens` and `duration_ms` from the task notifications to `timing.json`.
+4. **Grade, aggregate, view**: grade the assertions, aggregate the benchmark, launch the viewer.
+5. **Read feedback**: collect the user's feedback and improve the skill. Start the next iteration at step 1. Stop when the user accepts the result or gives no further feedback.
 
 ### Test Cases
 
@@ -146,42 +146,26 @@ Save to `evals/evals.json`:
 }
 ```
 
-See `references/schemas.md` for full schema (including assertions, grading, benchmark formats).
+Read `references/schemas.md` when writing assertions, `grading.json`, or benchmark files: it has the full schemas.
 
 ### Running Tests
 
-**With-skill run:** Spawn subagent with skill path + task prompt, save outputs to `workspace/iteration-N/eval-ID/with_skill/outputs/`
+**With-skill run:** spawn a subagent with the skill path and the task prompt. Save its outputs to `workspace/iteration-N/eval-ID/with_skill/outputs/`.
 
-**Baseline run:** Same prompt, no skill (or old skill version), save to `without_skill/outputs/`
+**Baseline run:** the same prompt with no skill (or the old skill version). Save to `without_skill/outputs/`.
 
-Launch both in the same turn for each test case.
+Launch both runs of a test case in the same turn.
 
 ### Grading and Viewing
 
-1. Grade each run using `agents/grader.md` — save `grading.json` (fields: `text`, `passed`, `evidence`)
+1. Grade each run with `agents/grader.md`. Save `grading.json` (fields: `text`, `passed`, `evidence`).
 2. Aggregate: `python -m scripts.aggregate_benchmark <workspace>/iteration-N --skill-name <name>`
-3. Analyze: read `agents/analyzer.md` for patterns (non-discriminating assertions, high variance, time/token tradeoffs)
-4. Launch viewer:
+3. Analyze: read `agents/analyzer.md` for patterns (non-discriminating assertions, high variance, time/token tradeoffs).
+4. Launch the viewer:
    ```bash
    python eval-viewer/generate_review.py <workspace>/iteration-N --skill-name "name" --benchmark <workspace>/iteration-N/benchmark.json
    ```
-   For iteration 2+: add `--previous-workspace <workspace>/iteration-<N-1>`
-
-### Three Testing Dimensions (from Anthropic's Guide)
-
-**1. Triggering tests** — does the skill load at the right times?
-- Triggers on obvious tasks
-- Triggers on paraphrased requests
-- Doesn't trigger on unrelated topics
-
-**2. Functional tests** — does it produce correct outputs?
-- Valid outputs generated
-- API/tool calls succeed
-- Error handling works
-- Edge cases covered
-
-**3. Performance comparison** — does the skill improve results?
-- Compare with-skill vs without-skill: tool calls, tokens, errors, user corrections needed
+   From iteration 2: add `--previous-workspace <workspace>/iteration-<N-1>`.
 
 ---
 
@@ -189,42 +173,40 @@ Launch both in the same turn for each test case.
 
 ### How to Think About Improvements
 
-1. **Generalize from feedback** — don't overfit to test examples. If a fix only works for one test case, it's not a good fix. Try different metaphors, patterns of working.
-2. **Keep the prompt lean** — remove instructions that aren't pulling their weight. Read transcripts to spot unproductive work.
-3. **Explain the why** — reasoning beats rigid commands. Help the model understand why something matters.
-4. **Look for repeated work** — if all test runs independently wrote similar helper scripts, bundle that script in `scripts/`.
+1. **Generalize from feedback.** A fix that works for only one test case is overfitted. Try a different wording or a different working pattern instead.
+2. **Keep the prompt lean.** Remove each instruction that does not change the agent's behavior in the transcripts. Read the transcripts to find unproductive work.
+3. **Bundle repeated work.** If each test run wrote a similar helper script, put that script in `scripts/`.
 
 ### Iteration Signals
 
-**Undertriggering** (skill doesn't load when it should):
-- Add more detail and trigger phrases to description
-- Include technical keywords
-- Add file type mentions
+**Undertriggering** (the skill does not load when it should):
+- Add trigger phrases and technical keywords to the description.
+- Add the file types the skill handles.
 
-**Overtriggering** (skill loads for unrelated queries):
-- Add negative triggers in sentence case, naming the owner ("Not for X, which is `other-skill`"), so the request has somewhere to go
-- Be more specific about scope
-- Clarify boundaries with related skills
+**Overtriggering** (the skill loads for unrelated queries):
+- Add negative triggers in sentence case that name the owner ("Not for X, which is `other-skill`"), so the request has somewhere to go.
+- Narrow the scope terms.
+- Redraw the boundaries with related skills.
 
 **Instructions not followed**:
-- Keep instructions concise — use bullet points where the items are discrete
-- Put the instructions that matter most at the top
-- Replace ambiguous language with specific checks, and add the reason where the rule is not self-evident; shouting a rule in caps makes it fire in the wrong places, not more reliably
-- Bundle validation scripts for deterministic checks
+- Use bullet points for discrete items.
+- Put the most important instructions at the top.
+- Replace ambiguous language with specific checks. Where the transcripts show a rule applied in the wrong case, add the missing condition or a one-clause reason, not capitals.
+- Bundle validation scripts for deterministic checks.
 
 ---
 
 ## Description Optimization
 
-The automated pipeline optimizes triggering accuracy using train/test splits.
+The automated pipeline optimizes triggering accuracy with train/test splits.
 
 ### Step 1: Generate 20 eval queries (10 should-trigger, 10 should-not)
 
-Queries must be realistic — specific, detailed, with context. Not "Format this data" but a full sentence with file names, backstory, and specifics. Negative cases should be near-misses (adjacent domains, shared keywords), not obviously irrelevant.
+Each query must be realistic: a full sentence with file names, backstory, and specifics, not "Format this data". Negative cases must be near misses (adjacent domains, shared keywords), not unrelated requests.
 
 ### Step 2: Review with user
 
-Present via `assets/eval_review.html` template. User can edit, toggle, add/remove entries.
+Present the queries with the `assets/eval_review.html` template. The user can edit, toggle, add, and remove entries. If no user can review, keep the generated set and state that it was not reviewed.
 
 ### Step 3: Run optimization
 
@@ -232,11 +214,11 @@ Present via `assets/eval_review.html` template. User can edit, toggle, add/remov
 python -m scripts.run_loop --eval-set <eval.json> --skill-path <path> --model <model-id> --max-iterations 5 --verbose
 ```
 
-Splits 60% train / 40% test, evaluates 3x per query, uses extended thinking to propose improvements, selects best by test score.
+The loop splits 60% train / 40% test, evaluates each query 3 times, uses extended thinking to propose improvements, and selects the best description by test score.
 
 ### Step 4: Apply result
 
-Update SKILL.md frontmatter with `best_description` from output. Show before/after to user.
+Replace the description in the SKILL.md frontmatter with `best_description` from the output. Show the before and after to the user.
 
 ---
 
@@ -253,9 +235,9 @@ python scripts/list-skills.py                            # curated
 python scripts/list-skills.py --path skills/.experimental  # experimental
 ```
 
-See `references/installing.md` for full options, distribution, and API usage.
+Read `references/installing.md` when you need install options other than the two above, distribution, or API usage.
 
-After installing: restart the agent to pick up new skills.
+After installing, restart the agent so it loads the new skills.
 
 ---
 
@@ -263,42 +245,42 @@ After installing: restart the agent to pick up new skills.
 
 ### Structure
 - [ ] File named exactly `SKILL.md` (case-sensitive)
-- [ ] Folder name is kebab-case, matches `name` field
+- [ ] Folder name is kebab-case and matches the `name` field
 - [ ] YAML frontmatter has `---` delimiters
-- [ ] `name` field is kebab-case, under 64 chars
-- [ ] `description` includes what it does AND when to use it
-- [ ] No XML angle brackets in frontmatter
+- [ ] `name` field is kebab-case, under 64 characters
+- [ ] `description` states what the skill does and when to use it
+- [ ] No angle brackets in the frontmatter
 - [ ] No README.md inside the skill folder
 
 ### Content Quality
 - [ ] SKILL.md under 500 lines
 - [ ] Instructions are imperative and specific
-- [ ] References linked with when-to-read guidance
-- [ ] Examples included for expected formats, output examples in `<example>` tags with a rationale
-- [ ] Emphasis in sentence case; rules carry their reason; prohibitions name the alternative
-- [ ] Error handling for common failure cases
+- [ ] Each reference pointer states when to read the file
+- [ ] Examples show the expected formats; output examples are in `<example>` tags with a rationale
+- [ ] Emphasis in sentence case; reasons only where they change behavior; each prohibition names the alternative
+- [ ] Error handling for the known failure cases
 - [ ] No information duplicated between SKILL.md and references
 
 ### Description Quality
 - [ ] Includes trigger phrases users would actually say
-- [ ] Mentions relevant file types
-- [ ] Has negative triggers if needed to prevent over-triggering
-- [ ] Follows structure: [What it does] + [When to use it] + [Key capabilities]
+- [ ] Mentions the file types the skill handles, if any
+- [ ] Has at least one negative boundary that names the owning skill
+- [ ] Follows the order: concern, coverage, triggers, negative boundary
 
 ### Bundled Resources
 - [ ] Scripts tested and working
-- [ ] References have TOC if >100 lines
-- [ ] Assets are actually used in output
+- [ ] Each reference over 100 lines has a table of contents
+- [ ] Each asset is used in the output
 - [ ] No extraneous files (CHANGELOG, INSTALLATION_GUIDE, etc.)
 
 ---
 
 ## Agent Definitions (Subagents)
 
-For grading, comparison, and analysis, read the relevant agent file:
-- `agents/grader.md` — evaluate assertions against outputs
-- `agents/comparator.md` — blind A/B comparison between two outputs
-- `agents/analyzer.md` — analyze why one version beat another
+Read the agent file for the job:
+- `agents/grader.md`: when grading assertions against outputs
+- `agents/comparator.md`: when running a blind A/B comparison between two outputs
+- `agents/analyzer.md`: when analyzing why one version beat another
 
 ## References
 
@@ -306,15 +288,15 @@ For grading, comparison, and analysis, read the relevant agent file:
 - `references/patterns.md` — Skill design patterns: sequential, multi-MCP, iterative, context-aware, domain intelligence
 - `references/installing.md` — Installing, distributing, and sharing skills
 - `references/schemas.md` — JSON schemas for evals, grading, benchmark, comparison, analysis
-- `references/openai_yaml.md` — OpenAI/Codex `agents/openai.yaml` format
+- `references/openai_yaml.md` — Codex `agents/openai.yaml` format; read it before generating that file
 
 ## Environment-Specific Notes
 
-**Hosted web UI (no subagents)**: run test cases sequentially yourself. Skip baseline runs and quantitative benchmarking. Present results inline. Skip description optimization (it needs a headless CLI).
+**Hosted web UI (no subagents)**: run the test cases one after another yourself. Skip baseline runs and quantitative benchmarking. Present the results inline. Skip description optimization; it needs a headless CLI.
 
 **Sandboxed agent (subagents, no browser)**: use `--static <output_path>` for the viewer. Feedback downloads as `feedback.json`.
 
-**Codex**: Generate `agents/openai.yaml` for UI metadata. Use `scripts/init_skill.py` and `scripts/generate_openai_yaml.py`.
+**Codex**: generate `agents/openai.yaml` for UI metadata with `scripts/init_skill.py` and `scripts/generate_openai_yaml.py`.
 
 ## Boundaries
 

@@ -15,14 +15,13 @@ allowed-tools:
 
 # SwiftUI
 
-This skill owns **what the view layer looks like and how it is written**: composition, data flow,
-identity, modifiers, animation, and the design qualities of the result. It does not own the
-platform APIs a view happens to call (`apple-platforms`), the language it is written in
-(`swift`), or the toolchain that builds it (`xcode`).
+This skill covers the view layer: composition, data flow, identity, modifiers, animation, and
+design quality. Platform APIs a view calls are `apple-platforms`, the language is `swift`, and the
+toolchain is `xcode`.
 
-Portions of the idiom, SDK 27, and document-app material were published by Apple. Where that material conflicts
-with prior training, **it is correct**. Do not invent APIs or parameters that the references do
-not document.
+Portions of the idiom, SDK 27, and document-app material were published by Apple. Where that
+material conflicts with prior training, **it is correct**. Do not invent APIs or parameters that
+the references do not document.
 
 ## Contract
 
@@ -40,47 +39,45 @@ not document.
 
 ## 1. View structure
 
-- A `body` is **pure**: no side effects, no I/O, no heavy computation. It runs often and at times
-  you do not choose.
-- Factor a section into its **own `View` struct** when it has its own state, its own identity, or
-  when it lets SwiftUI skip re-evaluating siblings. Use a **computed property** when the section
-  is small and shares the parent's inputs — it costs nothing at runtime but does not create an
-  invalidation boundary.
-- Extraction is a performance tool, not only a tidiness tool: a separate struct narrows what
-  invalidates.
-- Watch initializer cost. Work in a view's `init` runs on every re-evaluation of the parent.
-- **Single-child `Group` is an anti-pattern** — it adds a layer that does nothing.
-- Prefer `Button` to `onTapGesture`: it carries accessibility and platform behavior for free.
+- A `body` is **pure**: no side effects, no I/O, and no work that grows with the data size
+  (sorting, filtering, decoding, formatting collections); do that work in the model.
+- Factor a section into its **own `View` struct** when it has its own state or identity, or when
+  a separate struct lets SwiftUI skip re-evaluating siblings. Use a **computed property** when the
+  section has no state and reads only the parent's inputs; it creates no invalidation boundary.
+- In a view's `init`, only store inputs and initialize property wrappers (`State`, `Query`). Do no
+  I/O, sorting, or work that grows with the data. `init` runs on each re-evaluation of the parent.
+- Remove a `Group` that wraps a single view and has no modifier; it adds a layer that does nothing.
+- Use `Button` for a tap action; it carries accessibility and platform behaviour. Use
+  `onTapGesture` only when you need the tap location or count.
 
 ## 2. State and data flow
 
-- `@Observable` over `ObservableObject` in all new code. It tracks **per property**, so a view
-  invalidates only on the fields it actually reads.
-- Per-property tracking has a granularity trap: reading a property inside a closure or a nested
-  type may register a dependency you did not intend, or miss one you did. Verify what the `body`
-  truly reads.
-- `@Observable` models that drive UI belong on `@MainActor`, and benefit from `Equatable` so
+- Use `@Observable`, not `ObservableObject`, in new code. It tracks **per property**, so a view
+  invalidates only on the fields it reads.
+- Reading a property inside a closure or a nested type may register a dependency you did not
+  intend, or miss one you did. Check what `body` actually reads.
+- `@Observable` models that drive UI belong on `@MainActor`. They may conform to `Equatable` so
   SwiftUI can skip redundant work.
 - **Narrow the input.** Pass a view the fields it reads, not the whole aggregate. A row that takes
-  a whole model invalidates on every unrelated change to that model.
+  a whole model invalidates on each unrelated change to that model.
 - When passing a collection element to a row view, pass the element, not the collection plus an
   index.
-- Isolate `.onChange` side effects — a side effect buried in a modifier chain is invisible at the
-  call site.
+- Put an `.onChange` side effect in a named method, so the call site shows it; a side effect
+  inside a modifier chain is hard to see.
 - A binding projection that takes no arguments is a computed property (`$model.isPlaying`), not a
   subscript keyed by a marker enum.
 - `@Binding`: prefer KeyPath-based bindings to closure-based ones where both work; closures
-  capture and can extend lifetimes unexpectedly.
-- `@Environment` is a dependency channel, not a general store. Closures in the environment and
-  high-frequency environment updates are a known performance pitfall — an environment value that
-  changes every frame invalidates every reader.
+  capture and can extend lifetimes.
+- `@Environment` is a dependency channel, not a general store. Avoid closures in the environment
+  and environment values that change at high frequency: a value that changes every frame
+  invalidates every reader.
 
 ## 3. `@State` is a macro in SDK 27 — the trap
 
-**Read this before answering any post-SDK-update `@State` compile error.** `@State` migrated from
-a property wrapper to a macro. It now synthesizes real backing storage, which changes three
-things. The intuitive fix is wrong in the first case and silently produces incorrect runtime
-behavior.
+**Read this before answering a `@State` compile error that appeared after an SDK update.**
+`@State` migrated from a property wrapper to a macro. It now synthesizes real backing storage,
+which changes three things. In the first case the intuitive fix is wrong and produces incorrect
+runtime behaviour without a warning.
 
 ### `error: variable 'self.x' used before being initialized`
 
@@ -118,8 +115,8 @@ value, so `body` observes 42. Reordering the two assignments would also silence 
 but the declaration's `= 0` would still win at runtime.</rationale>
 </example>
 
-Do not reorder the assignments. Reordering silences the compiler and leaves you with the
-anti-pattern below, which does not do what it appears to:
+Do not reorder the assignments. Reordering silences the compiler and leaves the anti-pattern
+below, which does not do what it appears to:
 
 ```swift
 struct ContentView: View {
@@ -148,22 +145,20 @@ then skips memberwise `init` synthesis.
 
 ## 4. Identity — `ForEach`, `List`, `Table`, `OutlineGroup`
 
-Identity drives state preservation, animation correctness, and performance. Getting it wrong
-produces bugs that look like rendering glitches.
+Wrong identity produces state, animation, and performance bugs that look like rendering
+glitches.
 
 - Identity must be **stable across updates** and **unique within the collection**.
-- Anti-patterns: array **indices** as ids; ids minted fresh per render (`UUID()` in the loop);
-  ids derived from mutable **content** — all three break state and animation the moment the
-  collection changes.
+- Do not use array **indices** as ids, ids created per render (`UUID()` in the loop), or ids
+  derived from mutable **content**; each breaks state and animation when the collection changes.
 - Row structure affects `List` performance: a **unary** row (one view) and a **multi-view** row
   are handled differently. Prefer a single root per row.
 
 ## 5. Modifiers
 
-- Order matters — modifiers wrap, they do not merge.
 - **Conditional modifiers change identity.** An `if` that swaps which modifier applies can make
-  SwiftUI treat the result as a different view and discard its state. Prefer a modifier that takes
-  an optional or a neutral value over branching around the modifier.
+  SwiftUI treat the result as a different view and discard its state. Use a modifier that takes
+  an optional or a neutral value instead of branching around the modifier.
 - When the branches of a style ternary are different `ShapeStyle` types (`.primary` versus
   `.tint`), keep one view and wrap each branch in `AnyShapeStyle`. Branching the whole view with
   `if`/`else` loses identity, resets state and breaks animation. `AnyShapeStyle` is a cheap value
@@ -172,25 +167,25 @@ produces bugs that look like rendering glitches.
 
 ## 6. Animation
 
-- `withAnimation` for state-driven change; `.animation(_:value:)` scoped to the value that
+- Use `withAnimation` for state-driven change, and `.animation(_:value:)` scoped to the value that
   changes. An unscoped `.animation` animates more than you intend.
 - Transitions apply on insertion and removal, and require stable identity (§4) to fire.
-- Implement `Animatable` for a custom type whose interpolation SwiftUI cannot infer —
+- Implement `Animatable` for a custom type whose interpolation SwiftUI cannot infer;
   `animatableData` must be a continuously interpolatable value.
-- Phase and keyframe animators drive multi-step sequences without nesting completion handlers.
+- For a multi-step sequence, use a phase or keyframe animator, not nested completion handlers.
 
 ## 7. Localization
 
 - In a view, `Text("…")`, `Button`, `Label`, navigation and toolbar titles, and alerts take
   `LocalizedStringKey` and localize **automatically**. A `String` variable passed to them does
-  not — that is the most common localization bug.
+  not; this is the most common localization bug.
 - On non-view types, carry `LocalizedStringResource`, not `String`.
-- In a Swift package or framework, pass `bundle: #bundle` or the string resolves against the wrong
-  bundle.
-- Use format styles for dates, numbers, currencies, and lists. Never concatenate localized
-  fragments.
-- Use `.leading` / `.trailing`, never `.left` / `.right`, so RTL layouts mirror correctly.
-- Apply case transforms at runtime, not in the catalog. Give translators comments for every
+- In a Swift package or framework, pass `bundle: #bundle`; without it the string resolves against
+  the wrong bundle.
+- Use format styles for dates, numbers, currencies, and lists. Do not concatenate localized
+  fragments; use one interpolated string.
+- For layout, use `.leading` / `.trailing`, not `.left` / `.right`, so RTL layouts mirror.
+- Apply case transforms at runtime, not in the catalog. Add a translator comment to each
   interpolated string.
 
 ## 8. Accessibility and design
@@ -198,25 +193,25 @@ produces bugs that look like rendering glitches.
 - WCAG AA: **4.5:1** for body text, **3:1** for large text.
 - Support Dynamic Type. Use `@ScaledMetric` for custom numeric values so they scale with the type
   size.
-- Accessibility labels on every interactive element; decorative images hidden from VoiceOver.
-- Use design tokens for color, spacing, and radius — no magic numbers. **Project tokens and
+- Each interactive element must have an accessibility label. Add one explicitly where the element
+  shows no text (icon-only buttons, custom controls). Hide decorative images from VoiceOver.
+- Use design tokens for color, spacing, and radius, not literal numbers. **Project tokens and
   project components override every generic example in this skill.**
-- Drive development from previews: multiple size classes, both color schemes, largest Dynamic Type
-  size.
+- For each new or changed screen-level view, add previews for several size classes, both color
+  schemes, and the largest Dynamic Type size.
 
 ## 8b. Drawing and GPU interop
 
-`Canvas` gives immediate-mode 2D drawing inside the view tree — use it when a shape hierarchy
-would create hundreds of views. It re-renders as a unit, so it trades view-level diffing for draw
-control.
+Use `Canvas` (immediate-mode 2D drawing inside the view tree) when a shape hierarchy would create
+hundreds of views. `Canvas` re-renders as a unit, so it trades view-level diffing for draw control.
 
-`TimelineView` drives time-based updates without a timer fighting the run loop; pair it with
-`Canvas` for animation that does not invalidate the surrounding hierarchy.
+Use `TimelineView` for time-based updates instead of a timer; pair it with `Canvas` for animation
+that does not invalidate the surrounding hierarchy.
 
 For a `CADisplayLink` or a hosted Metal drawable, keep the render loop **outside** the view's
-`body` and let the view own only the hosting surface. A render loop that mutates observed state
-every frame produces an invalidation storm (§9). The rendering itself — shaders, GPU work,
-performance — is `graphics`.
+`body`; the view owns only the hosting surface. A render loop that mutates observed state every
+frame causes an invalidation storm (§9). The rendering itself (shaders, GPU work, performance) is
+`graphics`.
 
 ## 9. Performance auditing
 
@@ -231,10 +226,10 @@ Common causes, in the order they usually turn out to be true:
 4. Eager `AnyView` erasure defeating structural diffing.
 5. High-frequency environment updates (§2).
 
-Attribute a hitch or an invalidation storm only after an Instruments trace or a
-`Self._printChanges()` observation shows which view re-evaluated and why; reading the view
-source alone produces a plausible cause, not a confirmed one. Report a performance claim only
-with before/after numbers. See `performance-engineering` for methodology.
+Name the cause of a hitch or an invalidation storm only after an Instruments trace or a
+`Self._printChanges()` observation shows which view re-evaluated and why. Reading the view source
+alone gives a plausible cause, not a confirmed one. Report a performance claim only with
+before/after numbers. Methodology is in `performance-engineering`.
 
 ## 10. SDK 27 changes
 
@@ -253,13 +248,13 @@ Check the deployment floor before using any of these. The `@State` trap is §3 �
 
 ### Document-based apps
 
-Read the matching reference before writing document code: the closure signatures, the
-concurrency contract and the naming differ from `FileDocument`, and an overload picked from
-memory either fails to compile or misbehaves at run time.
+Read the matching reference before writing document code. The closure signatures, the concurrency
+contract and the naming differ from `FileDocument`; an overload picked from memory either fails to
+compile or misbehaves at run time.
 
 - **Register undo actions in every example.** SwiftUI reads the undo stack to detect unsaved
   changes, so a document that never registers undo never autosaves. If the developer is unsure
-  they need undo, say this.
+  they need undo, tell them this.
 - **At a floor of 27+, do not recommend `FileDocument` or `ReferenceFileDocument` for new code.**
   Below the floor, do not use these APIs unconditionally.
 - `snapshot(contentType:)` and `apply(snapshot:previous:)` run on the main actor, so keep them
@@ -271,7 +266,7 @@ memory either fails to compile or misbehaves at run time.
 | Moving from `FileDocument` or `ReferenceFileDocument` (concept mapping, checklists, before and after) | `references/document-apps/migrating-document-apps.md` |
 | Declaring a custom `UTType`: conformance, export versus import, parent type, handler rank, verifying with `uttype` | `references/document-apps/uniform-type-identifiers.md` |
 
-Soft-deprecated APIs are a separate axis from the hard deprecations above — see
+Soft-deprecated APIs are separate from the hard deprecations above. See
 `references/idiom/soft-deprecated-apis.md` for the searchable list and
 `references/idiom/soft-deprecation.md` for how to identify and migrate them.
 
@@ -279,8 +274,9 @@ Soft-deprecated APIs are a separate axis from the hard deprecations above — se
 
 - [ ] No deprecated API — checked against `references/swiftui/latest-apis.md`
 - [ ] `@Observable`, not `ObservableObject`
-- [ ] `body` pure; no side effects, no heavy work; `init` cheap
-- [ ] `ForEach` identity stable and unique — no indices, no minted ids
+- [ ] `body` pure; no side effects, no work that grows with the data; `init` only stores inputs
+  and initializes property wrappers
+- [ ] `ForEach` identity stable and unique — no indices, no ids created per render
 - [ ] Views take the fields they read, not whole aggregates
 - [ ] Conditional modifiers do not swap identity
 - [ ] Accessibility labels present; WCAG AA met; Dynamic Type supported

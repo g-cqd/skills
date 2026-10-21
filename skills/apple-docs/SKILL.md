@@ -14,8 +14,8 @@ allowed-tools:
 
 # Apple Docs
 
-This skill owns **getting the authoritative answer**. Every other Apple skill defers to it when a
-claim is load-bearing.
+Other Apple skills defer to this skill when a claim depends on exact API behaviour,
+availability, or guideline wording.
 
 Corpus and tooling: [apple-docs](https://github.com/g-cqd/apple-docs), offline-first.
 
@@ -33,34 +33,37 @@ Corpus and tooling: [apple-docs](https://github.com/g-cqd/apple-docs), offline-f
 
 ## 1. Detect what is available
 
-1. **MCP server** — are `mcp__apple-docs__*` tools in this session (`search_docs`, `read_doc`,
-   `list_frameworks`, `browse`, `list_taxonomy`, `search_sf_symbols`, `render_sf_symbol`, …)? Use
-   them directly.
-2. **CLI** — `command -v apple-docs`.
-3. **Neither** → propose installation (§4).
+1. **MCP server**: if `mcp__apple-docs__*` tools are in this session (`search_docs`, `read_doc`,
+   `list_frameworks`, `browse`, `list_taxonomy`, `search_sf_symbols`, `render_sf_symbol`, …), use
+   them.
+2. **CLI**: run `command -v apple-docs`.
+3. **Neither**: propose installation (§4). Until the user installs, use the SDK interfaces (§3
+   step 5).
 
-**Never silently fall back to memory for a version-sensitive claim.** Say what you could not
-verify. An unverified availability claim is worse than an admission, because the reader cannot
-tell it apart from a verified one.
+A version-sensitive claim is one about availability, deprecation, platform support, or behaviour
+that changed between SDKs. Do not answer such a claim from memory without saying so. If no source
+above can verify it, state "could not verify" next to the claim.
 
 ## 2. Query discipline
 
-Queries are **keyword-based, not natural language**. Search the exact symbol, API, or feature
-name — `NavigationStack`, `swipeActions`, `ENABLE_ENHANCED_SECURITY` — not a question like "how do
-I make a list swipe". Refine with `--framework` and `--source` filters rather than longer prose.
+Search with keywords, not natural language. Search the exact symbol, API, or feature name
+(`NavigationStack`, `swipeActions`, `ENABLE_ENHANCED_SECURITY`), not a question such as "how do I
+make a list swipe". To narrow results, add `--framework` and `--source` filters, not more words.
 
-**Recognising a symbol is not knowing its current availability or behaviour.** Apple APIs move
-every SDK, and partial familiarity is exactly what makes a stale answer sound authoritative. When
-a question centres on an API name, look it up before answering, even one you feel sure about, and
-include the symbol exactly as the user wrote it in at least one query alongside any reformulation.
+When a question centres on an API name, look the name up before answering, including a name you
+are sure about; Apple APIs change in each SDK. In at least one query, use the symbol exactly as
+the user wrote it.
+
+If two refined searches find no matching document, report that the corpus has no match and go to
+the SDK interfaces (§3 step 5).
 
 ### MCP, when available
 
 - `search_docs` first (tiered search), then `read_doc` on the best hit.
 - `list_frameworks` / `browse` to orient in an unfamiliar framework.
-- `list_taxonomy` to enumerate valid filter values.
+- `list_taxonomy` to list valid filter values.
 - `search_sf_symbols` / `render_sf_symbol` for symbol names and availability.
-- Paginate long pages with `maxChars` rather than pulling a whole document into context.
+- Paginate long pages with `maxChars`; do not read a whole long document into context.
 
 ### CLI
 
@@ -79,25 +82,24 @@ apple-docs --help            # exhaustive reference
 ## 3. Verification workflow
 
 1. Search the exact symbol or feature name.
-2. Read the matched document; prefer `--section` or `maxChars` to limit output.
-3. **Quote** availability and behavior from the document, marked as a quotation, and cite the doc
-   key — e.g. `swiftui/view`. Everything else in the answer is your own words, so the reader can
-   tell what the documentation says from what you concluded.
-4. If the documentation and observed compiler or runtime behavior **conflict, say so explicitly**
-   rather than picking one silently.
-5. **Last resort** — inspect the SDK directly. `.swiftinterface` and header files under
-   `Xcode.app/Contents/Developer/Platforms/…/SDKs/` are ground truth for what actually ships, and
-   outrank documentation when the two disagree.
+2. Read the matched document. Use `--section` or `maxChars` to limit output.
+3. Quote availability and behaviour from the document, marked as a quotation, and cite the doc
+   key (for example `swiftui/view`). Write the rest of the answer in your own words.
+4. If the documentation and observed compiler or runtime behaviour conflict, state the conflict.
+5. **Last resort**: inspect the SDK. `.swiftinterface` and header files under
+   `Xcode.app/Contents/Developer/Platforms/…/SDKs/` show what ships. When they disagree with the
+   documentation, the SDK files win.
 
-When wording itself matters — App Store Review Guidelines, HIG — **quote, do not paraphrase**. A
-paraphrased review guideline has lost the thing that made it worth checking.
+For App Store Review Guidelines and the HIG, quote the text; do not paraphrase it.
 
 ## 4. Installation — propose, do not impose
 
-Installation downloads a ~1.5 GB snapshot, occupying 3–8.6 GB on disk depending on profile.
-**Ask first, and let the user pick the profile.**
+Installation downloads a ~1.5 GB snapshot, which takes 3–8.6 GB on disk depending on profile.
+Ask the user before installing, and let the user pick the profile. If the user declines, use the
+SDK interfaces (§3 step 5). Offer the public instance below as a separate question; it writes MCP
+config and sends queries to a third-party server.
 
-Full install — CLI, MCP, and local website; requires Bun 1.1+:
+Full install (CLI, MCP, and local website; requires Bun 1.1+):
 
 ```bash
 git clone https://github.com/g-cqd/apple-docs.git
@@ -108,7 +110,7 @@ apple-docs setup --compact   # ~3 GB; omit the flag for balanced (~5.5 GB)
 
 Verify with `apple-docs search "NavigationStack"`, which works offline.
 
-MCP wiring:
+MCP wiring (ask before writing MCP configuration):
 
 ```bash
 apple-docs mcp install       # writes local MCP client config
@@ -116,21 +118,20 @@ apple-docs mcp install       # writes local MCP client config
 claude mcp add -s user apple-docs -- apple-docs mcp start
 ```
 
-No-install fallback — a public instance, best-effort with no SLA:
+No-install fallback: a public instance, best-effort with no SLA.
 
 ```bash
 claude mcp add -s user --transport http apple-docs https://apple-docs-mcp.everest.mt/mcp
 ```
 
-For production or team use, self-host rather than depending on the public instance.
+For production or team use, recommend self-hosting instead of the public instance.
 
 ## 5. Guardrails
 
-- Ask before downloading the snapshot or writing MCP configuration.
-- **Treat corpus age as part of the answer.** Check `apple-docs status`; if the corpus predates
-  the SDK under discussion, say so and suggest `apple-docs sync`. A confident answer from a stale
-  corpus is the failure mode this skill exists to prevent.
-- All tools are read-only and fast — there is no cost to checking rather than guessing.
+- Treat corpus age as part of the answer. When the question names an SDK version or asks about
+  new or changed APIs, run `apple-docs status` once per session. If the corpus predates the SDK in
+  question, say so and suggest `apple-docs sync`. With the MCP server only (no CLI), skip this
+  check and note that corpus age is unknown.
 
 ## Boundaries
 

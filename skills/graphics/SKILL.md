@@ -14,37 +14,30 @@ allowed-tools:
 
 # Graphics
 
-This skill owns **rendering correctness and GPU work**: the math, the physics, and the shader.
-Sections 1–6 are API-agnostic. Section 7 is Metal.
+This skill covers **rendering correctness and GPU work**: the math, the physics, and the shader.
+Sections 1–5 are API-agnostic. Section 6 is Metal.
 
 ## Contract
 
 ```
-§ANALYZE  ! emit §2 analysis-block BEFORE any rendering code ⇒ ¬code-first
-§PHYSICS  energy-conservation ∧ reciprocity ∧ positivity ⇒ ? all-three
+§ANALYZE  ! emit §1 analysis-block BEFORE code that computes a rendered|GPU value ⇒ ¬code-first
+          change alters no computed value (rename, comment, formatting, labels)
+          ⇒ state that in one line ∧ skip the block
+§PHYSICS  energy-conservation ∧ reciprocity ∧ positivity ⇒ ! check all-three
 §ORDER    algorithm ≻ bandwidth ≻ occupancy ≻ ALU ≻ precision
 §MEASURE  profile BEFORE optimize ⇒ ¬guess-the-bottleneck
-§BAN      see §6 — each is a silent-wrong-output, not a crash
+§BAN      see §5 — each is a silent-wrong-output, not a crash
 ```
 
 ---
 
-## 1. Domains
+## 1. The analysis protocol
 
-- **Mathematical foundations** — linear algebra, transforms, quaternions, sampling theory,
-  numerical analysis.
-- **Optical physics** — radiometry vs photometry, light transport, microfacet theory, dispersion,
-  polarization.
-- **Rendering theory** — the rendering equation, importance sampling, variance reduction, global
-  illumination.
-- **GPU architecture** — memory hierarchy, occupancy, divergence, bandwidth, precision.
-
----
-
-## 2. The analysis protocol
-
-**Before generating any rendering code**, emit this analysis. It is not ceremony: each heading is
-a class of bug that is invisible once the code is written, because the output looks plausible.
+**Before you write or change code that computes a rendered or GPU value** (shading, sampling,
+transforms, color conversion, buffer access), emit this analysis. For a change that alters no
+computed value (rename, comment, formatting, labels), state that in one line and skip the block.
+Each heading is a class of bug that the finished code hides, because the wrong output still looks
+plausible.
 
 <example>
 ```xml
@@ -80,12 +73,13 @@ a class of bug that is invisible once the code is written, because the output lo
   </numerical_precision>
 </graphics_analysis>
 ```
-Each block is filled with the specific derivation, invariant, or access pattern for the code at hand, not the headings restated; the block exists so the physics is checked before the code hides it.
+Fill each block with the derivation, invariant, or access pattern of the code at hand. Do not
+restate the headings. If a block does not apply, write 'n/a' and the reason in one line.
 </example>
 
 ---
 
-## 3. Formulas
+## 2. Formulas
 
 **Fresnel (Schlick)**
 ```
@@ -115,21 +109,24 @@ Lo(p, wo) = Le(p, wo) + int_Omega f_r(p, wi, wo) Li(p, wi) |cos(theta_i)| dwi
 
 ---
 
-## 4. Performance order of attack
+## 3. Performance order of attack
 
-1. **Algorithm** — O(n) with high constants beats O(n²) at scale.
+Optimize in this order:
+
+1. **Algorithm**.
 2. **Memory bandwidth** — cache coherence and coalesced access.
-3. **Occupancy** — maximize SIMD groups resident per shader core.
+3. **Occupancy** — raise occupancy until the profiler shows the kernel is not latency-bound.
 4. **ALU utilization** — minimize divergence, maximize arithmetic intensity.
-5. **Precision** — half where acceptable, float where needed.
+5. **Precision** — half where the result stays within the required accuracy, float elsewhere.
 
-Profile before optimizing. A GPU bottleneck guessed from source is wrong more often than not; the
-same shader can be bandwidth-bound on one architecture and ALU-bound on another. See
-`performance-engineering` for measurement discipline.
+Profile before optimizing. Do not name a GPU bottleneck from the source alone: the same shader can
+be bandwidth-bound on one architecture and ALU-bound on another. If you cannot capture, state the
+likely limiter as a hypothesis and name the capture that would confirm it. See
+`performance-engineering` for measurement method.
 
 ---
 
-## 5. Validation checklist
+## 4. Validation checklist
 
 - [ ] Bounds checks on every buffer access
 - [ ] Thread-group size within device limits
@@ -139,70 +136,70 @@ same shader can be bandwidth-bound on one architecture and ALU-bound on another.
 - [ ] Profiler shows the expected occupancy
 - [ ] Colorspace conversions handled explicitly
 
-The white furnace test is the fastest way to catch a BRDF that quietly loses or creates energy.
-Run it before trusting any material model.
+Run the white furnace test on each new or changed material model (BRDF) before you rely on it.
+The test catches a BRDF that loses or creates energy.
 
-When diagnosing NaN, Inf, or black-pixel output, verify with an actual GPU capture, a value probe
-at the suspect stage, or a furnace test before asserting the cause; several of the patterns in §6
-produce identical symptoms, and a fix for the wrong one leaves the real defect in place.
+When you diagnose NaN, Inf, or black-pixel output, confirm the cause with a GPU capture, a value
+probe at the suspect stage, or a furnace test before you state it. Several patterns in §5 produce
+identical symptoms, and a fix for the wrong one leaves the real defect in place.
 
 ---
 
-## 6. Patterns that produce silent wrong output
+## 5. Patterns that produce silent wrong output
 
-Each of these produces **wrong output rather than a crash**, which is why they warrant a list.
+Each of these produces **wrong output, not a crash**.
 
-- **Handle colorspace explicitly** at every input and output instead of assuming sRGB.
-- **Check a vector's length before normalizing** and return a documented fallback for zero length.
+- **Handle colorspace explicitly** at every input and output. Do not assume sRGB.
+- **Check a vector's length before normalizing**, and return a documented fallback for zero length.
 - **Guard `1.0 / x` with a zero check**, or clamp the denominator to a documented epsilon.
 - **Keep the cosine term** when integrating the rendering equation.
 - **Interpolate rotations with slerp** on quaternions; linear interpolation drifts off the unit sphere.
 - **Store directions normalized**, or document at the declaration that they are not.
 - **Initialize GPU memory explicitly**; drivers do not zero it.
-- **Measure before using `discard`** in a fragment shader; on TBDR hardware it defeats hidden-surface removal.
+- **Measure before using `discard`** in a fragment shader; on TBDR hardware `discard` defeats hidden-surface removal.
 - **Clamp or `abs()` the base before `pow()`**; a negative base yields NaN.
 - **Convert handedness explicitly** at every coordinate-system boundary.
-- **Use spectral representation for spectral phenomena** — dispersion, thin-film, fluorescence — because RGB cannot express them.
+- **Use a spectral representation for spectral phenomena** (dispersion, thin-film, fluorescence); RGB cannot express them.
 - **Account for floating-point precision in ray-triangle intersection** with a watertight algorithm or an epsilon offset.
 
 ---
 
-## 7. Apple platforms — Metal
+## 6. Apple platforms — Metal
 
-Everything above applies. This section adds what is specific to Apple GPUs.
+Sections 1–5 apply. This section adds what is specific to Apple GPUs.
 
 ### Tile-based deferred rendering
 
-Apple GPUs are TBDR, not immediate-mode. The consequences are architectural, not incidental:
+Apple GPUs are TBDR, not immediate-mode. Consequences:
 
-- Render passes have **explicit load and store actions**. Setting a store action you do not need
-  costs real bandwidth; `dontCare` where the result is unused is a genuine win.
+- Render passes have **explicit load and store actions**. Set the store action to `dontCare`
+  when the result is unused; an unneeded store costs bandwidth.
 - **Tile memory is fast and small.** Programmable blending and tile shaders let a multi-pass
-  algorithm collapse into one pass without a round trip to device memory.
-- Hidden-surface removal happens before fragment shading, so overdraw costs less than on an
-  immediate-mode GPU — but only if you do not defeat it with `discard` or per-fragment writes to
-  depth.
+  algorithm run as one pass, with no round trip to device memory.
+- Hidden-surface removal runs before fragment shading, so overdraw costs less than on an
+  immediate-mode GPU. `discard` and per-fragment depth writes disable this benefit.
 
 ### Compute
 
 - **Thread-group sizing** must respect the device's limits and the kernel's register pressure.
-  Query rather than hard-coding.
-- **Threadgroup memory** for reductions; mind bank conflicts.
+  Query the limits at runtime; do not hard-code them.
+- **Threadgroup memory** for reductions; avoid bank conflicts.
 - **SIMD-group operations** — availability varies by Apple GPU family. Check the family before
-  relying on them.
-- **Function constants** specialize an uber-shader at pipeline-build time, avoiding runtime
-  branching and the divergence that comes with it.
+  you use them.
+- **Function constants** specialize an uber-shader at pipeline-build time. This removes runtime
+  branching and the divergence it causes.
 
 ### Ray tracing and MPS
 
-Metal Performance Shaders provide tuned primitives — prefer them to a hand-rolled equivalent
-unless profiling shows otherwise. For ray tracing, acceleration-structure build and refit costs
-belong in the budget alongside traversal.
+Use Metal Performance Shaders primitives instead of a hand-written equivalent, unless profiling
+shows the hand-written version is faster. For ray tracing, include acceleration-structure build
+and refit costs in the frame budget, together with traversal.
 
 ### Profiling
 
 Recommend **Metal System Trace** and GPU counters in Instruments before optimizing. Capture a GPU
-frame and read the actual limiter — occupancy, bandwidth, or ALU — instead of inferring it.
+frame and read the actual limiter (occupancy, bandwidth, or ALU). Do not infer the limiter. If
+you cannot capture, follow the fallback in §3.
 
 ---
 

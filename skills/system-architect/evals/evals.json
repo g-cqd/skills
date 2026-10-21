@@ -25,12 +25,12 @@
     {
       "id": 3,
       "prompt": "Our on-call gets paged about 40 times a night because CPU sits at 70 percent. Fix our alerting.",
-      "expected_output": "Alerts rewritten around user impact and responder action, with noisy ones deleted.",
+      "expected_output": "Alerts rewritten around user impact and responder action, with noisy ones recommended for deletion.",
       "expectations": [
         "The system-architect skill was activated",
         "Each remaining alert names the action to take, indicates user impact and links a runbook",
         "The golden signals (latency, traffic, errors, saturation) are used as the starting set",
-        "Alerts that cannot meet these criteria are deleted"
+        "Alerts that cannot meet these criteria are recommended for deletion"
       ]
     },
     {

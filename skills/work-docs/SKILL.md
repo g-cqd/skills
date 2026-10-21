@@ -14,7 +14,7 @@ allowed-tools:
 
 # Work Documentation
 
-Generate documentation for software engineering work — from individual PRs to entire program increments. Every artifact supports two perspectives: **requesting** (what needs done) and **reporting** (what was done).
+Write documentation for software engineering work, from one PR to a program increment. Each artifact has two perspectives: **requesting** (what needs to be done) and **reporting** (what was done).
 
 This skill owns **the prose around the work**. It does not decide what work to do (`planner`) or
 judge whether it was done well (`code-review`).
@@ -49,36 +49,36 @@ judge whether it was done well (`code-review`).
 | Release notes / changelog | → [Release Notes](#release-notes) |
 | Tech debt documentation | → [Tech Debt](#tech-debt) |
 
-For all templates, see `references/templates.md`.
-For anti-patterns and quality guidance, see `references/patterns.md`.
+Read the `references/templates.md` section named under each artifact below when you write that artifact; the sections below give only its required content.
+Read `references/patterns.md` when you summarize a commit range (git commands, signal and noise filters) or when you check an artifact against the anti-patterns for its type.
 
 ---
 
 ## Core Principle: Two Perspectives
 
-Every artifact has two sides. Always clarify which perspective the user needs:
+Classify each artifact as one of two perspectives before writing:
 
-**Requesting perspective** (PM/stakeholder — "here's what we need done"):
-- Describes the problem and constraints, not the solution
-- Defines "what" and "why," leaves "how" to the team
-- Includes acceptance criteria, success metrics, priority rationale
+**Requesting perspective** (PM or stakeholder: "here is what we need done"):
+- Describes the problem and constraints, not the solution.
+- Defines "what" and "why"; leaves "how" to the team.
+- Includes acceptance criteria, success metrics, and priority rationale.
 
-**Reporting perspective** (developer/team — "here's what was done"):
-- Documents decisions, trade-offs, and context future maintainers need
-- Code shows *what*; documentation shows *why*
-- Includes root cause, alternatives considered, regression risk, follow-ups
+**Reporting perspective** (developer or team: "here is what was done"):
+- Documents the decisions, trade-offs, and context that future maintainers need.
+- Explains *why*; the code already shows *what*.
+- Includes root cause, alternatives considered, regression risk, and follow-ups.
 
-When the user's intent is ambiguous, ask: "Are you defining what needs to be done, or documenting what was done?"
+When the request does not show the perspective, ask: "Are you defining what needs to be done, or documenting what was done?" If you cannot ask, choose reporting when a diff, commit range, or merged work is given, otherwise requesting, and state the choice.
 
 ---
 
 ## Single PR Documentation
 
 ### Gather First
-Before writing, examine:
-1. `git diff` or staged changes — understand what changed
-2. Related tickets — ask for ticket IDs to anchor the documentation
-3. Test changes — what was tested and how
+Before writing, read:
+1. `git diff` or the staged changes.
+2. When the repository uses ticket IDs, the ticket ID, from the branch name or commit messages (see `project-conventions`). Ask the user only if neither has one; if no one can answer, omit the ID and say so. When the repository does not use ticket IDs, omit the ID.
+3. The test changes: what was tested and how.
 
 ### Structure
 ```markdown
@@ -128,18 +128,18 @@ not invented.
 
 ## Layered PR Documentation
 
-For code being ported into a larger codebase where reviewers have **zero prior context**. Read `references/templates.md` § "Layered PR Template" for the full structure.
+Use for code ported into a larger codebase where the reviewers have **no prior context**. Template: `references/templates.md#layered-pr-template`.
 
 ### Required Sections
-1. **Title with Ticket ID** — `TICKET-ID: ComponentName`
-2. **The Layer** — one sentence on this component's single responsibility
-3. **Architecture Diagram** — ASCII stack showing where this fits, marking tickets
-4. **What Existed Before** — old code + problem/consequence table
-5. **Design Rationale** — per-decision subsections with code examples and "why"
-6. **What This Enables** — specific downstream capabilities unlocked
-7. **Patterns Established** — table showing pattern propagation
-8. **Files in This PR** — tree with inline role comments
-9. **Looking Ahead** — specific future tickets/PRs
+1. **Title with Ticket ID**: `TICKET-ID: ComponentName`
+2. **The Layer**: one sentence on this component's single responsibility
+3. **Architecture Diagram**: ASCII stack showing where this fits, marking tickets
+4. **What Existed Before**: old code + problem/consequence table
+5. **Design Rationale**: per-decision subsections with code examples and "why"
+6. **What This Enables**: the downstream capabilities this PR unlocks
+7. **Patterns Established**: table showing pattern propagation
+8. **Files in This PR**: tree with inline role comments
+9. **Looking Ahead**: the future tickets or PRs, named
 
 ### Before Writing, Gather
 ```
@@ -154,13 +154,13 @@ For code being ported into a larger codebase where reviewers have **zero prior c
 ## Work Summarization
 
 ### For Sprint/Release Summaries
-1. Analyze the commit range: `git log --oneline --no-merges <start>..<end>`
-2. Identify architectural signals (new dirs, schema changes, API changes, config changes, CI changes) vs noise (formatting, lockfiles, auto-generated code)
-3. Apply the "So What?" test — every item answers *why it matters*, not just *what changed*
-4. Categorize: Features, Bug Fixes, Performance, Security, Infrastructure, Breaking Changes, Deprecations
+1. Read the commit range: `git log --oneline --no-merges <start>..<end>`
+2. Separate architectural signals (new directories, schema, API, config, and CI changes) from noise (formatting, lockfiles, generated code).
+3. Apply the "So What?" test: each item states why it matters, not only what changed.
+4. Categorize: Features, Bug Fixes, Performance, Security, Infrastructure, Breaking Changes, Deprecations.
 
 ### For Multi-PR Work Streams
-Create a tracking summary:
+Write a tracking summary (full template: `references/templates.md#multi-pr-tracking-issue`):
 ```markdown
 ## Overview
 [What this work stream delivers. Link to epic.]
@@ -179,10 +179,10 @@ Create a tracking summary:
 ```
 
 ### Layered Summarization
-Produce summaries at multiple granularities:
-- **Executive** — lead with business outcomes ("reduced checkout latency by 40%")
-- **Engineering** — lead with architectural changes ("migrated to event-driven processing")
-- **Detailed** — full categorized changelog
+Write one level per audience:
+- **Executive**: lead with business outcomes ("reduced checkout latency by 40%").
+- **Engineering**: lead with architectural changes ("migrated to event-driven processing").
+- **Detailed**: the full categorized changelog.
 
 ---
 
@@ -200,24 +200,19 @@ Produce summaries at multiple granularities:
 
 ### Requesting Perspective
 
-The requesting form is the "As a / I want / So that" statement, Gherkin acceptance criteria
-(Given / When / Then), context, design link, and priority rationale. Read
-`references/templates.md#user-story--requesting` for the full template, including open questions and
-the Definition of Ready checklist.
+Content: the "As a / I want / So that" statement, Gherkin acceptance criteria (Given / When / Then), context, design link, and priority rationale. Template, with open questions and the Definition of Ready checklist: `references/templates.md#user-story--requesting`.
 
 ### Reporting Perspective (Completion Notes)
 
-Completion notes cover the implementation summary, technical decisions, files changed, test
-coverage, regression risk, and follow-up items. Read `references/templates.md#user-story--reporting`
-for the template.
+Content: implementation summary, technical decisions, files changed, test coverage, regression risk, and follow-up items. Template: `references/templates.md#user-story--reporting`.
 
 ### Story Splitting Techniques
-1. By workflow steps (happy path vs edge cases vs errors)
+1. By workflow steps (happy path, edge cases, errors)
 2. By business rule variation
 3. By data variation (different input types)
-4. By interface (web vs mobile vs API)
+4. By interface (web, mobile, API)
 5. By operation (CRUD)
-6. By performance ("make it work" then "make it fast")
+6. By performance ("make it work", then "make it fast")
 7. Spike + implementation
 8. By acceptance criteria clusters
 
@@ -227,16 +222,11 @@ for the template.
 
 ### Requesting Perspective
 
-An epic definition states the business objective, target users, a hypothesis ("We believe
-[capability] for [users] will result in [outcome]. We'll know when [measurable signal]"), in and
-out of scope, stories, definition of done, success metrics (current to target), dependencies, and
-risks with mitigations. Read `references/templates.md#epic--requesting` for the template.
+Content: business objective, target users, a hypothesis ("We believe [capability] for [users] will result in [outcome]. We'll know when [measurable signal]"), in and out of scope, stories, definition of done, success metrics (current to target), dependencies, and risks with mitigations. Template: `references/templates.md#epic--requesting`.
 
 ### Reporting Perspective (Completion Summary)
 
-A completion summary covers the outcome against original scope, metrics (baseline, current, target),
-deferred or descoped items and where they are tracked, key technical decisions, lessons learned,
-and documentation updated. Read `references/templates.md#epic--reporting` for the template.
+Content: outcome against the original scope, metrics (baseline, current, target), deferred or descoped items and where they are tracked, key technical decisions, lessons learned, and documentation updated. Template: `references/templates.md#epic--reporting`.
 
 ---
 
@@ -244,11 +234,16 @@ and documentation updated. Read `references/templates.md#epic--reporting` for th
 
 ### Requesting Perspective
 
-A bug report has a title of the form "[Component] — [Symptom in user terms]", severity (Critical /
-Major / Minor / Trivial), priority (P0 (immediate) / P1 (next sprint) / P2 (backlog) / P3 (nice to
-fix)), environment, steps to reproduce, expected and actual results (exact error messages),
-frequency (Always / Intermittent (~X%) / Once), impact (users affected, revenue impact, workaround),
-and logs or evidence. Read `references/templates.md#bug--requesting` for the template.
+Content:
+- Title: "[Component] — [Symptom in user terms]"
+- Severity: Critical / Major / Minor / Trivial
+- Priority: P0 (immediate) / P1 (next sprint) / P2 (backlog) / P3 (nice to fix)
+- Environment, steps to reproduce, expected and actual results (exact error messages)
+- Frequency: Always / Intermittent (~X%) / Once
+- Impact: users affected, revenue impact, workaround
+- Logs or evidence
+
+Template: `references/templates.md#bug--requesting`.
 
 ### Severity/Priority Matrix
 |  | High Impact | Low Impact |
@@ -256,15 +251,11 @@ and logs or evidence. Read `references/templates.md#bug--requesting` for the tem
 | **High Frequency** | P0 — fix immediately | P1 — fix this sprint |
 | **Low Frequency** | P1 — fix this sprint | P2/P3 — backlog |
 
-Note: Severity (how bad) and Priority (how soon) are separate axes. Low-severity, high-priority is real (cosmetic bug on homepage = brand impact).
+Set severity (how bad) and priority (how soon) separately. A low-severity bug can have high priority, for example a cosmetic bug on the homepage.
 
 ### Reporting Perspective (Resolution Notes)
 
-Resolution notes cover root cause, the fix, why this fix over the alternatives, verification, and
-prevention (a systemic change such as a new test or monitoring). For a root cause analysis, use the
-5 Whys chain ending in a systemic root cause and a list of corrective actions: the bug fix, a
-follow-up story for the systemic fix, and a monitoring or alerting addition. Read
-`references/templates.md#bug--reporting` for both templates.
+Content: root cause, the fix, why this fix over the alternatives, verification, and prevention (a systemic change such as a new test or monitoring). For a root cause analysis, write a 5 Whys chain that ends in a systemic root cause, then the corrective actions: the bug fix, a follow-up story for the systemic fix, and a monitoring or alerting addition. Templates for both: `references/templates.md#bug--reporting`.
 
 ---
 
@@ -272,17 +263,11 @@ follow-up story for the systemic fix, and a monitoring or alerting addition. Rea
 
 ### Technical Task
 
-A task has a title of the form "[Verb] [Object] [Context]", a type (Task / Sub-task / Tech Debt /
-Infrastructure), a description linked to the parent, a technical approach with key decisions
-pre-made and files expected to change, verifiable acceptance criteria, dependencies, and an
-estimate. Read `references/templates.md#technical-task` for the template.
+Content: title "[Verb] [Object] [Context]"; type (Task / Sub-task / Tech Debt / Infrastructure); description linked to the parent; technical approach with the key decisions made and the files expected to change; verifiable acceptance criteria; dependencies; estimate. Template: `references/templates.md#technical-task`.
 
 ### Spike
 
-A spike has the title "Spike — [Question to Answer]", a timebox, context (what decision depends on
-the outcome), numbered questions, and an approach; after the spike it gains an outcome section with
-findings per question, a recommendation, unknowns remaining, follow-up stories, and artifacts. Read
-`references/templates.md#spike` for the template.
+Content: title "Spike — [Question to Answer]"; timebox; context (which decision depends on the outcome); numbered questions; approach. After the spike, add an outcome section: findings per question, recommendation, remaining unknowns, follow-up stories, and artifacts. Template: `references/templates.md#spike`.
 
 ---
 
@@ -290,19 +275,18 @@ findings per question, a recommendation, unknowns remaining, follow-up stories, 
 
 ### PI Objectives (SAFe)
 
-A PI plan names the PI number and theme, duration (8-12 weeks), and team; lists objectives with
-business value (1-10), iterations, and committed or uncommitted status; records dependencies in both
-directions and risks in ROAM categories (Resolved: addressed; Owned: someone managing; Accepted:
-consciously living with; Mitigated: plan in place); and ends with a confidence vote (team average
-1-5; below 3 triggers re-planning). Read `references/templates.md#pi-objectives` for the template
-and the business value scoring scale.
+Content:
+- PI number and theme, duration (8-12 weeks), team.
+- Objectives with business value (1-10), iterations, and committed or uncommitted status.
+- Dependencies in both directions.
+- Risks in ROAM categories: Resolved (addressed), Owned (someone manages it), Accepted (consciously accepted), Mitigated (plan in place).
+- Confidence vote: team average 1-5; an average below 3 triggers re-planning.
+
+Template, with the business value scoring scale: `references/templates.md#pi-objectives`.
 
 ### Iteration Goals (DI)
 
-An iteration plan states the sprint dates and capacity, goals tied to PI objectives, planned work
-(ticket, title, points, owner, goal number), velocity of the last 3 sprints against this sprint's
-plan, carry-over with reasons, and risks or blockers with mitigations. Read
-`references/templates.md#iteration-goals` for the template.
+Content: sprint dates and capacity; goals tied to PI objectives; planned work (ticket, title, points, owner, goal number); velocity of the last 3 sprints against this sprint's plan; carry-over with reasons; risks or blockers with mitigations. Template: `references/templates.md#iteration-goals`.
 
 ---
 
@@ -310,81 +294,74 @@ plan, carry-over with reasons, and risks or blockers with mitigations. Read
 
 ### ADR — Nygard Format (lightweight)
 
-Status, Context, Decision, Consequences. Read `references/templates.md#adr--nygard` for the template.
+Content: Status, Context, Decision, Consequences. Template: `references/templates.md#adr--nygard`.
 
 ### ADR — MADR Format (structured)
 
-Status, Context and Problem Statement, Decision Drivers, Considered Options, Decision Outcome with
-positive and negative consequences, and pros and cons per option. Read
-`references/templates.md#adr--madr` for the template.
+Content: Status, Context and Problem Statement, Decision Drivers, Considered Options, Decision Outcome with positive and negative consequences, and pros and cons per option. Template: `references/templates.md#adr--madr`.
 
 ### Design Doc / RFC
-Read `references/templates.md` § "Design Doc Template" for the full Google-style structure: Objective, Background, Detailed Design, Alternatives, Cross-cutting Concerns, Rollout Plan.
 
-**Key principle**: ADRs are immutable. Don't edit old ADRs — supersede them with new ones. Store in repo (`docs/adr/`), numbered sequentially.
+Content (Google style): Objective, Background, Detailed Design, Alternatives, Cross-cutting Concerns, Rollout Plan. Template: `references/templates.md#design-doc--rfc`.
+
+To change a decision, write a new ADR that supersedes the old one. Do not edit an accepted ADR, except to set its Status to "Superseded by ADR-XXXX" when a new ADR replaces it. Store ADRs in the repository (`docs/adr/`, unless the repository already stores them elsewhere), numbered sequentially.
 
 ---
 
 ## Release Notes
 
+Template: `references/templates.md#release-notes`.
+
 ### Three-Tier Pattern
-1. **Highlights** (2-5 bullets) — most impactful user-facing changes, plain language
-2. **Full Changelog** (categorized) — every user-visible change by type
-3. **Technical Notes** — breaking changes, migration guides, known issues, dependency updates
+1. **Highlights** (2-5 bullets): the most impactful user-facing changes, in plain language.
+2. **Full Changelog** (categorized): each user-visible change, by type.
+3. **Technical Notes**: breaking changes, migration guides, known issues, dependency updates.
 
 ### Categories (Keep a Changelog format)
-- **Added** — new features
-- **Changed** — changes in existing functionality
-- **Deprecated** — soon-to-be-removed features
-- **Removed** — removed features
-- **Fixed** — bug fixes
-- **Security** — vulnerability patches
+- **Added**: new features
+- **Changed**: changes in existing functionality
+- **Deprecated**: features to be removed
+- **Removed**: removed features
+- **Fixed**: bug fixes
+- **Security**: vulnerability patches
 
 ### Conventional Commits
-If the repo uses Conventional Commits (`feat:`, `fix:`, `docs:`, etc.), leverage them for automated draft generation, then curate manually.
+If the repository uses Conventional Commits (`feat:`, `fix:`, `docs:`, etc.), generate the draft from them, then edit the draft by hand.
 
 ---
 
 ## Tech Debt
 
-A tech debt entry (`TD-[number]: [Title]`) records type (Code / Architecture / Test / Documentation
-/ Infrastructure), severity (High / Medium / Low), age, and owner; the description, impact, cost of
-delay, remediation plan, estimated effort; and a trigger, the event that should cause
-prioritization (for example, "when we add a 4th payment provider"). Read
-`references/templates.md#tech-debt-entry` for the template.
+Content of an entry `TD-[number]: [Title]`: type (Code / Architecture / Test / Documentation / Infrastructure), severity (High / Medium / Low), age, owner; description, impact, cost of delay, remediation plan, estimated effort; and a trigger, the event that makes the entry a priority (for example, "when we add a 4th payment provider"). Template: `references/templates.md#tech-debt-entry`.
 
 ---
 
 ## Writing Style
 
-- **Narrative over reference**: Write like explaining to a colleague, not documenting an API
-- **Zero-context assumption**: Explain everything; don't assume familiarity
-- **Show code**: Include actual snippets from both old and new implementations
-- **Every "why" connects forward**: Design decisions show downstream benefits
-- **Tables for comparisons**: Use tables for approach comparisons, problem/consequence lists
-- **Diagrams for architecture**: ASCII art for stack diagrams and data flow
-- **The "So What?" test**: Every summary item answers why it matters
-- **Plain statement over mannered prose**: mannered prose substitutes metaphor and flourish for
-  direct statement ("a dial worth turning" for "a parameter worth varying"). It makes the reader
-  work harder so the writer can perform; when a literal phrase exists, use it
-- **Mark quotations**: a passage taken verbatim from a ticket, a commit message, a diff, or a
-  source document is marked as a quotation and attributed; everything else is in your own words,
-  so the reader can tell the source's claim from your summary of it
+- **Narrative over reference**: write explanatory prose in full sentences, not an API reference list.
+- **No assumed context**: assume the reader has not seen the code or the ticket. Define each project-specific term and component on first use.
+- **Show code**: when explaining a design decision, include the actual snippets from the old and new implementations.
+- **Connect each "why" forward**: state the downstream benefit of each design decision.
+- **Tables for comparisons**: approach comparisons, problem/consequence lists.
+- **Diagrams for architecture**: ASCII art for stack diagrams and data flow.
+- **The "So What?" test**: each summary item states why it matters.
+- **Plain statement**: write the literal phrase, not a metaphor or flourish ("a parameter worth varying", not "a dial worth turning").
+- **Mark quotations**: mark a passage taken verbatim from a ticket, a commit message, a diff, or a source document as a quotation, and attribute it. Write everything else in your own words.
 
 ---
 
 ## Quality Checklist
 
-Before delivering any artifact:
+Before delivering an artifact, check:
 
 - [ ] Correct perspective identified (requesting vs reporting)
-- [ ] Ticket/epic/PI IDs included where applicable
-- [ ] Acceptance criteria are testable (not vague)
-- [ ] "Why" is explained, not just "what"
+- [ ] Ticket/epic/PI IDs included where the repository or user provides them
+- [ ] Acceptance criteria are testable
+- [ ] "Why" is explained, not only "what"
 - [ ] Alternatives considered are documented (for decisions)
-- [ ] Impact is quantified where possible (users affected, metrics moved)
-- [ ] A reader with zero context can understand the artifact's purpose
-- [ ] Anti-patterns avoided (see `references/patterns.md`)
+- [ ] Impact is quantified where data exists (users affected, metrics moved)
+- [ ] A reader with no context can understand the artifact's purpose
+- [ ] Anti-patterns for the artifact type avoided (`references/patterns.md`)
 
 ## Boundaries
 

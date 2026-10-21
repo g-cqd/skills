@@ -10,7 +10,7 @@
         "Behaviour is pinned by tests or a characterization test before the first edit",
         "Each cut names its proof (callers, search, history) rather than an opinion",
         "The report shows before and after numbers or states which could not be measured",
-        "No behaviour change and no edit outside the diff"
+        "No behaviour change and no edit outside the diff other than characterization tests added before the first cut"
       ]
     },
     {

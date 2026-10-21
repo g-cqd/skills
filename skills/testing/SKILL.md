@@ -13,8 +13,8 @@ allowed-tools:
 
 # Testing
 
-This skill owns **how you decide what to test, and how you know the tests are worth having**. It
-does not own running them (`xcode`) or the concurrency patterns under test (`swift`).
+This skill covers deciding what to test and judging whether a test is worth keeping. For running
+tests, use `xcode`; for the concurrency patterns under test, use `swift`.
 
 Sections 1–8 are language-agnostic and complete on their own. Section 9 is Apple-specific.
 
@@ -24,7 +24,7 @@ Sections 1–8 are language-agnostic and complete on their own. Section 9 is App
 §ORDER    test-first ≻ test-after ⇒ RED ! confirmed-failing BEFORE green
 §ONE      1 test ∷ 1 behavior · 1 reason-to-fail
 §BEHAVIOR assert-behavior ¬implementation ⇒ refactor ¬breaks-test
-§EARN     ∀test ! necessary ∧ ¬duplicate ∧ meaningful ∨ ⇒ cut|merge
+§EARN     ∀test-written|reviewed ! necessary ∧ ¬duplicate ∧ meaningful ∨ ⇒ cut|merge
 §COVER    coverage ∷ behavior-measured ¬percentage-measured
 §BAN      sleep|timeout ∈ test · test ∀private-method · assert-on-nothing ·
           shared-state-between-tests · deferring tests to a follow-up
@@ -49,12 +49,16 @@ Sections 1–8 are language-agnostic and complete on their own. Section 9 is App
 --------------------
 ```
 
-The shape is a consequence, not a target. If integration tests outnumber unit tests, the units are
-usually too coupled to test alone — fix the design, not the ratio.
+The shape is a result, not a target. If integration tests outnumber unit tests, the units are
+usually too coupled to test alone; fix the design, not the ratio.
 
-**Choose the level by what can break.** A rule that only breaks when two modules disagree is an
-integration test. A rule that breaks on any input is a property. A rule with a fixed table of
-cases is a parameterized unit test.
+**Choose the level by what can break.**
+
+| The rule… | Test |
+|---|---|
+| breaks only when two modules disagree | Integration test |
+| must hold for every input | Property |
+| has a fixed table of cases | Parameterized unit test |
 
 ---
 
@@ -62,17 +66,17 @@ cases is a parameterized unit test.
 
 ### Example mapping
 
-Before writing code for a non-trivial feature, decompose it with the user: the **rule**, the
-**examples** that illustrate it, and the **questions** nobody can answer yet. Questions are the
-valuable output — they are the requirements gaps, found before implementation rather than during
-review.
+Before you write code for a feature with more than one rule, decompose it with the user into the
+**rule**, the **examples** that illustrate it, and the **questions** nobody can answer yet. The
+questions are the main output: they are the requirement gaps. If you cannot ask the user, list
+the questions in the report and state the assumption you used for each.
 
 ### ATDD — the outer loop
 
-1. Write a failing acceptance test for the **user-visible** behavior.
+1. Write a failing acceptance test for the user-visible behavior.
 2. Drive the pieces with the TDD inner loop (§2.3).
 3. When the inner loops are done, the acceptance test passes. If it does not, the decomposition
-   was wrong — continue, do not patch the acceptance test.
+   was wrong: continue the inner loops. Do not edit the acceptance test to make it pass.
 
 ### TDD — the inner loop
 
@@ -82,60 +86,46 @@ review.
 | **Green** | Write the minimum code to pass | Stop. Confirm it passes. |
 | **Refactor** | Clean up, tests stay green | Stop. Confirm green, then next test. |
 
-The laws:
+Rules:
 
-1. No production code without a failing test.
-2. Only enough code to pass the current test.
-3. One behavior per test.
-4. Tests are executable documentation.
-5. The loop runs in milliseconds, or it will not be run.
+1. Write no production code for a behavior change without a failing test for that behavior.
+2. Write only enough code to pass the current test.
+3. Test one behavior per test.
 
-Keep the build out of the loop. In a compiled language, red and green happen per step, not per
-test:
+In a compiled language, build once per step, not once per test:
+
 1. Write the step's tests together, then build once to see them fail.
 2. Write the code, then build once to see them pass.
 
-Run only the filtered tests the change touches, from that build, never with a test command that
-builds first (SwiftPM: `swift` §6). The full suite runs once, at the end, after you catch up with
-the main line (`engineering-practices` §5, Hand-back).
+Run only the filtered tests that the change touches, from that build. Do not use a test command
+that builds first (SwiftPM: `swift` §6). Run the full suite once, at the end, after you catch up
+with the main line (`engineering-practices` §5, Hand-back).
 
-A test that passes the first time you run it has proven nothing. Confirm the red.
-
-"Minimum code to pass" means the minimum *general* code, not code special-cased to the test
-inputs. Tests verify correctness; they do not define the solution. If a test itself is wrong, say
-so rather than working around it.
+"Minimum code to pass" means the minimum general code, not code special-cased to the test inputs.
+Tests verify correctness; they do not define the solution. If a test is wrong, say so and do not
+work around it.
 
 ---
 
 ## 3. Property-based and contract testing
 
-**Property-based** — assert an invariant over generated input rather than a fixed example. The
-properties worth reaching for first:
+**Property-based**: assert an invariant over generated input instead of a fixed example. When a
+property fails, keep the shrinker's minimal counterexample as a regression case (§5).
 
-- **Round-trip**: `decode(encode(x)) == x`
-- **Idempotence**: `f(f(x)) == f(x)`
-- **Commutativity / associativity** where the operation claims it
-- **Invariant preservation**: the postcondition holds for every generated input
-- **Oracle**: the fast implementation agrees with the obvious slow one
-
-When a property fails, the shrinker's minimal counterexample is the bug report. Keep it as a
-permanent regression case (§5).
-
-**Contract testing** — when two modules or services agree on an interface, test the agreement from
-**both sides** against one shared contract. A consumer test that mocks the provider proves nothing
-about the provider; that is the classic integration gap.
+**Contract testing**: when two modules or services share an interface, test both sides against one
+shared contract. A consumer test that mocks the provider proves nothing about the provider.
 
 ---
 
 ## 4. Legacy code
 
-Code without tests cannot be safely changed, and cannot be tested without changing it. Break the
-loop with **characterization tests**: write tests that assert what the code *currently does* —
-bugs included — so that any change becomes visible. They are a safety net, not a specification.
+Code without tests cannot be changed safely, and often cannot be tested without changing it. Start
+with **characterization tests**: tests that assert what the code does now, bugs included, so that
+each later change is visible. They record behavior; they do not specify it.
 
-Then get a seam: **sprout** the new behavior into a fresh, tested unit; **wrap** the existing call
-to add behavior around it; or **extract an interface** to make the dependency substitutable. Pick
-the smallest one that works.
+Then create a seam, choosing the one that changes the fewest lines: **sprout** the new behavior
+into a new, tested unit; **wrap** the existing call to add behavior around it; or **extract an
+interface** to make the dependency substitutable.
 
 ---
 
@@ -143,48 +133,35 @@ the smallest one that works.
 
 | Type | What it proves | Key discipline |
 |---|---|---|
-| **Unit** | One unit behaves | Isolated, fast, no I/O |
 | **Integration** | Components agree | Mock at the *system* boundary; use real implementations between your own modules |
-| **Regression** | A fixed bug stays fixed | Reproduce the exact failure, not the happy path. Link it to the ticket. Permanent — never delete |
-| **Mutation** | The tests actually catch bugs | Target >80% on critical logic; review every survivor |
+| **Regression** | A fixed bug stays fixed | Reproduce the exact failure, not the happy path. Link it to the ticket. Delete it only when the behavior it guards is removed from the requirements |
+| **Mutation** | The tests catch bugs | Target >80% on critical logic; review every survivor |
 | **Snapshot** | Rendered output is stable | Deterministic data only — no clock, no random ids |
 | **Performance** | It has not got slower | Baselines in CI; before/after numbers |
 | **Fuzz** | Malformed input cannot crash it | Parsers, decoders, validators. Must return errors, never crash |
-| **Smoke** | It works at all | Critical flows, first line of defense after deploy |
 
-**Every bug fix gets a regression test.** No exceptions — a fix without one is an invitation for
-the bug to return silently.
+**Each bug fix gets a regression test.** If the project has no test harness, keep the reproduction
+as a script and say so.
 
-**Size the tests to the task.** Commit tests where the task asks for them or the repository
-already keeps tests for this kind of change, sized like the neighbouring test files — roughly one
-focused test per stated behavior. Scratch checks used while working are not promoted to permanent
-test files; they were written to explore, not to specify.
+**Size the tests to the task.** Commit tests when the task asks for them or when the repository
+already keeps tests for this kind of change. Size them like the neighbouring test files: about one
+focused test per stated behavior. Do not commit scratch checks written while exploring as
+permanent tests.
 
 ---
 
 ## 6. Test doubles
 
-| Type | Purpose |
-|---|---|
-| **Dummy** | Fills a parameter, never used |
-| **Stub** | Returns canned answers |
-| **Spy** | Records how it was called |
-| **Mock** | Asserts expectations about calls |
-| **Fake** | A working but simplified implementation, e.g. in-memory storage |
-
-Rules:
-
 - Spies record **call counts and captured arguments in arrays**, not a `wasCalled` boolean. A
   boolean cannot catch "called twice" or "called with the wrong value".
-- Inject every dependency. A test that touches the real filesystem, clock, or network is not a
-  unit test.
-- Mock at the **system** boundary. Mocking your own modules against each other tests your mocks.
+- Inject each dependency of the unit under test. A test that touches the real filesystem, clock,
+  or network is not a unit test.
+- Mock at the **system** boundary. Use real implementations between your own modules; mocking them
+  against each other tests the mocks.
 
 ---
 
 ## 7. Test quality
-
-**FIRST**: Fast, Independent, Repeatable, Self-validating, Timely.
 
 | Smell | Symptom | Cure |
 |---|---|---|
@@ -195,19 +172,22 @@ Rules:
 | Tautological | Can never fail | Assert real outcomes — **run mutation testing** |
 | Obscure | Unreadable | Better name, less setup |
 | Eager | Tests a private method | Test through the public API |
-| Giant | Many unrelated assertions | Split into focused tests |
+| Giant | Several unrelated assertions | Split into focused tests |
 
-**Mutation testing is the definitive cure for tautological tests.** If a mutant survives, some
-test executed that code without asserting anything about it. Coverage percentage cannot detect
-this; that is why coverage is measured in behaviors, not percent.
+Use mutation testing to find tautological tests. A surviving mutant marks code that a test ran
+without asserting on. Coverage percentage cannot detect this, so coverage is measured in
+behaviors, not percent.
 
 ---
 
 ## 8. Review checklist
 
+Apply each item to the code and tests in the change. Mark an item N/A when the change contains no
+code of that kind (for example, no parser, no UI).
+
 **Before and during**
 
-- [ ] Example mapping done for complex features; open questions raised
+- [ ] Example mapping done for features with more than one rule; open questions raised
 - [ ] Acceptance tests define "done", written before implementation
 - [ ] Red confirmed failing, for the right reason, before green
 - [ ] One behavior per test, clear Given-When-Then
@@ -221,15 +201,15 @@ this; that is why coverage is measured in behaviors, not percent.
 - [ ] Descriptive name stating the behavior under test
 - [ ] Happy path, error paths, boundary values all covered
 - [ ] Initialization tests verify **all** initial state, not one field
-- [ ] Exact equality on whole collections, not just the first element
+- [ ] Exact equality on whole collections, not only the first element
 - [ ] All dependencies injected; no real I/O
 - [ ] No sleeps or timeouts
 - [ ] Spies assert call counts and captured arguments
-- [ ] Written alongside the code, not deferred
+- [ ] Written with the code, not deferred
 
 **After**
 
-- [ ] Every bug fix has a linked regression test
+- [ ] Each bug fix has a linked regression test
 - [ ] Critical boundaries integration-tested with real implementations
 - [ ] Mutation score >80% on critical logic; survivors reviewed
 - [ ] UI snapshots across themes and accessibility sizes
@@ -242,8 +222,10 @@ this; that is why coverage is measured in behaviors, not percent.
 
 ## 9. Apple platforms — Swift Testing
 
-Use Swift Testing for new tests. Migrate or remove XCTest suites, with one exception: **XCUI
-automation tests using `XCUI*` APIs cannot be migrated** — leave them on XCTest.
+Write new tests with Swift Testing. Migrate or remove the XCTest suites in scope only when the
+task asks for migration or modernization, or when the project's `AGENTS.md` requires it. Delete
+an XCTest test only after its Swift Testing replacement passes. Exception: **XCUI automation tests
+using `XCUI*` APIs cannot be migrated**; leave them on XCTest.
 
 ### 9.1 API
 
@@ -268,30 +250,29 @@ struct UserServiceTests {
 
 - `#expect` to assert and continue; `try #require` to assert and stop.
 - `#expect(throws:)` for errors; prefer the specific error value when the type is `Equatable`.
-- `confirmation` for asynchronous callbacks — never a sleep.
-- Test names in backticks, as readable sentences. Raw identifiers only for multi-word names that
-  read like a sentence.
+- `confirmation` for asynchronous callbacks, not a sleep.
+- Name each test as a readable sentence in backticks (a raw identifier).
 - Parameterize instead of copying a test per input value.
-- Tags enable selective runs: `.unit`, `.integration`, `.regression`, `.acceptance`, `.smoke`,
+- Tags select runs: `.unit`, `.integration`, `.regression`, `.acceptance`, `.smoke`,
   `.performance`, `.fuzz`, `.contract`, `.characterization`, `.snapshot`.
 
 ### 9.2 Migrating from XCTest
 
 Migrate **one class at a time**; a file may contain both frameworks during the transition.
 
-Not everything migrates: UI tests (`XCUIAutomation`) must stay XCTest, and so must a test method
-that uses `measure { }`; other methods in that same `XCTestCase` can still move.
+A test method that uses `measure { }` stays on XCTest, like XCUI tests; the other methods in the
+same `XCTestCase` can move.
 
-**Imports** — `import XCTest` → `import Testing`. XCTest re-exports Foundation, so if the file
-uses `URL`, `Data`, `CharacterSet`, `ProcessInfo`, add `import Foundation` explicitly.
+**Imports** — `import XCTest` → `import Testing`. XCTest re-exports Foundation; if the file uses
+`URL`, `Data`, `CharacterSet`, or `ProcessInfo`, add `import Foundation`.
 
 **Suites** — drop `XCTestCase` inheritance; prefer `struct`. Use `actor` or `final class` only
 when `deinit` is needed, since a struct has none.
 
 **Lifecycle** — `setUp` → `init` (may be `async throws`); `tearDown` → `deinit`. Swift Testing
-re-runs the initializer fresh before **every** test, so convert implicitly-unwrapped optionals to
-non-optional properties initialized inline or in `init`. A test mutating a value-semantic property
-must be `mutating`.
+runs the initializer again before **every** test, so convert implicitly-unwrapped optionals to
+non-optional properties initialized inline or in `init`. A test that mutates a value-semantic
+property must be `mutating`.
 
 **Assertions**
 
@@ -322,23 +303,23 @@ For over-fulfilment, `assertForOverFulfill = false` with a count becomes a range
 `await confirmation("…", expectedCount: 10...)`. For intermittent known issues, `.nonStrict()`
 becomes `isIntermittent: true`; conditional cases use `when:` and `matching:`.
 
-**`continueAfterFailure = false`** changes semantics: XCTest halts on first failure. To preserve
-it, every subsequent assertion becomes `try #require`, and the method gains `throws`. If it was
-set in `setUp`, this applies to **every assertion in every test** in that class.
+**`continueAfterFailure = false`** makes XCTest stop at the first failure. To keep that
+behavior, convert each assertion after the setting to `try #require`, and mark the method
+`throws`. If the setting is in `setUp`, convert **every assertion in every test** of that class.
 
 **Skips by OS version** — replace `.enabled(if:)` with an `@available` attribute on the test.
 
 **Concurrency** — XCTest runs synchronous tests on the main actor, serially within a suite. Swift
-Testing runs them on arbitrary tasks, in parallel. Add `@MainActor` **only** where the XCTest form
-genuinely relied on main-actor isolation. Add `@Suite(.serialized)` where tests share mutable
-state.
+Testing runs them on arbitrary tasks, in parallel. Add `@MainActor` **only** where the XCTest test
+relied on main-actor isolation. Add `@Suite(.serialized)` where tests share mutable state.
 
 ### 9.3 Modernization rules
 
-- Promote `XCTFail` and `Issue.record` to `#expect` or `#require` — a `guard … else { Issue.record }`
-  chain becomes `try #require(…)`. Do not use `Issue.record` as a lazy substitute.
-- Leave `try #require` as it is; converting it to `#expect` changes behavior, since the test no
-  longer stops at that point.
+- Promote `XCTFail` and `Issue.record` to `#expect` or `#require`: a `guard … else { Issue.record }`
+  chain becomes `try #require(…)`. Keep `Issue.record` only where no `#expect` or `#require` can
+  state the check.
+- Leave `try #require` as it is. Converting it to `#expect` changes behavior: the test no longer
+  stops at that point.
 - Convert loops over inputs and near-duplicate tests into `@Test(arguments:)`.
 - Convert multi-word camelCase `@Test` names to sentence-case raw identifiers.
 - Do not use underscore-prefixed API such as `#_sourceLocation`; use the full
