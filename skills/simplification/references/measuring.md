@@ -17,8 +17,8 @@ pick a tool, interpret its output, or count by hand.
 | Metric | Counts | Blind spot |
 |---|---|---|
 | Cyclomatic (McCabe) | One plus each decision point: `if`, loop, `case`, `catch`, `&&`, `||`, ternary | Every `case` costs the same, so a flat mapping scores high; ignores nesting; tracks function length |
-| Cognitive (SonarSource) | +1 per break in linear flow (`if`, loop, `switch` once, `catch`, jump to label, a sequence of mixed boolean operators), plus the current nesting level for each nested structure; recursion +1 | Not validated against defects; the tools differ in details, so compare scores only within one tool |
-| Nesting depth | Deepest level of nested control flow | Says nothing about how much each level holds |
+| Cognitive (SonarSource) | +1 for each `if`, loop, `switch` (once), `catch`, jump to a label, and each run of mixed boolean operators; plus the current nesting level for each structure nested inside another; recursion +1 | Not validated against defects; the tools differ in details, so compare scores only within one tool |
+| Nesting depth | Deepest level of nested control flow | Says nothing about how much code each level contains |
 | Length, parameter count | Lines of the body, declared parameters | Blunt; useful as a prompt to read |
 
 Cognitive complexity does not count a flat `switch` per branch, ignores shorthand such as the null
@@ -82,7 +82,7 @@ Example, a function with a loop containing an `if` and an `else`: loop +1, `if` 
 - Extraction moves complexity: after extracting, sum the parent and the new helper. If the sum did not
   fall, the extraction added indirection.
 - A flat `switch` over an enum, a lookup table and a generated file inflate cyclomatic complexity
-  without making the reader work. Leave them.
+  without making the code harder to read. Leave them.
 - The score of a tool tells you where to read, never that the code is clear.
 
 ## Change-level score

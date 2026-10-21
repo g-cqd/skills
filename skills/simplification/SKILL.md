@@ -15,15 +15,15 @@ allowed-tools:
 
 # Simplification
 
-This skill owns one question: what can a reader stop holding in their head, in this change, without
-the program doing anything different? It applies to a diff (the default), to named files, and to a
-plan before any code exists. It makes the cuts and proves them; it does not look for bugs, enforce
-style, speed code up, or redesign a module.
+This skill answers one question: what can be removed from this change without changing what the
+program does? It works on a diff (the default), on named files, or on a plan before any code exists.
+It removes code and shows why each removal is safe. It does not look for bugs, enforce style, make
+code faster, or redesign a module.
 
-Agents that write code drift towards more than the task needs: an extra file, a configurable option,
-a protocol with one conformer, a defensive branch for a state that cannot happen. Each addition is
-cheap to write and costly to read for the life of the code. A pass that only removes, and measures
-that it removed something, is the countermeasure.
+Agents that write code tend to add more than the task needs: an extra file, a configurable option, a
+protocol with one implementation, a check for a state that cannot happen. Each addition is quick to
+write, and everyone who opens the code has to read it from then on. This skill removes the extras and
+measures what it removed.
 
 ## Contract
 
@@ -31,7 +31,7 @@ that it removed something, is the countermeasure.
 §SCOPE      the diff or the named files; the plan when no code exists. Nothing outside it changes.
 §BEHAVIOUR  same observable behaviour. A test or a characterization pins it BEFORE the first edit.
 §EVIDENCE   measure first; prove each cut (callers, history, a failing build or test) before making it.
-§ORDER      delete ≻ inline ≻ flatten ≻ extract. Extract only a piece with a name and a caller that gains.
+§ORDER      delete ≻ inline ≻ flatten ≻ extract. Extract a piece only if it has a clear name and its caller becomes easier to read.
 §BUDGET     production lines, types, files, parameters and dependencies go down. Any rise is justified.
 §STOP       no net reduction, or only taste is left ⇒ report "no further change". Do not invent work.
 §KEEP       the keep list below survives every pass.
@@ -89,9 +89,9 @@ implementation, compare the diff to that budget.
 
 Two levels, because a pass can lower one and raise the other.
 
-**Per function: what the reader must hold in their head.** Cognitive complexity (SonarSource's rules)
-is the primary signal: it adds for each break in linear flow and for nesting, and ignores shorthand, so
-a flat `switch` counts once. A meta-analysis of ten studies found it correlates with comprehension time
+**Per function: how hard it is to read.** Cognitive complexity (SonarSource's rules) is the main
+signal. It adds one for each branch or loop, more for each level of nesting, and counts a flat `switch`
+once. A meta-analysis of ten studies found it correlates with comprehension time
 (pooled r about 0.54) and perceived difficulty, but not clearly with correctness, and it found no
 validated threshold. Sonar's default of 15 is a reasonable flag, not a target. Cyclomatic complexity
 inflates on flat `switch` statements and tracks size, so read it next to cognitive complexity and leave
@@ -105,7 +105,7 @@ a flat mapping alone.
 | Types, protocols, files, dependencies, public API added by the diff | Each needs a caller and a reason beyond "might be useful" |
 | Unused declarations, duplication | The project's analyzer where one exists; otherwise a search |
 
-**Per change: what the reviewer must take in.** `scripts/pr_size.py` in this skill scores a diff on size
+**Per change: how much a reviewer has to read.** `scripts/pr_size.py` in this skill scores a diff on size
 and spread, with git as its only dependency. Fewer changed lines and fewer files lower the score;
 generated files you exclude do not count, and tests earn only a capped discount because reviewers still
 read them. It does not measure complexity, so a small change can still be hard to read. Run it on the
@@ -128,16 +128,16 @@ defaults and how they count. When no tool is available, count decision points an
 the changed functions using the rules above, label the numbers as hand counts, and say so.
 
 Two cautions. A metric points at a function to read; it is not the goal, and a score under the
-threshold does not mean the reader finds the code clear. Extracting helpers lowers the parent's score
-while adding indirection, so count the whole change: a cut that lowers one function and raises the
-total number of moving parts has not simplified anything.
+threshold does not mean the code is clear. Extracting helpers lowers the parent's score but adds
+indirection, so count the whole change: a cut that lowers one function and raises the total number of
+functions and types has not simplified anything.
 
 ## Decision rules
 
 1. Cognitive complexity above 15 in a function you touched: simplify it, or say why it must stay.
 2. High cyclomatic with low cognitive (flat switch, mapping table): leave it.
 3. Nesting of three or more: early return or `guard` first, before extracting anything.
-4. A function over 50 lines: split it only into pieces that each have a name and a caller that gains.
+4. A function over 50 lines: split it only into pieces that each have a clear name and make their caller easier to read.
 5. A protocol, type or file with one conformer or one call site, added by this diff: inline it.
 6. Parameters, flags or defaults nobody asked for: remove them.
 7. New code duplicating existing code: reuse the existing code.
@@ -145,8 +145,8 @@ total number of moving parts has not simplified anything.
 9. A Large or Oversized change-level band: check whether the branch's own additions can be cut. If the
    size comes from unrelated concerns bundled together, say so in the report and suggest splitting; do
    not split inside the pass.
-10. Touched functions at or under the thresholds and no metric worse than the base: stop. Further work
-    needs a reader who is confused, not a better number.
+10. Touched functions at or under the thresholds and no metric worse than the base: stop. Do more only
+    if a real reader finds the code confusing, not to improve a number.
 
 ## Keep list
 
@@ -165,14 +165,14 @@ A pass leaves these alone, because each looks removable and is not:
 
 - Change behaviour, even slightly. If a cut needs a behaviour change, it is a different change.
 - Golf. Nested ternaries, dense chains and clever one-liners lower line counts and raise cognitive load.
-- Move complexity instead of removing it, by extracting helpers that the reader must then jump between.
+- Move complexity instead of removing it, for example by extracting helpers the reader then has to jump between.
 - Spread beyond the scope: renames, reformatting and reordered imports in lines the task did not touch.
 - Optimize a number. If the only reason for an edit is the score, revert it.
 - Add what it removes elsewhere: new abstractions, dependencies, files or tests beyond what a cut needs.
 
 ## Report
 
-The final message stands on its own and carries evidence, not adjectives.
+The final message must make sense without the rest of the conversation. Give numbers and proof, not opinions.
 
 <example>
 Simplified the sync retry change (diff mode, base 3f2a9c1).
@@ -194,9 +194,6 @@ Kept: the `Task.isCancelled` check and its comment (cancellation contract), the 
 network boundary. Left for follow-up: `flush` holds a retry flag nothing sets (proof needs the owner).
 Tests: 41 passed before and after. Unverified: nothing measured by hand.
 </example>
-
-Rationale for the shape: the table makes the reduction checkable, each cut names its proof, and the
-kept and deferred items show what the pass deliberately did not touch.
 
 Before sending, check the report against the contract: behaviour pinned and tests run, no function
 worse than its base, the budget went down or the rise is explained, and every cut has proof.
