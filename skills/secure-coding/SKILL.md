@@ -199,7 +199,8 @@ Check these three leaks in every iOS review:
   blank or branded view in `applicationDidEnterBackground` (or the scene equivalent) so that no
   sensitive screen is captured.
 - **Keyboard cache.** Autocorrect stores typed text in `Library/Keyboard/*-dynamic-text.dat`. On
-  each sensitive field, set `autocorrectionType = .no` and `secureTextEntry = true`.
+  each sensitive field, set `autocorrectionType = .no`. Set `secureTextEntry = true` only on secrets (passwords, PINs,
+  tokens); a field the user must read back, such as an account number, stays unmasked.
 - **The general pasteboard is readable by every app.** Any app can poll `UIPasteboard.general` via
   `changeCount`. Keep secrets off the general pasteboard. Where the feature requires a copy, set an
   expiry and `localOnly` in `setItems:options:`.

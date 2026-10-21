@@ -25,6 +25,8 @@ Create, test, improve, install, and manage agent skills. Skills follow the [Agen
           trigger-term lost in a merge · skill ∅negative-boundary
 ```
 
+Legend: `§` rule label · `!` must · `?` check · `¬` not · `∅` no · `∀` for each · `∈` in · `∷` is · `∧` and · `∨` or · `⇒` then · `≻` outranks · `→` becomes · `·` separates items. Other symbols read as in mathematics.
+
 ## Quick Decision Tree
 
 | User Intent | Action |
@@ -123,6 +125,18 @@ python scripts/quick_validate.py <path/to/skill-folder>
 The validator checks the YAML frontmatter format, the required fields, and the naming rules.
 
 ---
+
+## Writing style
+
+Write the body in plain language. The repository's `docs/AUTHORING.md` ("Plain-language rules") has the full list when it is available.
+
+- One instruction per sentence, about 20 words, in the imperative and the active voice. One word per concept.
+- No metaphors, idioms, filler or hedges. Write "must", "must not" or "may", not "should".
+- Scope each "always", "never" and "all" to a condition. Give each loop or search a stop, and each rule a fallback for when it cannot be followed: use an existing repository rule, or "stop and report".
+- Give each prohibition the allowed action.
+- Replace words such as "large" and "soon" with a number or a test. If none is known, state the criterion in words.
+- Read each rule literally and apply it everywhere it can apply. If the result defeats the purpose, add the missing condition.
+- Cut what the model already knows.
 
 ## Testing and Evaluating
 

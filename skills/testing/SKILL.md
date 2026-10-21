@@ -137,7 +137,7 @@ interface** to make the dependency substitutable.
 | **Regression** | A fixed bug stays fixed | Reproduce the exact failure, not the happy path. Link it to the ticket. Delete it only when the behavior it guards is removed from the requirements |
 | **Mutation** | The tests catch bugs | Target >80% on critical logic; review every survivor |
 | **Snapshot** | Rendered output is stable | Deterministic data only — no clock, no random ids |
-| **Performance** | It has not got slower | Baselines in CI; before/after numbers |
+| **Performance** | It has not got slower | Baselines where the repository already runs benchmarks in CI; before/after numbers |
 | **Fuzz** | Malformed input cannot crash it | Parsers, decoders, validators. Must return errors, never crash |
 
 **Each bug fix gets a regression test.** If the project has no test harness, keep the reproduction

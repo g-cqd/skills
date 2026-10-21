@@ -89,7 +89,8 @@ activity, transitive dependencies, license, and supply-chain posture (`secure-co
 - Wrap third-party APIs at a module boundary you control, so replacing the dependency is a local
   change.
 - **Upgrades: one dependency per PR**, with the changelog read, the lockfile committed, and the
-  tests run, so a failure points to one dependency.
+  tests run, so a failure points to one dependency. Packages that must move together (a framework and its plugin,
+  peer dependencies) go in one PR; say which packages and why.
 
 ## 5. Verification before completion
 

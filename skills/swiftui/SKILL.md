@@ -256,7 +256,7 @@ compile or misbehaves at run time.
   changes, so a document that never registers undo never autosaves. If the developer is unsure
   they need undo, tell them this.
 - **At a floor of 27+, do not recommend `FileDocument` or `ReferenceFileDocument` for new code.**
-  Below the floor, do not use these APIs unconditionally.
+  Below the floor, call the SDK 27 document APIs in this section only inside an availability check.
 - `snapshot(contentType:)` and `apply(snapshot:previous:)` run on the main actor, so keep them
   light; do the serialization inside the reader's `read` and the writer's `write`.
 

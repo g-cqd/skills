@@ -18,7 +18,7 @@
 - [Advanced: incremental package writes](#advanced-incremental-package-writes)
 - [Quick API reference](#quick-api-reference)
 
-If the deployment target is below iOS 27 / macOS 27 / visionOS 27, do not use these APIs.
+If the deployment target is below iOS 27 / macOS 27 / visionOS 27, call these APIs only inside an availability check.
 
 ## Overview
 

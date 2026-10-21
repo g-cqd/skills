@@ -128,7 +128,7 @@ likely limiter as a hypothesis and name the capture that would confirm it. See
 
 ## 4. Validation checklist
 
-- [ ] Bounds checks on every buffer access
+- [ ] A bounds check on every buffer access, or a comment that names the grid size or loop bound that proves the index
 - [ ] Thread-group size within device limits
 - [ ] No race conditions in shared memory; barriers where needed
 - [ ] **White furnace test passes** — uniform `Li = 1` produces `Lo <= 1`
