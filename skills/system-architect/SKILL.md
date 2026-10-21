@@ -14,16 +14,16 @@ allowed-tools:
 
 # System Architect
 
-This skill owns **the system around the code**: how it is built, deployed, observed, and
-recovered. It does not own application performance (`performance-engineering`) or application
-security (`secure-coding`).
+This skill covers **the system around the code**: how it is built, deployed, observed, and
+recovered. Application performance belongs to `performance-engineering`. Application security
+belongs to `secure-coding`.
 
 ## Contract
 
 ```
 §PRIORITY safety ≻ correctness ≻ reliability ≻ recoverability ≻
           observability ≻ performance ≻ cost ≻ velocity ≻ elegance
-          ⇒ lower NEVER compromises higher
+          ⇒ lower ¬push higher below its stated target
 §ANALYZE  ! emit <analysis> block BEFORE proposing architecture
 §EXPLICIT ! define IaC ∧ CI/CD ∧ security ∧ observability strategy ¬implicit
 §PROVEN   proven-patterns ≻ novel ∷ immutable-infra · GitOps · progressive-delivery
@@ -36,7 +36,8 @@ security (`secure-coding`).
 
 ## 1. Decision priority hierarchy
 
-Apply in strict order. **A lower-priority concern never compromises a higher one.**
+Apply in strict order. **A lower-priority concern must not push a higher item below its stated
+target.**
 
 ```
 1. SAFETY         Human safety, data integrity, legal compliance
@@ -50,12 +51,13 @@ Apply in strict order. **A lower-priority concern never compromises a higher one
 9. ELEGANCE       Clean, minimal — never at the expense of the above
 ```
 
-Most bad architecture decisions are a lower item quietly outranking a higher one — cost beating
-recoverability, velocity beating correctness. Name it when you see it.
+When a proposal or an existing design lets a lower item outrank a higher one (for example cost
+over recoverability, or velocity over correctness), name the conflict in your answer.
 
 ## 2. Pre-implementation analysis
 
-Emit before proposing anything:
+Emit this block before you propose a new architecture or a change to an existing one. A direct
+question about one setting or one command does not need the block.
 
 ```xml
 <analysis>
@@ -75,13 +77,12 @@ Emit before proposing anything:
 ```
 
 **Numbers, not adjectives.** "Highly available" is not a requirement; "99.95% monthly, RTO 15
-minutes, RPO 5 minutes" is. Topology, cost, and on-call load all follow from those numbers, so
-extracting them is the first real work.
+minutes, RPO 5 minutes" is. Topology, cost, and on-call load follow from these numbers, so get
+them first. If the user gives no numbers, state the numbers you assume and label them as
+assumptions.
 
-Before finishing, check the proposed design against those same numbers: does the topology
-actually meet the availability target, and does the backup and failover path meet RTO and RPO?
-A design that never gets compared back to its targets is where the priority hierarchy quietly
-inverts.
+Before finishing, check the proposed design against the same numbers: the topology meets the
+availability target, and the backup and failover path meets RTO and RPO.
 
 ## 3. Architecture patterns
 
@@ -94,67 +95,63 @@ inverts.
 | **Immutable infrastructure** — replace, do not patch | Mutable servers and configuration drift |
 | **GitOps** — declarative state in Git, reconciled by operators | Manual `kubectl apply` and console clicks |
 
-A distributed monolith is the worst outcome available: the operational cost of microservices with
-the coupling of a monolith. Check for it whenever services must be deployed together.
+A distributed monolith has the operational cost of microservices and the coupling of a monolith.
+Check for one when services must be deployed together.
 
 ## 4. CI/CD
 
-Design the pipeline as a product with its own requirements: fast feedback, reproducibility, and a
-trustworthy signal.
-
 - **Stages** — lint and format, build, unit test, integration test, security scan, package,
   deploy, smoke test.
-- **Fail fast, cheap first.** Order stages by cost; a lint failure should never wait behind an
+- **Cheapest stages first.** Order stages by cost so that a lint failure does not wait for an
   integration suite.
-- **Cache deliberately** — dependencies and build outputs keyed on lockfile hashes.
+- **Cache** dependencies and build outputs, keyed on lockfile hashes.
 - **Matrix builds** for platform and version coverage.
-- **OIDC over long-lived credentials** for cloud deploys. A static cloud key in CI secrets is a
+- **OIDC, not long-lived credentials,** for cloud deploys. A static cloud key in CI secrets is a
   finding.
-- **Reusable workflows and composite actions** keep pipeline logic DRY across repositories.
-- **A red pipeline is a stop-the-line event.** A routinely-red pipeline has already stopped being
-  a signal.
+- **Reusable workflows and composite actions** to share pipeline logic across repositories.
+- **A failing pipeline on the main branch blocks other merges until it is fixed.** A pipeline that
+  fails routinely no longer signals anything.
 
 ## 5. Containers and orchestration
 
-- Multi-stage builds; ship the minimal runtime layer, not the build toolchain.
-- Pin base images by digest. Run as non-root. Read-only root filesystem where possible.
-- Declare resource requests and limits — an unbounded container is a noisy neighbour.
-- Liveness and readiness probes answer **different questions**: "should I be restarted" versus
-  "should I receive traffic". Conflating them causes restart storms under load.
+- Use multi-stage builds. Ship the minimal runtime layer, not the build toolchain.
+- Pin base images by digest. Run as non-root. Use a read-only root filesystem unless the workload
+  must write to it.
+- Declare resource requests and limits. A container without limits can starve other workloads on
+  the node.
+- Liveness and readiness probes answer **different questions**: "must this container restart"
+  versus "may this container receive traffic". Using one probe for both causes restart storms
+  under load.
 
 ## 6. Observability
 
-**Golden signals** — monitor these before anything else:
+**Golden signals** — monitor these first: latency (p50, p95, p99), traffic, errors, and
+saturation.
 
-| Signal | Meaning |
-|---|---|
-| **Latency** | Time to serve requests (p50, p95, p99) |
-| **Traffic** | Requests per second |
-| **Errors** | Rate of failed requests — 5xx, timeouts |
-| **Saturation** | Resource utilization — CPU, memory, I/O |
+**Alert quality** — each alert must:
 
-**Alert quality** — every alert:
+- **Name the action** the responder takes, in the linked runbook.
+- **Indicate user impact** — a symptom users feel, not an internal metric that drifts.
+- **Fire early enough** for the responder to act before users feel the impact.
+- **Carry context** — what fired, where, and the runbook link.
 
-- **Names the action** the responder takes, in the alert text or the linked runbook
-- **Indicates user impact** — a symptom users feel, not an internal metric drifting
-- **Fires early enough** to act before the impact lands
-- **Carries context** — what fired, where, and the runbook link
-
-An alert failing any of these trains people to ignore alerts, which is worse than not having it.
-Rewrite it so a responder knows what to do, or delete it.
+An alert that fails one of these checks trains people to ignore alerts. Rewrite it so that a
+responder knows what to do. If no rewrite can give it an action, recommend deleting it; do not
+delete an alert without the user's approval.
 
 ## 7. Security, shift-left
 
 Scan in the pipeline, not after deploy: dependency and CVE scanning, secret detection, IaC
 misconfiguration scanning, container image scanning. Fail the build on severity thresholds agreed
-in advance rather than argued during an incident. Application-level review is `secure-coding`.
+in advance. Application-level review belongs to `secure-coding`.
 
 ## 8. Cost
 
-Right-size from measured utilization, not from the instance type someone picked once. Spot and
-reserved capacity for predictable workloads. Set budget alerts. Cost is priority 7 — it never
-justifies weakening recoverability or reliability, but unexamined cost is a real failure of
-stewardship.
+Right-size from measured utilization, not from the instance type chosen at setup. Recommend
+reserved capacity for the predictable baseline; do not buy or commit to reservations without the
+user's approval. Use spot capacity only for stateless or batch workloads that tolerate
+interruption. Set budget alerts. Cost is priority 7: it must not push recoverability or
+reliability below their stated targets.
 
 ## 9. Disaster recovery
 
@@ -170,12 +167,10 @@ stewardship.
 
 - [ ] Database restore tested **within RTO**
 - [ ] Failover to the secondary region tested
-- [ ] Runbooks executed by on-call — **not by their author**
+- [ ] Runbooks executed by on-call — **not by their author**, because a runbook is correct only
+      if someone who did not write it can follow it
 - [ ] Communication plan tested
 - [ ] Post-incident review process verified
-
-The author-versus-on-call distinction catches the real gaps: a runbook is only correct if someone
-who did not write it can follow it at 3am.
 
 ## Boundaries
 

@@ -4,11 +4,11 @@
     {
       "id": 1,
       "prompt": "The project won't build for the simulator, it throws dozens of errors. Get it compiling and tell me if it works.",
-      "expected_output": "Schemes and destinations discovered first, the first error fixed before each rebuild, and the highest rung reached reported.",
+      "expected_output": "Schemes and destinations discovered first, the first error read first, each error that is not a result of an earlier one fixed before one rebuild, and the highest rung reached reported.",
       "expectations": [
         "The xcode skill was activated",
         "Schemes and destinations are discovered with xcodebuild -list and -showdestinations before the first build instead of guessing names",
-        "The first error is read and fixed, then the project is rebuilt, rather than batching speculative fixes",
+        "The first error is read first and later errors are treated as possible results of it; each error that is not a result of an earlier one is fixed, then the project is rebuilt once, and no fix is added that cannot be tied to a logged error",
         "The report states which rung of the build, test, preview, run ladder was reached and does not call a successful compile done"
       ]
     },

@@ -19,7 +19,7 @@
       "expectations": [
         "The code-review skill was activated",
         "Correctness and safety findings come before naming and polish findings",
-        "The review calls out what was done well, not only negatives"
+        "The review names one thing done well when the change has one, not only negatives"
       ]
     },
     {

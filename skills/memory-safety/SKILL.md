@@ -15,18 +15,18 @@ allowed-tools:
 
 # Memory Safety
 
-This skill owns whether memory accesses are **valid**: in bounds, alive, initialized, and of the
-right type. It does not own whether the program is *fast* (`performance-engineering`) or whether
-an attacker can *reach* the code (`secure-coding`).
+This skill decides whether memory accesses are **valid**: in bounds, alive, initialized, and of the
+right type. Speed belongs to `performance-engineering`. Whether an attacker can reach the code
+belongs to `secure-coding`.
 
-Sections 1–6 are language-agnostic and complete on their own. Section 7 is Apple-specific; skip it
-unless you are working in Swift or in C with the Apple toolchain.
+Sections 1–6 are language-agnostic and complete. Section 7 is Apple-specific; read it only for
+Swift or for C built with the Apple toolchain.
 
 ## Contract
 
 ```
 §IRON-LAW unsafe-code ∷ guilty-until-proven-safe
-          ∀unsafe-block ! state{owner; lifetime; bounds} ∨ ⇒ finding
+          ∀unsafe-block ! state{owner; lifetime; bounds} ∨ report-as-finding
 §GOALS    completeness∧correctness ≻ security∧safety ≻ perf
           ⇒ ¬disable-a-check to gain speed
 §ORDER    fix-root-cause ≻ add-mitigation
@@ -40,7 +40,7 @@ unless you are working in Swift or in C with the Apple toolchain.
 
 ## 1. Violation classes
 
-Name the class before proposing a fix — the class determines where to look.
+Name the class before you propose a fix. The class tells you where to look.
 
 | Class | Kind | Typical symptom | CWE |
 |---|---|---|---|
@@ -52,43 +52,37 @@ Name the class before proposing a fix — the class determines where to look.
 | Type confusion | Type | "Impossible" values; vtable crash | CWE-843 |
 | Data race on shared memory | Concurrency | Heisenbugs; undefined behavior | CWE-362 |
 
-Memory corruption is the classic root of exploitable bugs — historically cited as roughly 70% of
-severe CVEs in large C and C++ codebases, which is the motivation for memory-safe-by-default
-languages.
-
-**Symptom → first hypothesis.** Crash far from the mutation: spatial. Debug-clean but
-release-crashing: temporal. Nondeterministic values: uninitialized. Impossible enum or vtable
-value: type confusion. Only under load: race.
+**Symptom → first hypothesis.** Crash far from the mutation: spatial. Clean in debug, crashes in
+release: temporal. Nondeterministic values: uninitialized. Impossible enum or vtable value: type
+confusion. Fails only under load: race.
 
 ### The length-field disagreement — the parser bug that keeps shipping
 
-The dominant root cause in real-world file- and media-parser exploits is a **buffer sized from one
-field and filled according to another that can disagree**. The attacker controls both, sets them
-inconsistently, and the write runs past the allocation.
+The most common root cause in real-world file and media parser exploits: **the code sizes a buffer
+from one field and fills it according to another field, and the two can disagree.** The attacker
+controls both fields, sets them inconsistently, and the write runs past the allocation.
 
-The in-the-wild iOS RawCamera bug (CVE-2025-43300, patched iOS 18.6.2) is the canonical shape: a
-DNG carried a JPEG-Lossless stream whose internal `SOF3` component count contradicted the outer
-TIFF `SamplesPerPixel`. The decoder sized buffers from the TIFF metadata, then trusted the
-embedded stream while decoding — out-of-bounds write. This is a **zero-click** surface, because
-the OS media pipeline eagerly previews attacker-delivered images with no user tap.
+Example: the in-the-wild iOS RawCamera bug (CVE-2025-43300, patched iOS 18.6.2). A DNG's
+JPEG-Lossless `SOF3` component count contradicted the outer TIFF `SamplesPerPixel`; the decoder
+sized buffers from the TIFF value and decoded by the stream value, writing out of bounds. The
+surface is **zero-click**: the OS media pipeline previews attacker-delivered images with no tap.
 
-The rule that closes the whole class:
+Rules that close the class, for each parser of untrusted bytes:
 
 - **One length, one source of truth.** Derive the buffer size and the fill loop from the *same*
-  validated value. Never size from a header and iterate on a body count.
-- **Validate cross-field invariants before allocating**: every count, offset, and size that a
-  second field also implies must be checked to agree, up front, against the actual byte length.
-- **Reject, don't clamp.** A mismatched length is a malformed input to refuse, not a value to
-  silently truncate into range.
-- **Treat every previewed media format as an attack surface** — the parser runs before any human
-  decision. Parse untrusted bytes in a bounds-safe language or under `-fbounds-safety` (§7.2), and
-  run it with the hardened-runtime mitigations `xcode` enables (§4, PAC/MTE).
+  validated value. Do not size from a header and iterate on a body count.
+- **Validate cross-field invariants before allocating.** For each count, offset, and size that a
+  second field also implies, check that the two agree and fit the actual byte length.
+- **Reject, do not clamp.** Refuse a mismatched length as malformed input. Do not truncate it into
+  range.
+- **Treat each previewed media format as an attack surface**, because the parser runs before any
+  human decision. Parse untrusted bytes in a bounds-safe language or under `-fbounds-safety`
+  (§7.2), and run the parser with the hardened-runtime mitigations that `xcode` enables (§4 here;
+  enabled in `xcode` §7.3).
 
 ---
 
 ## 2. Ownership and lifetime models
-
-Choose deliberately; each model trades a guarantee for a cost.
 
 | Model | Guarantees | Costs and hazards |
 |---|---|---|
@@ -99,20 +93,21 @@ Choose deliberately; each model trades a guarantee for a cost.
 | Tracing GC | Temporal | Pauses and footprint; finalizer hazards |
 | Exclusivity enforcement | No overlapping read/write access | Runtime traps reveal real aliasing bugs |
 
-Rules that hold in **every** model:
+Rules for every model:
 
-- **One owner per allocation.** Everything else borrows. State which is which at API boundaries:
-  who frees, and may the callee retain?
-- **Never return or store a view that can outlive its storage** — slice, span, `string_view`,
-  buffer pointer, or any borrowed reference.
-- **Bounds travel with the pointer.** Pointer and count are one unit, never two parameters that a
-  caller can desynchronize. Where the toolchain can enforce this, make it do so (§7.2).
+- **One owner per allocation.** All other holders borrow. At each API boundary, state who frees
+  the memory and whether the callee may retain it.
+- **Do not return or store a view that can outlive its storage**: slice, span, `string_view`,
+  buffer pointer, or any borrowed reference. Return an owning type instead, or extend the
+  storage's lifetime to cover the view.
+- **Bounds travel with the pointer.** Pass pointer and count as one unit, not as two parameters
+  that a caller can desynchronize. Where the toolchain can enforce this, enable it (§7.2).
 
 ---
 
 ## 3. Sanitizers
 
-Cheap insurance. Run them in CI, not just locally.
+Run sanitizers in CI, not only locally.
 
 | Tool | Catches | Notes |
 |---|---|---|
@@ -122,33 +117,30 @@ Cheap insurance. Run them in CI, not just locally.
 | MSan | Uninitialized reads | Clang; mostly non-Darwin; needs a full rebuild |
 | libFuzzer / AFL + ASan | Parser and decoder corruption | Pair with the fuzzing guidance in `testing` |
 
-Debug-only checks — guard malloc, debug iterators — catch strictly less than sanitizers. They are
-not a substitute.
+Debug-only checks (guard malloc, debug iterators) catch strictly less than sanitizers. They do not
+replace sanitizers.
 
-A code path with no sanitizer coverage is an untested path. If the CI job is missing, that is a
+A code path with no sanitizer coverage is an untested path. Report a missing sanitizer CI job as a
 finding.
 
 ---
 
 ## 4. Hardware and platform mitigations
 
-Defense in depth. Each raises exploitation cost; none fixes the bug.
+Each mitigation raises exploitation cost. None fixes the bug (§ORDER): report the root cause.
 
-- **ASLR + W^X (DEP/NX)** — baseline everywhere. Do not defeat it with predictable mappings or
-  RWX pages; a JIT needs a deliberate design here.
-- **Stack canaries and shadow stacks** — detect return-address smashing.
+- **ASLR + W^X (DEP/NX)** — baseline on every platform. Do not defeat them with predictable
+  mappings or RWX pages. A JIT needs a dedicated W^X design.
+- **Stack canaries and shadow stacks** — detect return-address overwrites.
 - **PAC** (ARM pointer authentication) — signs return addresses and function pointers.
 - **MTE** (ARM Memory Tagging) — probabilistic spatial *and* temporal detection through tagged
   pointers.
-- **CHERI** — research and early deployment; pointers carry bounds and permissions in hardware.
-
-Mitigations are a layer, never the fix. Report the root cause.
 
 ---
 
 ## 5. Language comparison
 
-Where the unsafe surface lives, by language. Grep this surface first — it bounds the audit.
+The unsafe surface for each language. Search this surface first; it bounds the audit.
 
 | Language | Safety default | Unsafe surface to audit |
 |---|---|---|
@@ -159,38 +151,37 @@ Where the unsafe surface lives, by language. Grep this surface first — it boun
 | Kotlin / JVM | Memory-safe runtime | JNI, `sun.misc.Unsafe` — apply the C rules there |
 | Go | GC + bounds checks | `unsafe.Pointer`, cgo |
 
-In every memory-safe language the rule is the same: the unsafe surface is **explicit and
-greppable**. Inventory it before reading anything.
-
 ---
 
 ## 6. Review workflow
 
-This is defensive review of code the user owns or is authorised to review: the goal is to find
-and fix the defect, and each finding states the concrete input or state that triggers it.
+This is defensive review of code the user owns or is authorised to review. The goal is to find and
+fix the defect. Each finding states the concrete input or state that triggers it.
 
-1. **Inventory before reading.** Grep the unsafe surface for the language (§5). Know the size of
-   the problem first.
-2. **State the invariant for each unsafe site**: owner, lifetime, bounds. If you cannot state it,
-   that is the finding — write it up rather than guessing the code is fine.
-3. **Walk the sad paths.** Error and early-return paths are where temporal bugs live: leaks,
-   double frees, cleanup that runs twice or not at all.
-4. **Confirm sanitizer coverage** for the path. Recommend the missing CI job by name. Fuzz any
-   parser of untrusted input — it is the highest-yield target (§1, length disagreement).
-5. **For any parser of attacker-reachable bytes**, check that buffer sizes and fill counts derive
-   from one validated length, and that cross-field size/offset/count invariants are verified
-   before allocation. This is where zero-click chains start.
-6. **Report** with `file:line`, the violation class, the triggering input or state, and the
-   root-cause fix. A mitigation is not a fix. Before finishing, check each finding: one without a
-   concrete triggering input or state is down-ranked to a concern, because the reader cannot
+1. **Inventory before reading.** Grep the files in review scope for the unsafe surface of their
+   language (§5). Record the count of sites.
+2. **State the invariant for each unsafe site**: owner, lifetime, bounds. If you cannot state the
+   invariant, report that as the finding. Do not assume the code is correct.
+3. **Walk the error paths.** Error and early-return paths hold most temporal bugs: leaks, double
+   frees, cleanup that runs twice or not at all.
+4. **Confirm sanitizer coverage** for each path you review. Name the missing CI job in the
+   finding. For each parser of untrusted input, check for a fuzz target; if none exists, report
+   that as a finding.
+5. **For each parser of untrusted bytes**, apply the rules in §1 (length disagreement).
+   Zero-click chains start here.
+6. **Report** each finding with `file:line`, the violation class, the triggering input or state,
+   and the root-cause fix. A mitigation is not a fix. Before finishing, check each finding: rank a
+   finding with no concrete triggering input or state as a concern, because the reader cannot
    verify it.
+
+The review is done when each site from step 1 has a stated invariant or a finding.
 
 ---
 
 ## 7. Apple platforms
 
-Everything below is Apple-specific. Enabling the corresponding build settings — PAC, MTE, Enhanced
-Security, bounds-safety flags — belongs to `xcode`.
+This section is Apple-specific. Enabling the build settings (PAC, MTE, Enhanced Security,
+bounds-safety flags) belongs to `xcode`.
 
 ### 7.1 Swift
 
@@ -204,30 +195,26 @@ Unsafe*Pointer   unsafeBitCast   unowned(unsafe)   withUnsafe*
 Review each site for:
 
 - **Bounds proven** — not assumed from a sibling parameter.
-- **Lifetime pinned** — `withExtendedLifetime` where the owner could be released early.
+- **Lifetime pinned** — use `withExtendedLifetime` where the owner could be released early.
 - **No escape** — a pointer obtained inside `withUnsafe*` must not outlive the closure. This is
-  the single most common Swift memory bug.
+  the most common Swift memory bug.
 - **Alignment respected** on rebinding.
 
-**Exclusivity violations trap at runtime and are genuine aliasing bugs.** Fix the overlapping
-access rather than disabling the check; the trap is reporting a real bug, and silencing it only
-hides the corruption.
+**An exclusivity violation that traps at runtime is a real aliasing bug.** Fix the overlapping
+access. Do not disable the check; disabling it hides the corruption.
 
-Data races are compile-time errors under Swift 6 strict concurrency — that is `swift`, not this
-skill.
+Data races are compile-time errors under Swift 6 strict concurrency. They belong to `swift`.
 
 ### 7.2 C: `-fbounds-safety`
 
-In ordinary C a pointer is a *point*: it knows its start, never its end, and the end travels by
-convention. `-fbounds-safety` makes a pointer a *range* that knows both. Out-of-bounds access
-becomes a deterministic trap instead of an exploitable vulnerability.
+`-fbounds-safety` makes a C pointer carry its bounds. An out-of-bounds access becomes a
+deterministic trap instead of an exploitable vulnerability.
 
-Annotations and intrinsics come from `ptrcheck.h`. **Include it unconditionally** — it ships
-flag-off fallbacks, so annotations expand to nothing and intrinsics to plain casts when the flag
-is absent. The only exceptions are `__bidi_indexable` and `__indexable` (and their
-`__ptrcheck_abi_assume_*` cousins), deliberately left undefined so that misuse in a header is a
-compile error rather than a silent ABI break. Only code naming those two by token needs
-`#if __has_ptrcheck`.
+Include `ptrcheck.h` (annotations and intrinsics) without an `#if` guard in each file that uses
+them; with the flag off, the header expands annotations to nothing and intrinsics to plain casts.
+Exception: `__bidi_indexable` and `__indexable` (and their `__ptrcheck_abi_assume_*` variants)
+are left undefined on purpose, so that misuse in a header is a compile error and not a silent ABI
+break. Wrap only code that names one of those two tokens in `#if __has_ptrcheck`.
 
 #### Pointer kinds and annotations
 
@@ -247,23 +234,23 @@ compile error rather than a silent ABI break. Only code naming those two by toke
 
 #### ABI visibility decides the default
 
-**ABI-visible** — parameters, returns, globals, struct fields — default to `__single`, so
-arithmetic on them is a compile-time error and layout is unchanged. **ABI-hidden** — essentially
-only local variables — default to `__bidi_indexable`, a wide pointer.
+**ABI-visible** pointers (parameters, returns, globals, struct fields) default to `__single`.
+Arithmetic on them is a compile-time error, and layout does not change. **ABI-hidden** pointers
+(in practice, only local variables) default to `__bidi_indexable`, a wide pointer.
 
-Only the *top-level* pointer is ABI-hidden: `element_t **p` in a body is an ABI-hidden pointer to
-an ABI-visible pointer.
+Only the *top-level* pointer is ABI-hidden: `element_t **p` in a function body is an ABI-hidden
+pointer to an ABI-visible pointer.
 
-Bounds checks on a `__bidi_indexable` fire when the pointer is dereferenced or when its bounds are
-stripped — not on the arithmetic itself. Creating a temporarily out-of-bounds pointer and bringing
-it back is legal.
+Bounds checks on a `__bidi_indexable` run when the pointer is dereferenced or when its bounds are
+stripped, not on the arithmetic. A pointer may go out of bounds temporarily and come back.
 
-Prefer the default wide pointer for locals; copy a parameter into a local to get one.
+Use the default wide pointer for locals. To get one from a parameter, copy the parameter into a
+local.
 
 #### Attribute placement binds to the nearest `*`
 
-Every attribute attaches to **the `*` immediately preceding it**, not to the variable. On
-multi-level pointers this changes the meaning entirely:
+Each attribute attaches to **the `*` immediately before it**, not to the variable. On multi-level
+pointers this changes the meaning:
 
 | Declaration | Meaning |
 |---|---|
@@ -281,27 +268,30 @@ Diagnostics print this parse verbatim: `int **__bidi_indexable p` is reported as
 Two approaches:
 
 - **Full** — annotate headers *and* compile implementations with the flag. Complete enforcement.
-- **Header-only** — annotate public headers only; the implementation is untouched and unflagged.
-  Clients adopting the flag benefit at no runtime cost to you. Not applicable if there are no
-  headers.
+- **Header-only** — annotate public headers only; the implementation is not changed and not
+  flagged. Clients that adopt the flag get the checks at no runtime cost to the library. Not
+  applicable when the code has no headers.
 
-Ask the user which approach they want before advising, and read
+Ask the user which approach they want before you advise. If you cannot ask the user, stop and
+report both options. Before any source edit, read
 `references/c-bounds-safety/adoption-strategies.md`, `language-overview.md` and
-`common-patterns-and-pitfalls.md` before any source edit. Adoption commits at several review
-checkpoints, so it has two prerequisites:
+`common-patterns-and-pitfalls.md`. Adoption commits at several review checkpoints, so it has two
+prerequisites:
 
-- **A clean working tree under version control.** Detect the VCS (the innermost one if several)
-  without asking and record its status, diff, stage-by-path, commit and discard-file commands; use
-  those throughout rather than assuming git. With no VCS, or a dirty tree, stop and ask the user
-  to fix that and retry; pre-existing changes would be bundled into adoption commits.
+- **A clean working tree under version control.** Detect the VCS without asking (the innermost one
+  if several exist). Record its commands for status, diff, stage-by-path, commit and discard-file,
+  and use those commands throughout; do not assume git. If there is no VCS or the tree has
+  uncommitted changes, stop and ask the user to fix that and retry, because adoption commits would
+  include the existing changes.
 - **Under Xcode, one build system as the source of truth:** the shallowest `.xcworkspace`
-  (preferred) or `.xcodeproj` in the tracked tree, asking when several tie. SwiftPM cannot attach
-  per-file C flags, so it is not a valid source of truth; any other system (a Makefile, say) must
-  support per-file flags, and you record its mechanism. A generated project (xcodegen, Tuist, a
-  generator script) silently loses per-file flags on regeneration, so warn before starting.
+  (preferred) or `.xcodeproj` in the tracked tree. Ask the user when several are at the same
+  depth. SwiftPM cannot attach per-file C flags, so it is not a valid source of truth. Any other
+  build system (for example a Makefile) must support per-file flags; record its mechanism. A
+  generated project (xcodegen, Tuist, a generator script) loses per-file flags when it is
+  regenerated, so warn the user before starting.
 
-Full adoption is an iterative loop, per file: enable, compile, read diagnostics, annotate, repeat.
-The four change kinds:
+Full adoption is a loop for each file: enable, compile, read diagnostics, annotate, repeat. The
+four kinds of change:
 
 1. **Replace implicit annotations with explicit ones.**
    ```c
@@ -310,11 +300,12 @@ The four change kinds:
    // after
    void take_elements(const element_t *__counted_by(count) elements, size_t count);
    ```
-   Avoid ABI-incompatible `__indexable` / `__bidi_indexable` on consumer-facing API, and avoid
-   `__unsafe_indexable`, which defeats the purpose.
+   Do not put ABI-incompatible `__indexable` / `__bidi_indexable` on consumer-facing API. Do not
+   use `__unsafe_indexable` where a counted or sized annotation can express the bounds. Where none
+   can, confine `__unsafe_indexable` to the audited places in change 4.
 
-2. **Adapt implementations to the new restrictions.** A counted pointer and its count must move
-   together — this is the `requires corresponding assignment to 'count'` diagnostic:
+2. **Adapt implementations to the new restrictions.** A counted pointer and its count must change
+   together. This is the `requires corresponding assignment to 'count'` diagnostic:
    ```c
    // before — error: assignment to 'int *__single __counted_by(count)' requires
    //          corresponding assignment to 'count'
@@ -325,28 +316,31 @@ The four change kinds:
    while (idx < original_count && *elements != 0) { ++elements; --count; ++idx; }
    ```
 
-3. **Propagate annotation choices.** Changing an API's bounds changes every use site; expect
+3. **Propagate annotation choices.** Changing an API's bounds changes each use site; expect
    several rounds.
 
-4. **Centralize the unsafe surface.** When ingesting `__unsafe_indexable` pointers from
-   non-adopted code, do **not** propagate them. Consume them in a few audited places, forge a safe
-   pointer (`__unsafe_forge_bidi_indexable`), and propagate that. The unsafe sources stay small
-   and reviewable.
+4. **Centralize the unsafe surface.** Do **not** propagate `__unsafe_indexable` pointers that come
+   from non-adopted code. Consume them in a few audited places, forge a safe pointer
+   (`__unsafe_forge_bidi_indexable`), and propagate the forged pointer. This keeps the unsafe
+   sources few and reviewable.
 
-Adoption spans many files. Track it with explicit tasks: confirm the approach and the test command
-with the user first, then one task per implementation file, then target-wide enablement, then
-post-adoption refinement. Never mark a file done before its sub-steps are done; if a sub-step does
-not apply, close it with a one-line reason rather than silently.
+Track adoption with explicit tasks, in this order: confirm the approach and the test command with
+the user; one task per implementation file; target-wide enablement; post-adoption refinement. Do
+not mark a file done before its sub-steps are done. If a sub-step does not apply, close it with a
+one-line reason.
 
 #### Build flags
 
-Enable per file during incremental adoption, project-wide once complete. Useful flags:
-`-ferror-limit=0` (see all diagnostics, not the first 20), `-ffreestanding`,
-`-fbounds-safety-unique-traps` (distinct trap per site, for attribution), and
-`-fbounds-safety-soft-traps=call-minimal` (log instead of abort — for staged rollout only, never
-as the end state).
+Enable the flag per file during incremental adoption and project-wide once adoption is complete.
+Useful flags:
 
-Accessing bounds: `__ptr_lower_bound(p)` and `__ptr_upper_bound(p)`.
+- `-ferror-limit=0` — show all diagnostics, not the first 20.
+- `-ffreestanding`.
+- `-fbounds-safety-unique-traps` — a distinct trap per site, for attribution.
+- `-fbounds-safety-soft-traps=call-minimal` — log instead of abort. Use it for staged rollout
+  only; do not leave it as the end state.
+
+Read bounds with `__ptr_lower_bound(p)` and `__ptr_upper_bound(p)`.
 
 ---
 

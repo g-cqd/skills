@@ -15,19 +15,20 @@ allowed-tools:
 
 # Xcode
 
-This skill owns **the toolchain**: turning a source tree into a running, verified, hardened
-binary. It does not own what the code says (`swift`, `swiftui`), what the tests assert
-(`testing`), or the app's runtime security posture (`secure-coding`).
+This skill covers the toolchain: building, running, verifying, and hardening the binary. What the
+code says is `swift` and `swiftui`, what the tests assert is `testing`, and the app's runtime
+security is `secure-coding`.
 
-Version facts describe Xcode 26.3–27. Verify against `xcodebuild -version` and the release notes
-when behavior disagrees.
+Version facts describe Xcode 26.3–27. When observed behaviour disagrees, check
+`xcodebuild -version` and the release notes.
 
 ## Contract
 
 ```
 §VALIDATE ¬report-done ∀compiles-only ⇒ ! climb §1 ladder
 §DISCOVER ? schemes ∧ destinations BEFORE build ⇒ ¬guess-names
-§ONE-GATE fix first-error → rebuild → repeat ⇒ ¬batch-speculative-fixes
+§ONE-GATE read first-error first · later-errors ∈ possible-results ·
+          fix ∀error ¬result-of-earlier → rebuild once ⇒ ¬fix ∄logged-error
 §DOCS     apple-docs MCP → CLI → SDK-interfaces · ¬web-fetch
 §BAN      modify signing|provisioning|CI-lanes ¬asked ·
           poll ∈ sleep-loop · guess-tap-coords ∀screenshot ·
@@ -38,16 +39,19 @@ when behavior disagrees.
 
 ## 1. The self-validation loop
 
-**Compilation is not completion.** Climb this ladder, stopping at the first failure:
+**Compilation is not completion.** Climb this ladder in order. At the first failure, stop, fix,
+and restart from rung 1.
 
 1. **Build** the affected scheme.
-2. **Test** — run the relevant test plan or suite.
-3. **Preview / playground** — for UI changes, confirm previews still render.
-4. **Run** — install and launch on simulator or device, exercise the changed flow (§6).
-5. **Localization and accessibility** — if strings or UI changed, confirm String Catalogs updated
-   and accessibility labels intact.
+2. **Test**: run the relevant test plan or suite. If the scheme has no tests, say so and go on.
+3. **Preview / playground**: for UI changes, confirm previews still render.
+4. **Run**: for changes that can affect UI or runtime behaviour, install and launch on simulator
+   or device and exercise the changed flow (§6).
+5. **Localization and accessibility**: if strings or UI changed, confirm String Catalogs are
+   updated and accessibility labels are intact.
 
-Report which rung you reached. "It builds" is a statement about rung 1 only.
+Skip a rung whose condition does not apply. Report the highest rung reached and each rung skipped.
+"It builds" is a statement about rung 1 only.
 
 ---
 
@@ -77,66 +81,67 @@ xcodebuild -scheme <S> -destination '<dest>' test -only-testing:<Target>/<Suite>
 time with `test-without-building -only-testing:…`. SwiftPM's loop is in `swift` §6.
 
 While you develop, build one scheme, one destination and the Debug configuration. Do not add
-other destinations, configurations or schemes to check the change: that is a matrix, and a CI
-job's work. Build once per completed step, not per edit, and fix every error from one log before
-building again (`engineering-practices` §5).
+other destinations, configurations or schemes to check the change; that matrix is a CI job's
+work. Build once per completed step, not per edit, and fix each error that is not a result of an
+earlier one before building again (`engineering-practices` §5).
 
-Use `-quiet` for signal. On failure, re-run without it and read the **first** error, not the last —
+Build with `-quiet`. On failure, re-run without it and read the **first** error, not the last;
 later errors are usually cascades.
 
 ### Run and profile
 
 Boot a simulator and install and launch with `xcrun simctl`, install on a physical device with
-`xcrun devicectl device install app`, and profile with `xcrun xctrace record --template`. Read
-`references/run-and-profile.md` for the commands.
+`xcrun devicectl device install app`, and profile with `xcrun xctrace record --template`. Before
+you run one of these from the command line, read `references/run-and-profile.md` for the exact
+commands.
 
 ### `xcodebuild` vs SwiftPM — default to `xcodebuild`
 
-**Whenever an Apple platform is the target, use `xcodebuild`.** It is the only CLI that builds for
+**When an Apple platform is the target, use `xcodebuild`.** It is the only CLI that builds for
 simulator and device destinations, honors schemes, test plans, signing, and asset catalogs, and
 emits `.xcresult` bundles.
 
-**`swift test` runs on the host Mac only.** It silently skips iOS/watchOS/tvOS/visionOS behavior,
-availability paths, and UI frameworks — a green `swift test` says nothing about the shipping
-platform. Test a package where it ships:
+**`swift test` runs on the host Mac only.** It skips iOS/watchOS/tvOS/visionOS behaviour,
+availability paths, and UI frameworks without a warning. Test a package on the platform where it
+ships:
 
 ```bash
 xcodebuild -scheme <Package> -destination 'platform=iOS Simulator,name=<device>' test
 ```
 
-Reserve `swift build` / `swift test` for pure host-platform packages with no platform-conditional
+Use `swift build` / `swift test` only for pure host-platform packages with no platform-conditional
 code, where they give a faster inner loop and Linux parity.
 
 ---
 
 ## 3. Agent integration
 
-- **MCP bridge** — `xcrun mcpbridge` exposes Xcode's tools over MCP. Running it with no arguments
-  **starts the stdio MCP server** and fails if Xcode is not running: wire it into an MCP client
-  config, do not invoke it interactively.
-- **Project instructions, skills, plans** — Xcode reads `AGENTS.md` at the repo root (alias
+- **MCP bridge**: `xcrun mcpbridge` exposes Xcode's tools over MCP. Run with no arguments, it
+  **starts the stdio MCP server** and fails if Xcode is not running. Put it in an MCP client
+  config; do not run it interactively.
+- **Project instructions, skills, plans**: Xcode reads `AGENTS.md` at the repo root (alias
   `CLAUDE.md` to it), reads Agent Skills in this `SKILL.md` format, and produces editable Markdown
   plans.
 
-Read `references/agent-integration.md` when setting up the MCP bridge, the Settings toggle it needs,
-project instructions, skills directories, or plan mode.
+Before you set up the MCP bridge (including the Settings toggle it needs), project instructions,
+skills directories, or plan mode, read `references/agent-integration.md`.
 
 ---
 
 ## 4. Concurrent sessions and simulator exhaustion
 
-Multiple agent sessions on one Mac race to boot simulator clones — roughly 1 GB RAM each plus
+Several agent sessions on one Mac race to boot simulator clones, at about 1 GB RAM each plus
 CoreSim XPC processes. Exhaustion has a **distinctive signature**: clones die with
-`Mach error -308 (server died)`, and tests fail as **phantom 0.000s aborts that look like real
-bugs but are infrastructure exhaustion**. The failures are not in the code.
+`Mach error -308 (server died)`, and tests fail as **0.000s aborts that look like real bugs**.
+The failures are not in the code.
 
-- If the machine may run concurrent sessions, serialize `xcodebuild build/test` behind a
-  **machine-wide lock** — a wrapper taking an exclusive `flock` on a fixed `/tmp` lockfile. The
-  contended resource is shared CoreSim infrastructure, so the lock must be OS-global, never
-  per-repository.
-- Under pressure, add `-parallel-testing-enabled NO`, optionally
-  `-maximum-parallel-testing-workers 1`.
-- **On any 0.000s failure, check for the -308 signature and other running sessions before
+- If more than one session can run `xcodebuild` on this Mac, serialize `xcodebuild build/test`
+  behind a **machine-wide lock**: a wrapper taking an exclusive `flock` on a fixed `/tmp`
+  lockfile. The contended resource is shared CoreSim infrastructure, so the lock must be
+  OS-global, not per repository.
+- When the -308 signature or 0.000s aborts appear, or another session is running `xcodebuild`,
+  add `-parallel-testing-enabled NO`, and optionally `-maximum-parallel-testing-workers 1`.
+- **On each 0.000s failure, check for the -308 signature and other running sessions before
   debugging the tests.**
 
 ---
@@ -144,18 +149,20 @@ bugs but are infrastructure exhaustion**. The failures are not in the code.
 ## 5. Guardrails
 
 - Discover names before building (§2).
-- One failing gate at a time: fix the first error, rebuild, repeat. Do not batch speculative fixes.
-- Do not touch signing, provisioning, or CI lanes unless the task requires it.
-- Long builds run in the background while you do useful work; wait on the task's completion
-  rather than polling in a sleep loop.
+- Read the first error first; treat later errors as possible results of it. Fix each error that is
+  not a result of an earlier one, then rebuild once. Do not add fixes you cannot tie to a logged
+  error.
+- Do not touch signing, provisioning, or CI lanes unless the task asks for it.
+- Run a build or test run that takes minutes in the background. Wait for its completion
+  notification; do not poll in a sleep loop.
 
 ---
 
 ## 6. On-device and simulator verification
 
-Use this to answer "does it actually work", after any UI-affecting change, or to debug touch and
-interaction problems. Do **not** use it for unit-test-only requests, build-only requests, review
-without device testing, or changes that cannot affect UI.
+Use this section to answer "does it actually work", after a UI-affecting change, or to debug touch
+and interaction problems. Do **not** use it for unit-test-only requests, build-only requests,
+review without device testing, or changes that cannot affect UI.
 
 This runs well as a subagent — device sessions are resource-heavy and the transcript is verbose.
 
@@ -182,17 +189,17 @@ prefer them over editing the scheme (they apply to one run). Read
 
 Hierarchy dumps carry a calculated `hitPoint` per element (annotated example in
 `references/device-interaction.md#hierarchy-dump-format`).
-**Tap the hitPoint from the hierarchy.** Fall back to a position estimated from the screenshot
-only after a hitPoint tap, confirmed by a recapture, had no effect. An element marked
-`isRemoteLeafPlaceholder` reports no children, so it also needs the screenshot fallback. If the
-thumbnail is too coarse to judge a visual issue, open the full-size screenshot.
+**Tap the hitPoint from the hierarchy.** Use a position estimated from the screenshot only in two
+cases: a hitPoint tap, confirmed by a recapture, had no effect; or the element is marked
+`isRemoteLeafPlaceholder` (it reports no children). If the thumbnail is too coarse to judge a
+visual issue, open the full-size screenshot.
 
-When windows from more than one app overlap, each element line carries `activationBundleId`; pass it
-to `DeviceEventSynthesize` first, only for those elements. Read
-`references/device-interaction.md#overlapping-apps` for the rule.
+When windows from more than one app overlap, each element line carries `activationBundleId`. For
+those elements only, pass it to `DeviceEventSynthesize` first. Before interacting with such an
+element, read `references/device-interaction.md#overlapping-apps`.
 
-Capture before interacting and again after, every time. For compound controls, inspect nested
-elements — a `Switch` or `Slider` child is usually the real control.
+Capture before each interaction and again after it. For compound controls, inspect nested
+elements; a `Switch` or `Slider` child is usually the real control.
 
 ### Interaction syntax
 
@@ -206,15 +213,17 @@ command table and examples), and `references/device-interaction.md#tvos` before 
 
 ### Judging what you see
 
-Report functional bugs, visual bugs and unexpected exits; do not report transient states or expected
-behavior (empty-state placeholders, disabled buttons on incomplete forms, permission dialogs). Read
-`references/device-interaction.md#judging-what-you-see` for the table.
+Report functional bugs, visual bugs and unexpected exits. Do not report transient states or
+expected behaviour (empty-state placeholders, disabled buttons on incomplete forms, permission
+dialogs). Read `references/device-interaction.md#judging-what-you-see` for the table.
 
 ### Timing and retries
 
-After launch, confirm the hierarchy holds meaningful UI before interacting; after an interaction
-that did nothing, recapture and retry once, then report; wait for a loading element to settle. Read
-`references/device-interaction.md#timing-and-retries` for the full rules.
+- After launch, confirm the hierarchy holds meaningful UI before interacting.
+- After an interaction that did nothing, recapture and retry once; if it fails again, report it.
+- Wait for a loading element to settle before interacting.
+
+Read `references/device-interaction.md#timing-and-retries` for the full rules.
 
 When reporting, state only what the run, the hierarchy, the screenshot, or the log showed, and
 say what was not exercised. "Works on device" is a claim about the flows you actually drove.
@@ -223,21 +232,22 @@ say what was not exercised. "Works on device" is a claim about the flows you act
 
 ## 7. Security build settings audit
 
-Progressively enable security build settings and entitlements, from broadly applicable warnings
-through Enhanced Security hardening.
+Enable security build settings and entitlements in stages, from broadly applicable warnings to
+Enhanced Security hardening.
 
 **Out of scope here**: TLS and ATS, code signing, privacy APIs. Those are `secure-coding`.
 
 ### 7.1 Use the Xcode tools, not shell equivalents
 
-When `XcodeGlob`, `XcodeGrep`, `XcodeRead`, and `XcodeLS` are available, use them —
-`find`, `grep`, `cat`, and `ls` trigger extra permission prompts and bypass project scoping. The
-project root, name, and active scheme are already in system-prompt context: do not `ls` to
-"verify" the layout.
+When `XcodeGlob`, `XcodeGrep`, `XcodeRead`, and `XcodeLS` are available, use them. `find`,
+`grep`, `cat`, and `ls` trigger extra permission prompts and bypass project scoping. The project
+root, name, and active scheme are already in system-prompt context; do not run `ls` to check the
+layout.
 
-Read `references/audit-workflow.md#use-the-xcode-tools-not-shell-equivalents` when an Xcode tool
-returns no match or fails on an `.entitlements`, `.xcsettings` or `.xcconfig` file, and before
-resolving targets or entitlements paths or writing an entitlement (`AddEntitlement`).
+Read `references/audit-workflow.md#use-the-xcode-tools-not-shell-equivalents` in each of these
+cases: an Xcode tool returns no match; an Xcode tool fails on an `.entitlements`, `.xcsettings` or
+`.xcconfig` file; before resolving targets or entitlements paths; before writing an entitlement
+(`AddEntitlement`).
 
 ### 7.2 Workflow
 
@@ -256,7 +266,7 @@ How to write a setting: edit the xcconfig when the project uses one; use
 project-level setting: ask the user, then verify by grep); in a mixed project match the method
 already in use. Read `references/audit-workflow.md#phase-2-how-to-write-a-setting` before writing.
 
-Prefer project level. `ENABLE_ENHANCED_SECURITY` is set at project level, since it cascades to
+Prefer project level. Set `ENABLE_ENHANCED_SECURITY` at project level, since it cascades to
 every target (§7.3).
 
 **Phase 3 — inquire.** Find tracked settings that are *deliberately disabled* (explicitly set, not at
@@ -305,11 +315,10 @@ Two traps:
 > for a platform; every device platform defines `arm64e`.
 
 **Libraries and frameworks** take no entitlements but still get the cascaded build settings; keep
-pointer authentication on and warn on `ONLY_ACTIVE_ARCH = YES` in Release. Read
-`references/hardening-checks.md#libraries-and-frameworks` when the audit includes a library or
-framework target.
+pointer authentication on and warn on `ONLY_ACTIVE_ARCH = YES` in Release. When the audit includes
+a library or framework target, read `references/hardening-checks.md#libraries-and-frameworks`.
 
-Do not auto-enable default-OFF sub-options (the MTE family) — report their state and offer them.
+Do not auto-enable default-OFF sub-options (the MTE family); report their state and offer them.
 
 Confirm once via `AskUserQuestion` — "Apply all", "Apply to a subset", "Skip" — after summarizing
 the protection gained and the code changes it may force. If every target is already up to date,
@@ -318,8 +327,9 @@ say so in one line and proceed without asking.
 **Hardware memory tagging** (`...checked-allocations`) and **checked pointer arithmetic**
 (`ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE`) are offers, not defaults: memory tagging only
 if Enhanced Security was applied to a matching target, checked pointer arithmetic only after memory
-tagging, and it has no soft mode. Read `references/hardening-checks.md#hardware-memory-tagging` and
-`references/hardening-checks.md#checked-pointer-arithmetic` before offering either.
+tagging, and it has no soft mode. Before offering either, read
+`references/hardening-checks.md#hardware-memory-tagging` and
+`references/hardening-checks.md#checked-pointer-arithmetic`.
 
 DriverKit targets take build settings but **no** entitlement changes.
 
@@ -330,23 +340,25 @@ Swift.
 
 Settings to apply: the return-type, uninitialized-autos, implicit-fallthrough, 64-to-32-bit
 conversion and implicit-function-declaration warnings, plus four Build-and-analyze-only analyzer and
-clang-tidy checks. Read `references/hardening-checks.md#clang-safety-warnings` for the exact list and
-values before applying.
+clang-tidy checks. Before applying, read `references/hardening-checks.md#clang-safety-warnings` for
+the exact list and values.
 
 ### 7.5 Entitlement and Info.plist review surface
 
 Read the effective entitlements from the signed binary (`codesign -d --entitlements :-`), not a
-stray `.entitlements` file. Read `references/hardening-checks.md#entitlement-and-infoplist-review-surface`
-for what to flag (`get-task-allow`, Associated Domains, App Groups, `Info.plist` keys).
+stray `.entitlements` file. Before flagging entitlements or `Info.plist` keys, read
+`references/hardening-checks.md#entitlement-and-infoplist-review-surface` for what to flag
+(`get-task-allow`, Associated Domains, App Groups, `Info.plist` keys).
 
 ### 7.6 Talking to the user
 
-Keep replies lean and questions minimal. Only two questions are scheduled — the Enhanced Security
-confirmation and the memory-tagging offer. Everything else is situational. Describe a protection
-by **what it protects against**, not by how it is switched on. Emit build settings as a bullet
-list, one setting per line, so each is scannable and can be copied on its own. Skill-internal
-words such as "catalog" or "audit table" stay out of user-facing text: say "the known security
-build settings" and "the list of targets". Use complete sentences, and never cite a phase number.
+- Keep replies lean and questions minimal. Only two questions are scheduled — the Enhanced
+  Security confirmation and the memory-tagging offer. Everything else is situational.
+- Describe a protection by **what it protects against**, not by how it is switched on.
+- Emit build settings as a bullet list, one setting per line, so each can be copied on its own.
+- Keep skill-internal words such as "catalog" or "audit table" out of user-facing text: say "the
+  known security build settings" and "the list of targets".
+- Use complete sentences. Do not cite a phase number.
 
 ---
 

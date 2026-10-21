@@ -13,13 +13,13 @@ allowed-tools:
 
 # Algorithms & Complexity
 
-**State the complexity, time and space with n defined, before accepting any non-trivial loop,
-recursion, or data-structure choice.** A choice made without that number is a guess about how the
-code scales, and the guess is usually discovered at production size.
+**State the time and space complexity, with n defined, before you accept a nested loop, a loop
+that calls a non-constant-time operation, a recursion, or the choice of a collection whose size
+grows with input in the code you write or review.** Without that number the choice is a guess
+about scaling.
 
-This skill owns **design-time cost**: what an approach will cost as input grows. It does not own
-what it costs on a particular machine today — that is measured, not derived
-(`performance-engineering`).
+This skill covers design-time cost: how cost grows with input size. Cost on a specific machine is
+measured, not derived; use `performance-engineering` for it.
 
 ## Contract
 
@@ -37,68 +37,54 @@ what it costs on a particular machine today — that is measured, not derived
 
 ## 1. Analysis protocol
 
-1. **Define n precisely** — "n = items rendered", not "the data". Name m and k too where a second
-   dimension exists. Most wrong complexity claims are wrong because n was never pinned down.
-2. **Derive time and space.** Note amortized versus worst case where it matters — dynamic array
-   append, hash map probe.
-3. **Check the realistic input size.** O(n²) at n ≤ 100 is fine; at n = 10⁶ it is an outage.
-   Justify against actual scale, not asymptotics alone.
-4. **Constant factors and locality matter at small n.** An array beats a linked structure in
-   practice for most small collections, whatever the table says.
-5. **Self-check before finishing.** Re-derive the stated complexity from the actual loop nesting
-   and recursion structure of the code as written, not from the intended design, and walk the
-   boundaries of §4 once more. A complexity claim that drifted from the code is the commonest
-   error in this domain.
+1. **Define n precisely**: "n = items rendered", not "the data". Name m and k when a second
+   dimension exists.
+2. **Derive time and space.** State amortized and worst case separately when they differ (dynamic
+   array append, hash map probe).
+3. **Check the realistic input size.** O(n²) at n ≤ 100 is acceptable; at n = 10⁶ it is not.
+   Justify the choice against the actual input size, not asymptotics alone.
+4. **At small n, constant factors and locality decide.** When the input size from step 3 is too
+   small for the asymptotic term to dominate, prefer a contiguous array to a linked structure.
+   Measure with `performance-engineering` before you claim a speed difference.
+5. **Self-check before finishing.** Re-derive the complexity from the loop nesting and recursion of
+   the code as written, not from the intended design. Check the boundaries in §4 again.
 
 ## 2. Data-structure selection
 
-| Need | Structure | Key costs |
-|---|---|---|
-| Index lookup, iteration | Dynamic array | O(1) index; O(n) middle insert; amortized O(1) append |
-| Membership, key → value | Hash set/map | O(1) average, O(n) worst; no order |
-| Ordered keys, range queries | Balanced BST / B-tree | O(log n) ops, sorted iteration |
-| FIFO / LIFO | Ring buffer / stack | O(1) at the ends |
-| "Next best" | Binary heap | O(log n) push/pop, O(1) peek |
-| Prefix or string search | Trie | O(len) ops |
-| Relationships, reachability | Graph (adjacency list) | BFS/DFS O(V+E) |
-| Append-heavy text editing | Rope / gap buffer | Avoids O(n) copies |
+To select, find which operations dominate the run time, how frequently each runs, and over how
+many elements. Choose for the operation that dominates run time, not the one that appears most
+often in the source code.
 
-**The selection question**: which operations dominate, at what frequency, over how many elements?
-Choose for the dominant operation, not the most frequent one in the source code.
+## 3. Algorithm families: recognition cues
 
-## 3. Algorithm families — recognition cues
-
-- **Divide and conquer** — independent subproblems (sorting, search). Solve T(n) with the Master
-  theorem.
-- **Dynamic programming** — overlapping subproblems *and* optimal substructure (edit distance,
-  knapsack). **State the recurrence before writing code**, then memoize top-down or tabulate
-  bottom-up.
-- **Greedy** — locally optimal is globally optimal **only with a proof**, usually an exchange
-  argument. Without one it is a heuristic; say so rather than implying optimality.
-- **Graph** — model as nodes and edges first. BFS for shortest unweighted path, Dijkstra for
-  non-negative weights, topological sort for dependencies, union-find for connectivity.
-- **Two pointers / sliding window** — sorted data or contiguous ranges in O(n) instead of O(n²).
-- **Binary search** — applies to **any monotonic predicate**, not only sorted arrays. This is the
-  most under-used tool on the list.
+- **Dynamic programming**: overlapping subproblems and optimal substructure (edit distance,
+  knapsack). Write the recurrence before the code, then memoize top-down or tabulate bottom-up.
+- **Greedy**: correct only with a proof, usually an exchange argument. Without a proof, label the
+  result a heuristic, not an optimal algorithm.
+- **Graph**: model nodes and edges first.
+- **Two pointers / sliding window**: sorted data or contiguous ranges in O(n) instead of O(n²).
+- **Binary search**: applies to any monotonic predicate, not only sorted arrays.
 
 ## 4. Correctness
 
-- **State the loop invariant** for non-obvious loops, and check all three parts: it holds at
-  initialization, it is maintained by each iteration, and at termination it gives the result.
-- **Off-by-one audit at every boundary**: empty input, single element, full range, duplicates,
-  integer overflow.
-- **Recursion**: prove the base case is reachable and bound the depth. Unbounded recursion on
-  attacker-influenced input is a denial-of-service vector, not just a crash.
+- **State the loop invariant** for each loop whose correctness is not clear from reading it. Check
+  that the invariant holds at initialization, holds after each iteration, and gives the result at
+  termination.
+- **Check each boundary** of each loop and index in the changed code: empty input, single element, full
+  range, duplicates, integer overflow.
+- **Recursion**: show that the base case is reachable and bound the depth. Unbounded recursion on
+  attacker-influenced input is a denial-of-service vector; use an explicit stack or a depth limit
+  there.
 
 ## 5. Trade-off levers
 
-- **Space ↔ time** — caching, memoization, precomputed indices.
-- **Exact ↔ approximate** — Bloom filter, HyperLogLog, sampling. Legitimate only when the error
-  tolerance is explicit and stated.
-- **Worst case ↔ typical case** — randomization (quickselect), hashing. Know the adversarial case
-  before relying on the typical one.
-- **Optimal ↔ shippable** — a clear O(n log n) beats a clever unproven O(n). Complexity in the
-  code is a cost too, paid by every future reader.
+- **Space ↔ time**: caching, memoization, precomputed indices.
+- **Exact ↔ approximate**: Bloom filter, HyperLogLog, sampling. Use only when the error tolerance
+  is explicit and stated.
+- **Worst case ↔ typical case**: randomization (quickselect), hashing. Identify the adversarial
+  input before you rely on the typical case.
+- **Optimal ↔ shippable**: a clear O(n log n) beats a clever unproven O(n), because every future
+  reader pays for the extra complexity.
 
 ## Boundaries
 
