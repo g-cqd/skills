@@ -1,0 +1,84 @@
+{
+  "skill_name": "graphics",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Write a Metal fragment function for a GGX specular lobe with Schlick Fresnel. It looks too bright near grazing angles in my current version.",
+      "expected_output": "The analysis block comes first, then code that satisfies energy conservation, with a white furnace check proposed.",
+      "expectations": [
+        "The graphics skill was activated",
+        "A graphics analysis (mathematical verification, physical correctness, GPU considerations, numerical precision) is emitted before any shader code",
+        "Energy conservation, reciprocity and positivity are checked, and the grazing-angle edge case is addressed",
+        "A white furnace test (uniform Li = 1 gives Lo <= 1) is proposed as the validation"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Random black pixels keep showing up in my path tracer output. Where do they come from?",
+      "expected_output": "Candidate causes from the silent-wrong-output list, with the cause confirmed by a probe or capture before a fix is asserted.",
+      "expectations": [
+        "The graphics skill was activated",
+        "The cause is verified with a GPU capture, a value probe at the suspect stage or a furnace test before it is asserted",
+        "Candidates include normalizing a zero-length vector, an unguarded 1/x and pow() of a negative base"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "My compute kernel that sums a big buffer is slower than I expected on an M-series GPU. Make it faster.",
+      "expected_output": "Measure first, then optimize in the order algorithm, bandwidth, occupancy, ALU, precision.",
+      "expectations": [
+        "The graphics skill was activated",
+        "A GPU frame capture, Metal System Trace or GPU counters are recommended before any optimization",
+        "Optimization follows the order algorithm, then bandwidth, then occupancy, then ALU, then precision",
+        "Thread-group size is queried from the device and pipeline rather than hard-coded"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "The colors in my render look washed out compared to the reference image after I write to the swapchain.",
+      "expected_output": "Colorspace handled explicitly at every input and output.",
+      "expectations": [
+        "The graphics skill was activated",
+        "Colorspace conversion is made explicit at each input and output instead of assuming sRGB",
+        "The answer separates linear-space shading from the encoded output"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "I use discard for alpha cutouts in my fragment shader on iPhone. Is that fine, and how should I set up the render pass?",
+      "expected_output": "TBDR consequences: measure before using discard, with explicit load and store actions.",
+      "expectations": [
+        "The graphics skill was activated",
+        "The answer states that discard on tile-based deferred hardware can defeat hidden-surface removal and should be measured before use",
+        "Load and store actions are set explicitly, with dontCare where the result is unused"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "My MTLBuffer is written from several Swift tasks and the compiler complains about data races. Make the Swift side safe.",
+      "expected_output": "A Swift concurrency task, not a shader task.",
+      "expectations": [
+        "The graphics skill was NOT activated",
+        "The swift skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Draw 500 animated particles in a SwiftUI view using Canvas and TimelineView without making the rest of the screen redraw.",
+      "expected_output": "SwiftUI drawing, not GPU shader work.",
+      "expectations": [
+        "The graphics skill was NOT activated",
+        "The swiftui skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Our API's p99 latency doubled after the last release. How do we set up a benchmark and find the cause?",
+      "expected_output": "Measurement methodology for a non-GPU workload.",
+      "expectations": [
+        "The graphics skill was NOT activated",
+        "The performance-engineering skill was activated"
+      ]
+    }
+  ]
+}

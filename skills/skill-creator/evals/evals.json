@@ -1,0 +1,84 @@
+{
+  "skill_name": "skill-creator",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Turn this deploy checklist that I keep pasting into chats into a reusable skill.",
+      "expected_output": "A new skill scaffold with a retrieval-oriented description, validated.",
+      "expectations": [
+        "The skill-creator skill was activated",
+        "Trigger phrases and the expected output format are captured before writing",
+        "The folder name is kebab-case and matches the name field in the frontmatter",
+        "The description states what the skill does, when to use it and a negative boundary, within 1,024 characters",
+        "The skill is validated with the bundled validation script"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I wrote a skill for reviewing database migrations but it never loads when I ask about migrations. Fix that.",
+      "expected_output": "An undertriggering fix made in the description.",
+      "expectations": [
+        "The skill-creator skill was activated",
+        "Trigger phrases and technical keywords users would actually say are added to the description",
+        "The revised description stays within the length limit and has no angle brackets"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Two of my skills keep firing on the same prompts and I get both of them loaded. Sort that out.",
+      "expected_output": "An overlap resolution by redrawing the boundary or merging.",
+      "expectations": [
+        "The skill-creator skill was activated",
+        "A negative boundary naming the owning skill is added to each description",
+        "The overlap is resolved by redrawing the boundary or merging, and each 'use Y instead' is mirrored by the other skill"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Write test cases for my skill so I can tell whether it triggers properly.",
+      "expected_output": "An evals file with positive and near-miss negative cases in the house schema.",
+      "expectations": [
+        "The skill-creator skill was activated",
+        "The output is evals/evals.json with a skill_name and evals entries that each hold an id, prompt, expected_output and expectations",
+        "Negative cases are near-misses from an adjacent skill rather than obviously unrelated prompts"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Review this skill folder before I publish it and tell me what is wrong with it.",
+      "expected_output": "A structural and content audit against the review checklist.",
+      "expectations": [
+        "The skill-creator skill was activated",
+        "The file is named SKILL.md exactly and the folder name matches the name field",
+        "SKILL.md length, a README inside the folder and the description's what-and-when content are checked"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Split this large feature into tasks for parallel agents and pick which installed skill each task should use.",
+      "expected_output": "Task decomposition and skill routing, not skill authoring.",
+      "expectations": [
+        "The skill-creator skill was NOT activated",
+        "The planner skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Write the design document and the release notes for our project.",
+      "expected_output": "Project documentation, not skill authoring.",
+      "expectations": [
+        "The skill-creator skill was NOT activated",
+        "The work-docs skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Review the helper script in my pull request for correctness and naming.",
+      "expected_output": "A code review of ordinary code, not a skill audit.",
+      "expectations": [
+        "The skill-creator skill was NOT activated",
+        "The code-review skill was activated"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "skill_name": "system-architect",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Design the deployment pipeline for a service that runs in three environments. We want it fast and safe.",
+      "expected_output": "An analysis block first, then a pipeline with cheap-first stages, short-lived credentials and a risk paired with each recommendation.",
+      "expectations": [
+        "The system-architect skill was activated",
+        "An analysis block with objective, requirements, current state and proposed architecture is produced before any design",
+        "Stages are ordered cheapest first and cloud deploys use OIDC rather than a static key",
+        "Each recommendation is paired with a risk and a mitigation"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "We need this system to be highly available. Sketch the cloud architecture.",
+      "expected_output": "Adjectives converted into numbers, and a design checked back against them.",
+      "expectations": [
+        "The system-architect skill was activated",
+        "Availability, RTO and RPO are turned into explicit numbers, or the user is asked for them, instead of 'highly available'",
+        "The proposed topology is checked against those numbers before finishing"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Our on-call gets paged about 40 times a night because CPU sits at 70 percent. Fix our alerting.",
+      "expected_output": "Alerts rewritten around user impact and responder action, with noisy ones deleted.",
+      "expectations": [
+        "The system-architect skill was activated",
+        "Each remaining alert names the action to take, indicates user impact and links a runbook",
+        "The golden signals (latency, traffic, errors, saturation) are used as the starting set",
+        "Alerts that cannot meet these criteria are deleted"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Write the container build and Kubernetes manifest for this service. It keeps restarting under load.",
+      "expected_output": "A hardened container and manifest with liveness and readiness probes kept separate.",
+      "expectations": [
+        "The system-architect skill was activated",
+        "The image uses a multi-stage build, a digest-pinned base and a non-root user",
+        "Resource requests and limits are declared",
+        "Liveness and readiness probes are separate and answer different questions"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Is our backup strategy fine? We take nightly snapshots and wrote a recovery document last year.",
+      "expected_output": "A disaster-recovery assessment that requires tested restores and defined targets.",
+      "expectations": [
+        "The system-architect skill was activated",
+        "An untested backup is not accepted: a restore within the recovery time objective must be tested",
+        "RTO and RPO are defined as numbers",
+        "Runbooks are executed by on-call staff who did not write them, in a DR drill"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Our request handler allocates far too much on the hot path. Profile it and cut the allocations.",
+      "expected_output": "Application profiling, not infrastructure design.",
+      "expectations": [
+        "The system-architect skill was NOT activated",
+        "The performance-engineering skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Check this login handler for SQL injection and weak session handling.",
+      "expected_output": "Application code security review, not infrastructure design.",
+      "expectations": [
+        "The system-architect skill was NOT activated",
+        "The secure-coding skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Break the cloud migration into phases with dependencies, and tell me the order the team should do them in.",
+      "expected_output": "Work decomposition and sequencing, not architecture design.",
+      "expectations": [
+        "The system-architect skill was NOT activated",
+        "The planner skill was activated"
+      ]
+    }
+  ]
+}

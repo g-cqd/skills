@@ -1,0 +1,85 @@
+{
+  "skill_name": "debugging",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "The checkout total is off by one cent for some carts. I have tried two rounding fixes already and neither stuck. Help.",
+      "expected_output": "Reproduction first, then a stated root cause backed by evidence, before another fix is proposed.",
+      "expectations": [
+        "The debugging skill was activated",
+        "A deterministic reproduction is obtained, or the failure rate is measured, before any fix is proposed",
+        "The root cause is stated in one sentence and backed by evidence",
+        "Each experiment changes one variable at a time"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "This test passes when I run it alone but fails when the whole suite runs.",
+      "expected_output": "Isolated-versus-suite comparison driven by the flaky-failure suspect list.",
+      "expectations": [
+        "The debugging skill was activated",
+        "Running the test isolated versus in the suite is compared, with shared mutable state and test-order dependence as leading suspects",
+        "The flakiness is treated as the bug, not worked around with a retry or a re-run"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "The service dies on startup and prints a wall of errors. Here is the log.",
+      "expected_output": "The first error is read and verified before any theory is built on later ones.",
+      "expectations": [
+        "The debugging skill was activated",
+        "The first error in the log is read and treated as the cause of the later ones",
+        "Assumptions are verified with evidence such as probes or logs rather than asserted from memory of the code"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "We have tried three different fixes for this intermittent hang and none worked. What do we do now?",
+      "expected_output": "Stop attempting fixes, separate proven from assumed, and question the model with the user.",
+      "expectations": [
+        "The debugging skill was activated",
+        "No fourth fix attempt is made",
+        "What is proven is written down separately from what is assumed",
+        "The user is asked to question the architecture or mental model together"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "The service throws a null reference error now and then, so I am going to wrap that call in a null check. Good enough?",
+      "expected_output": "The null check is not accepted as a fix before the upstream cause is found.",
+      "expectations": [
+        "The debugging skill was activated",
+        "Adding the null check to silence the error is not accepted without a root cause",
+        "The reason the value is null upstream is investigated",
+        "A regression test that fails without the fix and passes with it is called for once the fix exists"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "The report page takes 12 seconds to load. Find out why it is slow.",
+      "expected_output": "A measured performance investigation, not a wrongness diagnosis.",
+      "expectations": [
+        "The debugging skill was NOT activated",
+        "The performance-engineering skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "I already know the cause: an off-by-one in the pagination offset. Write a regression test that fails before the fix and passes after it.",
+      "expected_output": "Regression test design for an already-known cause, not diagnosis.",
+      "expectations": [
+        "The debugging skill was NOT activated",
+        "The testing skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Which sanitizer should run in CI to catch use-after-free in our C library?",
+      "expected_output": "Sanitizer selection for a memory-corruption class, not a diagnosis loop.",
+      "expectations": [
+        "The debugging skill was NOT activated",
+        "The memory-safety skill was activated"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "skill_name": "swift",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Convert this completion-handler network client to async/await.",
+      "expected_output": "Structured concurrency with cancellation, no DispatchQueue, and the version floor checked before the API choice.",
+      "expectations": [
+        "The swift skill was activated",
+        "The deployment target or Package.swift platforms are checked before newer APIs are used",
+        "No DispatchQueue is introduced and no unstructured Task {} is placed in an initializer or computed property",
+        "Long-running loops check cancellation"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Swift 6 says my cache class does not conform to Sendable when I hand it to a task. Just make the error go away.",
+      "expected_output": "The declaration and its isolation context are read; the diagnostic is not silenced with an unexplained escape hatch.",
+      "expectations": [
+        "The swift skill was activated",
+        "The fix is chosen from the declaration and its isolation context, not from the error string alone",
+        "@unchecked Sendable or nonisolated(unsafe) is not added without a comment naming the lock or invariant that makes it safe",
+        "The synchronization choice follows the ladder: @MainActor, then Mutex or Atomic, then a bare actor as the last resort"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I need a lock-free hit counter that several threads bump, with the lowest overhead possible.",
+      "expected_output": "An Atomic with the weakest correct ordering, and a stated fallback if the deployment floor is below the Synchronization framework.",
+      "expectations": [
+        "The swift skill was activated",
+        "The counter uses Atomic with .relaxed ordering rather than defaulting to sequentially consistent",
+        "If the floor is below the one that unlocks Atomic, the fallback is named along with the version that unlocks it"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Review the naming in this type: `storeAccountKey(_:)`, `getToken()` which returns the token, and a boolean `isLoggedIn` on a keychain wrapper.",
+      "expected_output": "Naming review against the API design rules: labels carry the noun, properties for argument-less reads, booleans claim only what the type knows.",
+      "expectations": [
+        "The swift skill was activated",
+        "`storeAccountKey(_:)` is renamed so the label carries the noun, such as `store(accountKey:)`",
+        "`getToken()` becomes a property (`token`) because it is a side-effect-free argument-less read",
+        "`isLoggedIn` on a keychain store is renamed to what the type knows, such as `hasAuthToken`"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "I parse a response that can be loading, loaded with items, or failed, and today I use a dictionary of Any plus a few optionals. Clean up the model and the error handling.",
+      "expected_output": "An enum that cannot express contradictions, a strict Decodable model and typed errors.",
+      "expectations": [
+        "The swift skill was activated",
+        "The state is modeled as an enum with associated values so contradictory states cannot be represented",
+        "`[String: Any]` is replaced by a strict Decodable model",
+        "Errors use typed throws, with no empty catch, try!, as! or force unwrap"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "My list rows re-render every time any field of the model changes. Restructure the view so only the affected row updates.",
+      "expected_output": "A view-layer invalidation problem, not a language problem.",
+      "expectations": [
+        "The swift skill was NOT activated",
+        "The swiftui skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Add a summarizer that uses the on-device language model, and gate it for the OS releases that have it.",
+      "expected_output": "Platform framework adoption, not language design.",
+      "expectations": [
+        "The swift skill was NOT activated",
+        "The apple-platforms skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "xcodebuild fails on the main scheme with a pile of errors after I changed the destination. Get the build green.",
+      "expected_output": "Toolchain diagnosis, not Swift language guidance.",
+      "expectations": [
+        "The swift skill was NOT activated",
+        "The xcode skill was activated"
+      ]
+    }
+  ]
+}
