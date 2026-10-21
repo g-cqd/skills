@@ -50,6 +50,9 @@ tests or review catch most mistakes — so keep the scope bounded.
   the full suite of each package the change touches. That run is the verification: whoever
   receives the change lands it without rebuilding (`engineering-practices` §5, Hand-back).
 - Use the worktree you were given, and never create one.
+- Before the final build, read your own diff against the task. If it adds a type, file, option or
+  dependency the task did not need, or a function with deep nesting, load `simplification` and cut
+  it back first.
 - Write a general solution, not one shaped to the test inputs. If a test is wrong or the task is
   infeasible, say so instead of working around it.
 - Tests you add are sized like the neighboring test files, roughly one focused test per stated

@@ -213,6 +213,7 @@ too early, and a loop of long sleeps compounds both. Wait on the event, not the 
 | Need | Skill |
 |---|---|
 | Review checklists, severity calibration, review tone | `code-review` |
+| Measured pass that trims a diff, a file or a plan | `simplification` |
 | Test methodology, characterization technique in depth | `testing` |
 | Decomposition, roadmaps, execution contracts | `planner` |
 | Root-cause workflow for a bug | `debugging` |

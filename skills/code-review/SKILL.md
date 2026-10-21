@@ -76,6 +76,9 @@ Flag on every review:
 - Mutable bindings where immutable would do; reference types where value types fit; side effects
   where a pure function fits
 
+When a change is heavier than its task and the author wants it cut back with measurements, hand the
+work to `simplification`. The review reports the finding; it does not run the pass.
+
 ## 3. Priority order
 
 ### P1 — Correctness and safety (blocking)
@@ -222,6 +225,7 @@ rather than asserting a bug you cannot demonstrate.
 | Whether a performance claim holds | `performance-engineering` |
 | Memory and ownership review | `memory-safety` |
 | Producing the change: refactoring, commit scoping, delivery | `engineering-practices` |
+| A measured pass that cuts a change back | `simplification` |
 | Swift language rules | `swift` |
 | SwiftUI view rules | `swiftui` |
 | Repository conventions that outrank generic guidance | `project-conventions` |

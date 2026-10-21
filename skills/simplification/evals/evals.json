@@ -1,0 +1,104 @@
+{
+  "skill_name": "simplification",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Simplify the changes on this branch. It feels heavier than the ticket needed.",
+      "expected_output": "A measured pass over the diff: baseline numbers, each cut with its proof, re-measure, and a report with kept and deferred items.",
+      "expectations": [
+        "The simplification skill was activated",
+        "Behaviour is pinned by tests or a characterization test before the first edit",
+        "Each cut names its proof (callers, search, history) rather than an opinion",
+        "The report shows before and after numbers or states which could not be measured",
+        "No behaviour change and no edit outside the diff"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "This function has cognitive complexity 31. Reduce it without changing what it does.",
+      "expected_output": "Early returns or guards applied first, helpers extracted only where they carry a name and a caller that gains, and a re-measure.",
+      "expectations": [
+        "The simplification skill was activated",
+        "Nesting is flattened with early returns before any function is extracted",
+        "The result is re-measured and no function ends worse than it began"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "The agent added a RetryPolicyProviding protocol with one implementation and a config flag nobody asked for. Trim it back.",
+      "expected_output": "Single-conformer protocol and unrequested flag removed after counting conformers and call sites.",
+      "expectations": [
+        "The simplification skill was activated",
+        "Conformer and call-site counts are shown as proof before removal",
+        "The unrequested flag is removed, not hidden behind a default"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Before we build this, can you essentialize the plan? It has a new service layer, three config options and a plugin system for one use case.",
+      "expected_output": "Plan mode: the smallest design that meets the request, a list of what was left out and why, and a budget of types, files and dependencies.",
+      "expectations": [
+        "The simplification skill was activated in plan mode",
+        "No code is written",
+        "Each cut element is tied to a request requirement or to its absence",
+        "A budget for types, files and dependencies is recorded"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Cyclomatic complexity of this 40-case switch mapping error codes to messages is flagged by the linter. Fix it.",
+      "expected_output": "The flat mapping is left alone or turned into a table only if the project's style prefers one; the report explains that cognitive complexity is low.",
+      "expectations": [
+        "The simplification skill was activated",
+        "The flat switch is not split into helper functions to satisfy the metric",
+        "The report states why high cyclomatic with low cognitive complexity was left"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Simplify this module, and while you're at it delete the validation on the network response and the comment about the cancellation contract.",
+      "expected_output": "Boundary validation and why-comments are kept; the report lists them under Kept.",
+      "expectations": [
+        "The simplification skill was activated",
+        "Validation at the network boundary is kept",
+        "The comment explaining the cancellation contract is kept",
+        "The report lists what was kept and why"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Review this PR and tell me what is wrong with it.",
+      "expected_output": "A prioritized code review, not a simplification pass.",
+      "expectations": [
+        "The simplification skill was NOT activated",
+        "The code-review skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "This endpoint takes 4 seconds. Make it faster.",
+      "expected_output": "A measured performance investigation, not simplification.",
+      "expectations": [
+        "The simplification skill was NOT activated",
+        "The performance-engineering skill was activated"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Break the settings screen rewrite into small safe steps and tell me the order.",
+      "expected_output": "Task decomposition and ordering, not a simplification pass.",
+      "expectations": [
+        "The simplification skill was NOT activated",
+        "The planner skill drove the decomposition"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "Rename `usr` to `user` across this file and reformat the imports.",
+      "expected_output": "A direct mechanical edit; no measured pass.",
+      "expectations": [
+        "The simplification skill was NOT activated"
+      ]
+    }
+  ]
+}

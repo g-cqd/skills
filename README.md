@@ -9,7 +9,7 @@ One source of truth, linked into whichever harnesses are on the machine.
 | Piece | What it is |
 |---|---|
 | `AGENTS.md` | The engineering standard — how to plan, write, review, test, and ship. Portable; project-specific values are left as a `CONFIGURATION` block to fill in. `CLAUDE.md` is an alias. |
-| `skills/` | 19 skills — language, framework, testing, security, performance, review, planning. |
+| `skills/` | 20 skills — language, framework, testing, security, performance, review, planning. |
 | `agents/` | 14 specialized subagents, each with a cost-appropriate model tier, its own tools, and a turn budget where the job is small. Rendered for each harness. |
 | `install.sh` | Links everything into each detected harness. |
 
