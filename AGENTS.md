@@ -215,7 +215,7 @@ Use a safe API first. If the code needs an Unsafe API: put it inside a safe inte
 Write a loop. Exception: if the data is a tree and an explicit work list is clearly worse, use recursion with a depth limit, so that attacker input cannot overflow the stack.
 
 ## Edit with precision
-Change only the lines that the task needs. Rewrite a whole file only if the file is short or most of it changes; a rewrite hides the real change in the diff.
+Change only the lines that the task needs. Rewrite a whole file only if it has fewer than 50 lines or more than half of its lines change; a rewrite hides the real change in the diff.
 
 ## Organize the files
 - One primary type per file. A supporting type gets its own file.

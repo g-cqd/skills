@@ -42,7 +42,7 @@ Choose the mode before you produce any output. State the mode and the routing de
 | Multi-phase work needing parallel agents, locks, logging | **Orchestration Mode** | Phased execution plan with DAG, lock protocol, log protocol, wave strategy |
 | High-impact or contested decision needing external challenge | **Second Opinion Mode** | Consensus, disagreements, recommendation with trade-offs, unresolved risks |
 
-When a request matches more than one signal, use the matching mode lowest in the table above as the structure and add the elements of the others (see [Mode Composition](#mode-composition)).
+When a request matches more than one signal, use the matching mode lowest in the table above, except Second Opinion Mode, as the structure and add the elements of the others (see [Mode Composition](#mode-composition)). Second Opinion Mode is the structure only when the request asks for nothing else; otherwise run it after the main output, as an add-on.
 
 Do not engage for:
 - Conversational messages (greetings, thanks, clarifications).

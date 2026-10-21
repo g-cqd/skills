@@ -79,6 +79,7 @@ Apply the rules below when you add or edit text.
   (`MUST`, `NEVER`, `CRITICAL`, `ALWAYS`, "IRON LAW" headers) make a rule fire too often. "Use X
   when …" carries the same weight.
 - The `§` Contract block is house notation, not shouting. Keep it, and keep it short.
+  Legend: `§` rule label · `!` must · `?` check · `¬` not · `∅` no · `∀` for each · `∈` in · `∷` is · `∧` and · `∨` or · `⇒` then · `≻` outranks · `→` becomes · `·` separates items. Other symbols read as in mathematics.
 - Give a reason only under plain-language rule 15. One clause of reason stops a bare rule from
   being applied in the wrong places.
 

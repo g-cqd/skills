@@ -159,7 +159,7 @@ reliability below their stated targets.
 |---|---|
 | **Define and test RTO/RPO** | Vague recovery goals |
 | **Automated failover** — health-based DNS or load-balancer routing | Manual intervention required |
-| **Regular DR drills** in a production-like environment | Writing the plan and never testing it |
+| **DR drills** in a production-like environment, at the interval the team states (ask for it; do not assume one) | Writing the plan and never testing it |
 | **Chaos engineering** — proactive failure injection | Waiting for a real outage to learn |
 | **Multi-region** — active-active or active-passive | Single-region dependency |
 

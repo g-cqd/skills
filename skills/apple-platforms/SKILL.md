@@ -238,6 +238,8 @@ display scale, full-screen dimensions). Use subagents to keep context small.
 | Several valid approaches, or relocation >10 lines | **Ask the user** |
 | No safe replacement (rare) | Leave an actionable TODO — never a silent empty diff |
 
+Repo note, not from Apple: when principle 2 and this table disagree, ask the user if you can ask. If you cannot ask, pick the replacement that fits the request.
+
 **Phase 3b — completeness.** Before starting, write out the full file list; mark each file done.
 Process files one at a time or in batches of 3 to 5, so the tail of the list is not dropped.
 Before finishing, compare the list against your output: **any file with neither a diff nor an

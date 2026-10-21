@@ -20,7 +20,7 @@ When making architectural or operational decisions, apply this strict priority o
 9. ELEGANCE      -- Clean code, minimal complexity (never at expense of above)
 ```
 
-**Rule**: A lower-priority concern NEVER compromises a higher-priority one.
+**Rule**: A lower-priority concern must not push a higher-priority one below its stated target.
 
 ---
 

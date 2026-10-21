@@ -90,7 +90,7 @@ a contradiction.
   possible: a stored completion, or a value crossing a boundary that cannot throw.
 - **No empty catch.** Log the error and the failing path, or propagate the error.
 - **No `try!`, no `as!`, no force unwrap.** Each one claims a runtime condition is impossible. If
-  the condition is impossible, express that in the type.
+  the condition is impossible, express that in the type. The rule applies to test code: use `try` or `#require`.
 - On failure, return or throw the failure. Do not return a default value that looks like success.
 
 ## 4. API design

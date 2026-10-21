@@ -32,7 +32,7 @@ boundary crossing in that code is walked (Method step 3).
 4. **On Apple platforms**, walk the iOS surface from `secure-coding` §8: Keychain accessibility and
    `SecAccessControl`, the `LAContext.evaluatePolicy` Boolean bypass, `NSFileProtection`, WebView JS
    bridges and origin checks, ATS exceptions, deep-link and AASA validation.
-5. **For each parser of attacker-reachable bytes**, apply the `memory-safety` length-disagreement
+5. **For each parser of untrusted bytes**, apply the `memory-safety` length-disagreement
    rule: a buffer sized from one field and filled from another field that can disagree is the root
    of zero-click chains. Check for bounds-safety and sanitizer or fuzz coverage.
 
