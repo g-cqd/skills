@@ -4,10 +4,10 @@ How to add or maintain a skill or a subagent so it fits the rest of the set.
 
 ## Two rules that shape every skill
 
-1. **`SKILL.md` carries the knowledge.** A thin skill pointing at a deep `references/` tree behaves
-   like a thin skill — the references rarely get read. Put the actionable rules, decision tables,
-   and gotchas inline (target 10–20 KB); keep only long-tail catalogs and code corpora in
-   `references/`.
+1. **`SKILL.md` carries the rules.** Agents rarely open `references/`. Put the rules, decision
+   tables and known failure cases in `SKILL.md`, and keep it under 500 lines. Keep only long
+   catalogs and code corpora in `references/`. Cut any sentence that does not change what the agent
+   does.
 2. **The description is a retrieval key**, not a summary. It is the only text the harness sees when
    deciding whether to load the skill. Write it for that decision.
 
@@ -78,8 +78,9 @@ The rules below are the ones that matter for this set; apply them when adding or
   on shouted instructions, so `MUST`, `NEVER`, `CRITICAL`, `ALWAYS`, and "IRON LAW" style headers
   make a rule fire too often, not more reliably. "Use X when …" carries the same weight.
 - The compact `§` Contract block is house notation, not shouting — keep it, and keep it short.
-- State the rule and, where the reason is not obvious, the reason in the same breath. Claude
-  generalises from the motivation; a bare rule gets applied literally and in the wrong places.
+- State a reason only when it changes behaviour in a case the rule does not name (plain-language
+  rule 15). A bare rule gets applied literally and in the wrong places; one clause of motivation
+  prevents that.
 
 **Positive form**
 
@@ -125,12 +126,55 @@ The rules below are the ones that matter for this set; apply them when adding or
 - Pause only for destructive or outward-facing actions (deleting, force-pushing, publishing) and
   for genuine scope changes; local, reversible edits proceed.
 
-**Prose**
+## Plain-language rules
 
-- No mannered prose: metaphor and flourish in place of direct statement ("a dial worth turning"
-  for "a parameter worth varying"). When a literal phrase exists, use it.
-- When summarising a document or source, mark verbatim passages as quotations; put everything
-  else in the model's own words.
+Applies to every skill, agent definition and `AGENTS.md`. The direction comes from ASD-STE100
+(Simplified Technical English); it is not a copy of that standard. An agent reads these words
+literally, so each sentence must stay correct when it is taken literally and applied everywhere
+it can apply.
+
+**Wording**
+
+1. One instruction per sentence, about 20 words at most. Use the imperative for actions ("Run the
+   tests"), the present tense for facts, and the active voice.
+2. One word for one thing. Pick "diff" or "change set" and keep it in the whole file. Define a term
+   once, where it first appears.
+3. No metaphors, idioms, figures of speech, humour or rhetorical questions. Write the literal thing.
+4. No filler or intensifiers (very, simply, just, carefully, robust, clean, elegant). No hedges (try
+   to, consider, ideally, maybe) unless the same sentence gives the condition that decides.
+5. Replace vague quantity and degree words (large, small, many, soon, often, slow) with a number or a
+   test, or delete the sentence.
+6. Write "must" for a rule, "must not" for a prohibition and "may" for an option. Do not write
+   "should".
+
+**Literal reading**
+
+7. Scope every absolute. An agent takes "always", "never", "every", "all" and "any" at face value.
+   Write the exact condition ("in each changed file", "before the first edit") or the exception.
+8. Give every loop, search and review a stop: a count, a list, or a test for done. Write "each
+   changed function", not "everything related".
+9. Say what to do when the rule cannot be followed: no tests exist, a tool is missing, the user has
+   not answered. Name one action: stop and report, skip and note it, or use a stated fallback.
+10. Use the noun, not a pronoun (it, this, that, they), whenever two nouns could be meant.
+11. Give each prohibition the allowed action. Give each action that deletes, overwrites, publishes
+    or spends money the condition that permits it.
+12. Test each rule: read it as an agent with no common sense and apply it literally. If the result
+    defeats the purpose, add the missing condition or rewrite the rule.
+
+**Content**
+
+13. Delete what the model already knows (textbook definitions, general advice) and every sentence
+    that does not change what the agent does. Keep thresholds, commands, names, decision tables,
+    exceptions, and rules where this repository or skill differs from the default.
+14. State a rule once. Link to the section instead of repeating it.
+15. Keep a reason only when it changes behaviour in a case the rule does not name. Use one clause.
+16. Keep an example that shows an output format or a case that is not obvious. Cut an example that
+    repeats the rule.
+17. Use a table for a decision or a lookup, a short list for steps, and a paragraph for nothing
+    that a list or table would state more briefly.
+
+When summarising a document or source, mark verbatim passages as quotations and write everything
+else in your own words.
 
 ## Tiering — generic, Apple, mixed
 
