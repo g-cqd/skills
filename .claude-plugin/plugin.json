@@ -1,6 +1,6 @@
 {
   "name": "skills",
-  "description": "Portable engineering harness: 7 tiered subagents and 19 atomic skills for Swift/Apple-platform development, testing, code review, planning, architecture, security, and Xcode agentic workflows.",
+  "description": "Portable engineering harness: 14 tiered subagents and 20 atomic skills for Swift/Apple-platform development, testing, code review, planning, architecture, security, and Xcode agentic workflows.",
   "version": "2.0.0",
   "license": "MIT",
   "skills": "./skills",
