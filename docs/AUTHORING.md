@@ -1,15 +1,14 @@
 # Authoring skills and agents
 
-How to add or maintain a skill or a subagent so it fits the rest of the set.
+How to add or change a skill or a subagent in this set.
 
 ## Two rules that shape every skill
 
 1. **`SKILL.md` carries the rules.** Agents rarely open `references/`. Put the rules, decision
-   tables and known failure cases in `SKILL.md`, and keep it under 500 lines. Keep only long
-   catalogs and code corpora in `references/`. Cut any sentence that does not change what the agent
-   does.
-2. **The description is a retrieval key**, not a summary. It is the only text the harness sees when
-   deciding whether to load the skill. Write it for that decision.
+   tables, and known failure cases in `SKILL.md`, and keep it under 500 lines. Put only long
+   catalogs and code corpora in `references/`.
+2. **The description is a retrieval key**, not a summary. It is the only text the harness reads
+   to decide whether to load the skill. Write it for that decision.
 
 ## Skill anatomy
 
@@ -37,15 +36,16 @@ description: <see below>
 
 ## Writing the description
 
-Keep the parsed description at 1–1,024 characters; target at most 500 for this set.
-The repository validator enforces the 1,024-character ceiling and rejects angle brackets.
-Use YAML `>-` for a wrapped description without a trailing newline. Keep the main triggers
-and a useful boundary; put API catalogs, examples, and detailed procedures in the body.
-Do not shorten by cutting off a sentence or removing the skill's distinguishing concern.
-Front-load the main use case: [Codex may shorten descriptions](https://learn.chatgpt.com/docs/build-skills)
-to fit the initial skill-list context budget, even when each description passes validation.
+- Keep the parsed description between 1 and 1,024 characters; target 500 or fewer for this set.
+  The repository validator enforces the 1,024-character limit and rejects angle brackets.
+- Use YAML `>-` for a wrapped description without a trailing newline.
+- Keep the main triggers and at least one boundary. Put API catalogs, examples, and detailed
+  procedures in the body.
+- To shorten, rewrite; do not cut off a sentence or remove the skill's distinguishing concern.
+- Put the main use case first: [Codex may shorten descriptions](https://learn.chatgpt.com/docs/build-skills)
+  to fit its initial skill-list context budget, even when each description passes validation.
 
-Validate every skill before delivery (and use the same check in CI):
+Validate each changed skill before delivery, and run the same check in CI:
 
 ```sh
 for skill in skills/*; do
@@ -53,78 +53,78 @@ for skill in skills/*; do
 done
 ```
 
-Answer: *given a user message, should this skill load?* In order:
+The description answers one question: *given a user message, must this skill load?* Write its
+parts in this order:
 
-1. **Concern** — what it governs, in concrete nouns.
-2. **Coverage** — the specific sub-topics, named. These are the matchable terms.
-3. **Triggers** — "Use when …", with the situations spelled out. Include the failing-symptom
-   phrasing where a skill fixes a known error — a user pastes the compiler error, not the concept.
-4. **Negative boundary** — "Not for X, use `<skill>`." This is what stops overlap.
+1. **Concern:** what the skill governs, in concrete nouns.
+2. **Coverage:** the sub-topics, named. These are the terms a message matches.
+3. **Triggers:** "Use when …", with the situations named. Where the skill fixes a known error,
+   include the error's wording; a user pastes the compiler error, not the concept.
+4. **Negative boundary:** "Not for X, use `<skill>`." This prevents overlap.
 
-Name concrete API and concept terms, not categories: `@Observable`, `Sendable`, `NSFileProtection`
-match; "modern patterns" does not. Never write a description that could equally describe a
-neighbour — if two overlap, merge the skills or redraw the boundary.
+Name concrete API and concept terms, not categories: `@Observable`, `Sendable`, and
+`NSFileProtection` match; "modern patterns" does not. A description must not fit a neighbouring
+skill equally well. If two descriptions overlap, merge the skills or redraw the boundary.
 
 ## Prompting rules — how the body is written
 
 A skill body and an agent prompt are system-prompt text. They follow Anthropic's
 [prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)
 and the [Claude Fable 5.1 guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1).
-The rules below are the ones that matter for this set; apply them when adding or editing text.
+Apply the rules below when you add or edit text.
 
 **Tone and emphasis**
 
-- Write in normal sentence case. Current models follow the system prompt closely and overtrigger
-  on shouted instructions, so `MUST`, `NEVER`, `CRITICAL`, `ALWAYS`, and "IRON LAW" style headers
-  make a rule fire too often, not more reliably. "Use X when …" carries the same weight.
-- The compact `§` Contract block is house notation, not shouting — keep it, and keep it short.
-- State a reason only when it changes behaviour in a case the rule does not name (plain-language
-  rule 15). A bare rule gets applied literally and in the wrong places; one clause of motivation
-  prevents that.
+- Write in sentence case. Current models follow the system prompt closely, so shouted words
+  (`MUST`, `NEVER`, `CRITICAL`, `ALWAYS`, "IRON LAW" headers) make a rule fire too often. "Use X
+  when …" carries the same weight.
+- The `§` Contract block is house notation, not shouting. Keep it, and keep it short.
+- Give a reason only under plain-language rule 15. One clause of reason stops a bare rule from
+  being applied in the wrong places.
 
 **Positive form**
 
-- Say what to do, not only what to avoid. "Do not nest `if let`" becomes "use `guard let` for an
-  early exit; nesting hides the logic". A prohibition without an alternative leaves the model to
-  guess the alternative.
-- Formatting rules say when a format is appropriate, not which formats are banned. Blanket
-  anti-markdown language suppresses structure the content needs.
+- State what to do, not only what to avoid: "Do not nest `if let`" becomes "use `guard let` for an
+  early exit; nesting hides the logic". Without the alternative, the model guesses one.
+- A formatting rule states when a format fits, not which formats are banned. A blanket ban on
+  markdown removes structure the content needs.
 
 **Examples**
 
-- Wrap an example of the model's own output — a review comment, a commit message, a ticket, an
-  answer shape — in `<example>` tags, several in `<examples>`, each with a one-line rationale so the
-  model learns the *why* rather than the surface form. Code that demonstrates an API pattern stays
+- Wrap an example of the model's own output (a review comment, a commit message, a ticket, an
+  answer shape) in `<example>` tags, and several in `<examples>`. Give each a one-line rationale,
+  so the model learns why, not only the surface form. Code that demonstrates an API pattern stays
   in a fenced block; it is reference material, not an output example.
-- Three to five diverse examples steer format better than more rules.
+- Three to five varied examples steer format better than more rules.
 
 **Reasoning**
 
-- Prefer general instructions ("think this through", "verify against the spec before finishing")
-  over hand-written step-by-step reasoning scripts; the model's own reasoning usually exceeds a
-  prescribed one. Numbered steps are for procedures whose *order* matters, not for thinking.
-- Where a skill ends in a deliverable, ask for a self-check against a named criterion before
-  finishing. This catches errors reliably at almost no cost.
+- Write general instructions ("think this through", "verify against the spec before finishing"),
+  not step-by-step reasoning scripts; the model's own reasoning usually exceeds a prescribed one.
+  Use numbered steps only for procedures whose *order* matters.
+- When a skill ends in a deliverable, require a self-check against a named criterion before
+  finishing.
 
-**Agentic behaviour** (matters most in agent prompts)
+**Agentic behaviour** (mainly for agent prompts)
 
-- Ground claims in what was read: never speculate about code that was not opened. Search or read
-  before answering; recognising a name is not knowing its current state, and this matters most on
-  cheap tiers, which reach for tools less.
-- Keep changes and tests to what the task asks. A pre-existing bug or nearby improvement is a
-  follow-up in the summary, not a change in this diff, unless the requested behaviour cannot work
-  without it. Tests are sized like the neighbouring test files, roughly one focused test per
-  stated behaviour; scratch checks are not promoted to permanent tests.
-- Prefer a targeted edit to a whole-file rewrite unless the file is short or mostly changing.
+- Ground claims in what was read: do not describe code that was not opened. Search or read before
+  answering; recognising a name is not knowing its current state. The rule matters most on cheap
+  tiers, which call tools less.
+- Keep changes and tests to what the task asks. Report a pre-existing bug or a nearby improvement
+  as a follow-up, unless the requested behaviour cannot work without it. Size tests like the
+  neighbouring test files, about one focused test per stated behaviour; do not keep scratch checks
+  as permanent tests.
+- Make a targeted edit, not a whole-file rewrite, unless the file is short or most of it changes.
 - Remove scratch files and helper scripts created during the task.
 - Batch independent tool calls in one response; sequence only true dependencies.
-- Finish the whole task. A subagent cannot ask the user anything mid-task: do everything that does
-  not depend on the open question, state the assumption, and put the question in the final report.
-  Describing the next step and stopping leaves it undone.
-- The final message must stand on its own. The caller sees only that message, not the tool calls,
-  so it states what was found, what was done, and what is left.
-- Pause only for destructive or outward-facing actions (deleting, force-pushing, publishing) and
-  for genuine scope changes; local, reversible edits proceed.
+- Finish the whole task. A subagent cannot ask the user anything mid-task: it does everything that
+  does not depend on the open question, states the assumption, and puts the question in the final
+  report. A report that describes the next step instead of doing it leaves the step undone.
+- The final message stands alone. The caller sees only that message, not the tool calls, so it
+  states what was found, what was done, and what is left.
+- Ask the user before a destructive or outward-facing action (deleting, force-pushing,
+  publishing) and before a scope change the user must decide. A subagent that cannot ask does not
+  take the action and reports it. Local, reversible edits proceed.
 
 ## Plain-language rules
 
@@ -142,8 +142,10 @@ it can apply.
 3. No metaphors, idioms, figures of speech, humour or rhetorical questions. Write the literal thing.
 4. No filler or intensifiers (very, simply, just, carefully, robust, clean, elegant). No hedges (try
    to, consider, ideally, maybe) unless the same sentence gives the condition that decides.
-5. Replace vague quantity and degree words (large, small, many, soon, often, slow) with a number or a
-   test, or delete the sentence.
+5. Replace a vague quantity or degree word (large, small, many, soon, often, slow) with a number or
+   a test when the source gives one. When it does not, state the criterion in words ("until the
+   build passes") or list the rule for the owner. Do not invent a threshold and do not delete a rule
+   because it is vague.
 6. Write "must" for a rule, "must not" for a prohibition and "may" for an option. Do not write
    "should".
 
@@ -154,7 +156,8 @@ it can apply.
 8. Give every loop, search and review a stop: a count, a list, or a test for done. Write "each
    changed function", not "everything related".
 9. Say what to do when the rule cannot be followed: no tests exist, a tool is missing, the user has
-   not answered. Name one action: stop and report, skip and note it, or use a stated fallback.
+   not answered. Take the fallback from an existing rule in the repository. When none exists, write
+   "stop and report".
 10. Use the noun, not a pronoun (it, this, that, they), whenever two nouns could be meant.
 11. Give each prohibition the allowed action. Give each action that deletes, overwrites, publishes
     or spends money the condition that permits it.
@@ -165,8 +168,11 @@ it can apply.
 
 13. Delete what the model already knows (textbook definitions, general advice) and every sentence
     that does not change what the agent does. Keep thresholds, commands, names, decision tables,
-    exceptions, and rules where this repository or skill differs from the default.
-14. State a rule once. Link to the section instead of repeating it.
+    exceptions, known failure cases, and rules where this repository or skill differs from the
+    default.
+14. State a rule once per file. A rule that must apply in every session stays in the file that
+    is always loaded (`AGENTS.md`, or the skill's body); do not replace it with a pointer. Link to a
+    section only for detail.
 15. Keep a reason only when it changes behaviour in a case the rule does not name. Use one clause.
 16. Keep an example that shows an output format or a case that is not obvious. Cut an example that
     repeats the rule.
@@ -178,8 +184,8 @@ else in your own words.
 
 ## Tiering — generic, Apple, mixed
 
-Skills live in one flat tree, but the tier is declared in the **first words** of the description so
-a reader knows within one line whether it applies to them:
+Skills live in one flat tree. The **first words** of the description declare the tier, so a reader
+knows from the first line whether the skill applies:
 
 | Tier | Opens with | Example |
 |---|---|---|
@@ -188,37 +194,37 @@ a reader knows within one line whether it applies to them:
 | Mixed | `Language-agnostic <domain>, with an Apple-platform section covering …:` | `memory-safety`, `secure-coding`, `testing` |
 | Named language or domain | Opens with the language or domain itself, when it is not tied to Apple platforms | `swift` (also Linux, servers, embedded), `graphics` (cross-platform, Metal section) |
 
-A **mixed** skill orders its body generic-first, Apple-last:
+A **mixed** skill puts the generic sections first and the Apple section last:
 
-- The generic sections must be complete and usable with no Apple context — a reader who stops at
-  `## Apple platforms` still has a coherent skill.
-- No Apple API in a generic section. A comparative table covering C, C++, Swift, Kotlin, and Rust
-  evenly is generic; a section *about* Swift is not.
-- One Apple section, not several scattered through the body.
+- The generic sections must be complete without Apple context: a reader who stops at
+  `## Apple platforms` still has a usable skill.
+- A generic section names no Apple API. A comparison table that covers C, C++, Swift, Kotlin, and
+  Rust equally is generic; a section *about* Swift is not.
+- Put all Apple content in one Apple section.
 
-Merging beats splitting when two skills would trigger on the same message and then disagree about
-scope. Keep one concern per skill and tier *within* it.
+When two skills would trigger on the same message and then disagree about scope, merge them. Keep
+one concern per skill, and tier *within* the skill.
 
 ## Boundaries
 
-Every skill declares at least one negative boundary, and names a skill that actually owns the
-concern it disclaims. Boundaries are answered, not mirrored: if `algorithms` cites `testing` for
-property-based invariants, `testing` need not cite `algorithms` back — but the concern a skill
-points away must genuinely live in the skill it names.
+Each skill declares at least one negative boundary, and names the skill that owns the concern it
+disclaims. The named skill must own that concern. The named skill does not need to cite back: if
+`algorithms` cites `testing` for property-based invariants, `testing` need not cite `algorithms`.
 
 ## Portability
 
-A skill carries no project identifier — no organisation name, no ticket key, no in-house macro, no
-team decision presented as a universal rule. Where a value is a project's to choose, state the
+A skill contains no project identifier: no organisation name, ticket key, or in-house macro, and
+no team decision presented as a universal rule. Where a value is the project's choice, state the
 *procedure* ("detect the project's convention", "use the project's mock mechanism") and leave the
-*value* to the repository: `project-conventions` reads it out of the tree you are in, and the
-`CONFIGURATION` block in `AGENTS.md` is where a project records it explicitly.
+*value* to the repository. `project-conventions` reads the value from the current repository, and
+a project records it in the `CONFIGURATION` block of `AGENTS.md`.
 
-A skill that cannot be written this way is a project's own file, not a skill for this set.
+Content that cannot be written this way belongs in the project's own files, not in this set.
 
 ## Agents
 
-A subagent is a scoped worker the main agent delegates to. Author once as a neutral source:
+A subagent is a scoped worker that the main agent delegates to. Write it once, as a neutral
+source:
 
 ```markdown
 ---
@@ -237,28 +243,25 @@ spawns: <optional agents it may start, with the agents capability>
 ```
 
 Then `python3 agents/build.py` renders `claude/<name>.md`, `copilot/<name>.agent.md`, and
-`codex/<name>.toml`, mapping the tier to each harness's model and effort (`agents/tiers.json`) and
-each capability to the harness's tools. The header of `build.py` lists every key, and
+`codex/<name>.toml`. It maps the tier to each harness's model and effort (`agents/tiers.json`) and
+each capability to the harness's tools. The header of `build.py` lists each key, and
 `python3 agents/build.py --check` fails when a generated file is stale.
 
 Design rules:
 
-- **One clear job**, a tool surface that matches it, instructions that keep it from drifting into
-  adjacent work.
-- **Pick the cheapest tier that fits.** A small mechanical job with a clear stop is micro; default
-  to economy or standard; escalate to reasoning only for ambiguous, cross-cutting, high-risk, or
-  expensive-to-fix work, and to frontier only where a miss is the costliest outcome. This is the
-  whole cost model.
-- **Give the job every tool it needs, and nothing it does not.** An agent that must bounce back to
-  its caller for a `git log` costs more than one that runs it; an agent that can edit when it
-  should only report is a risk.
-- **Read-only where it can be.** `shell-readonly` gives a shell that only reads: Claude Code runs
-  the guard in `agents/claude/hooks/` before each command, Copilot gets no shell, and Codex, which
-  runs every agent in its parent's sandbox, relies on the prompt.
-- **Budget the small jobs.** `max_turns` stops a micro agent that wanders, on Claude Code, and
-  states the budget in the prompt everywhere.
-- Keep each agent to one job. A roster the orchestrator cannot route cleanly costs more than it
+- **One job per agent**, with tools that match the job and instructions that keep the agent out
+  of adjacent work. A roster the orchestrator cannot route without overlap costs more than it
   saves.
-
-The tier→model map in `agents/tiers.json` is the cost dial — re-audit it every few months, because
-the best-value model in each class drifts.
+- **Pick the cheapest tier that fits.** A small mechanical job with a clear stop is micro. Default
+  to economy or standard. Use reasoning only for ambiguous, cross-cutting, high-risk, or
+  expensive-to-fix work, and frontier only where a miss is the costliest outcome.
+- **Give the agent each tool its job needs, and no other.** An agent that must return to its caller
+  for a `git log` costs more than one that runs it. An agent that can edit when its job is to
+  report is a risk.
+- **Make the agent read-only when its job allows.** `shell-readonly` gives a shell that only reads:
+  Claude Code runs the guard in `agents/claude/hooks/` before each command, Copilot gets no shell,
+  and Codex, which runs each agent in its parent's sandbox, relies on the prompt.
+- **Give small jobs a turn budget.** On Claude Code, `max_turns` stops a micro agent at the
+  budget; on every harness, the build states the budget in the prompt.
+`agents/tiers.json` maps tiers to models and is the cost dial. Re-audit it every three months: the
+best-value model in each class changes.
