@@ -1,0 +1,86 @@
+{
+  "skill_name": "testing",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I am about to build a discount engine with a handful of stacking rules. How should I go about testing it?",
+      "expected_output": "A test-first plan with a confirmed red step and one behaviour per test.",
+      "expectations": [
+        "The testing skill was activated",
+        "Each test starts as a failing test and is confirmed failing for the right reason before the code is written",
+        "Each test covers one behaviour with one reason to fail",
+        "Unresolved rules are raised as questions before implementation"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I fixed a bug where an empty cart crashed checkout. What test should go with the fix?",
+      "expected_output": "A permanent regression test that reproduces the exact failure.",
+      "expectations": [
+        "The testing skill was activated",
+        "The test reproduces the exact failure (the empty cart), not just the happy path",
+        "The test is verified to fail without the fix and pass with it",
+        "It is linked to the ticket and kept permanently"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "There is an old module with zero tests and I have to change how it computes fees. How do I do that safely?",
+      "expected_output": "Characterization tests, then a seam, then the change.",
+      "expectations": [
+        "The testing skill was activated",
+        "Characterization tests assert what the code currently does, bugs included, before the change",
+        "A seam (sprout, wrap or extract an interface) is chosen as the smallest that works"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "My test for the notification sender uses a mock with a `wasCalled` flag and a two-second sleep to wait for it. Improve the test.",
+      "expected_output": "A spy with call counts and captured arguments, injected dependencies, and no sleep.",
+      "expectations": [
+        "The testing skill was activated",
+        "The boolean is replaced by a call count and captured arguments held in an array",
+        "The sleep is removed in favour of a deterministic mechanism such as an injected clock or a completion confirmation",
+        "All dependencies are injected and no real I/O remains"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Migrate our XCTest suite to Swift Testing. It has unit test classes and a few XCUIApplication UI tests.",
+      "expected_output": "A class-by-class migration that leaves UI automation on XCTest.",
+      "expectations": [
+        "The testing skill was activated",
+        "The XCUIApplication UI tests are left on XCTest",
+        "setUp becomes init, XCTAssertEqual becomes #expect and XCTUnwrap becomes try #require",
+        "Migration proceeds one class at a time and Foundation is imported explicitly where the file needs it"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Run the full test suite on the simulator and show me which tests fail.",
+      "expected_output": "Running tests and reading results, not designing them.",
+      "expectations": [
+        "The testing skill was NOT activated",
+        "The xcode skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "How do I test code that hops between actors, and make sure the Sendable checks hold in my async tests?",
+      "expected_output": "Swift concurrency test patterns, not general test design.",
+      "expectations": [
+        "The testing skill was NOT activated",
+        "The swift skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Which naming and factory helpers do the existing tests in this repo use to build the object under test? I want mine to match.",
+      "expected_output": "Detection of the repository's own test conventions.",
+      "expectations": [
+        "The testing skill was NOT activated",
+        "The project-conventions skill was activated"
+      ]
+    }
+  ]
+}

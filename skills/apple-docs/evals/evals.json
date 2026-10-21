@@ -1,0 +1,86 @@
+{
+  "skill_name": "apple-docs",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Since which iOS version can I use `ContentUnavailableView`, and does it exist on watchOS?",
+      "expected_output": "A looked-up answer: the exact symbol searched through the apple-docs MCP or CLI, availability quoted from the document with its doc key, never answered from memory.",
+      "expectations": [
+        "The apple-docs skill was activated",
+        "The exact symbol name `ContentUnavailableView` is searched through the apple-docs MCP tools or CLI before answering",
+        "Availability is quoted from the documentation as a quotation and cites the doc key",
+        "If the lookup could not be done, the answer says what could not be verified instead of stating availability from memory"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "What exactly do the App Store Review Guidelines say about apps that let users create an account? I need the wording for a compliance note.",
+      "expected_output": "The guideline text is retrieved from the corpus and quoted, not paraphrased, with the source cited.",
+      "expectations": [
+        "The apple-docs skill was activated",
+        "The guideline wording is quoted verbatim from the retrieved document rather than paraphrased",
+        "The search uses keywords or the app-store-review framework filter rather than a natural-language question",
+        "The corpus freshness is checked or the age of the corpus is mentioned"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Find me an icon for a battery that is charging, and tell me whether it is available on iOS 16.",
+      "expected_output": "SF Symbols searched with the symbol tools, the chosen name and its availability reported from the lookup.",
+      "expectations": [
+        "The apple-docs skill was activated",
+        "SF Symbols are looked up with search_sf_symbols or render_sf_symbol (or the CLI equivalent) rather than guessed",
+        "The symbol's availability is reported from the lookup, not from memory"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I want you to be able to read Apple's docs offline in this machine. Set that up for me.",
+      "expected_output": "Installation is proposed, not imposed: the size is stated, the profile is the user's choice, and nothing is downloaded or written before consent.",
+      "expectations": [
+        "The apple-docs skill was activated",
+        "The user is asked before the snapshot is downloaded and before any MCP configuration is written",
+        "The user is offered a choice of profile (compact or balanced) with the disk-size cost stated",
+        "The install is verified with a search that works offline"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "The docs for this SwiftUI modifier say it is available since iOS 17, but my project targeting iOS 17 gets an 'is only available in iOS 18' error. Which is right?",
+      "expected_output": "The conflict is stated explicitly and settled against the SDK interface, which outranks documentation.",
+      "expectations": [
+        "The apple-docs skill was activated",
+        "The disagreement between documentation and compiler is stated explicitly rather than silently picking one",
+        "The `.swiftinterface` or headers under Xcode.app are inspected as the last-resort ground truth",
+        "The answer does not use web search or web fetch for Apple documentation"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "We're moving our UIKit app to the iOS 27 SDK. Replace the UIScreen.main usages and move us onto the scene lifecycle.",
+      "expected_output": "A framework migration, not a documentation lookup.",
+      "expectations": [
+        "The apple-docs skill was NOT activated",
+        "The apple-platforms skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Build the app for the iPhone simulator, run the test plan and tell me why the build fails.",
+      "expected_output": "A toolchain task, not a documentation lookup.",
+      "expectations": [
+        "The apple-docs skill was NOT activated",
+        "The xcode skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Swift 6 reports that my cache class does not conform to Sendable when I pass it into a task group. Fix the isolation error.",
+      "expected_output": "A language and concurrency fix, not a documentation lookup.",
+      "expectations": [
+        "The apple-docs skill was NOT activated",
+        "The swift skill was activated"
+      ]
+    }
+  ]
+}

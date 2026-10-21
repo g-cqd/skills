@@ -1,0 +1,85 @@
+{
+  "skill_name": "memory-safety",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Review this C function that parses a chunked binary file from the network. It mallocs from the size in the header, then copies chunk by chunk.",
+      "expected_output": "A parser review that checks one length as the source of truth and states the invariant at each unsafe site.",
+      "expectations": [
+        "The memory-safety skill was activated",
+        "Owner, lifetime and bounds are stated for each unsafe site, or their absence is reported as the finding",
+        "The buffer size and the fill loop are required to derive from one validated length",
+        "Cross-field size, offset and count invariants are checked before allocation, and a mismatch is rejected rather than clamped"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Audit this C++ class. One method builds a std::string locally and returns a std::string_view of it.",
+      "expected_output": "A temporal-safety finding with the triggering state and a root-cause fix.",
+      "expectations": [
+        "The memory-safety skill was activated",
+        "The violation is named as a use-after-free or dangling view (CWE-416 or CWE-562)",
+        "The finding states the state that triggers it and the fix returns an owning type, not a view that outlives its storage"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Which sanitizers should be running in CI for our C++ library's tests?",
+      "expected_output": "A sanitizer selection with the ASan and TSan split and fuzzing for parsers.",
+      "expectations": [
+        "The memory-safety skill was activated",
+        "ASan is combined with UBSan and TSan is placed in a separate job because it is mutually exclusive with ASan",
+        "Fuzzing under ASan is recommended for any parser of untrusted input",
+        "A missing sanitizer CI job is reported as a finding"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "In Swift I grab a pointer inside withUnsafeBytes and keep using it after the closure returns to feed a C API.",
+      "expected_output": "An escaped-pointer finding with a safe restructuring.",
+      "expectations": [
+        "The memory-safety skill was activated",
+        "A pointer obtained inside the closure is flagged as invalid once the closure returns",
+        "The fix keeps the C call inside the closure or copies into storage the caller owns"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Our C header exposes `void fill(int *buf, size_t n)`. Help me adopt -fbounds-safety for it.",
+      "expected_output": "An adoption that confirms the approach and prerequisites before editing and annotates the pointer with its count.",
+      "expectations": [
+        "The memory-safety skill was activated",
+        "The user is asked whether to adopt fully or header-only before advice is given",
+        "A clean working tree under version control is confirmed before any source edit",
+        "The pointer is annotated with __counted_by(n) and ptrcheck.h is included unconditionally"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Review our API for injection, authentication bypass and leaked secrets.",
+      "expected_output": "A trust-boundary security review, not a memory validity review.",
+      "expectations": [
+        "The memory-safety skill was NOT activated",
+        "The secure-coding skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Which Xcode build settings turn on pointer authentication and memory tagging for the release configuration?",
+      "expected_output": "Build-setting configuration, not memory-safety review.",
+      "expectations": [
+        "The memory-safety skill was NOT activated",
+        "The xcode skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Our worker threads each update their own counter, but the counters sit next to each other and scaling is poor. Reorganise the data layout.",
+      "expected_output": "Cache-line and false-sharing performance work, not memory validity.",
+      "expectations": [
+        "The memory-safety skill was NOT activated",
+        "The performance-engineering skill was activated"
+      ]
+    }
+  ]
+}

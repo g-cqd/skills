@@ -1,0 +1,83 @@
+{
+  "skill_name": "algorithms",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I wrote a nested loop that compares every order against every customer to find the matches. Will that hold up when we have a couple of million orders?",
+      "expected_output": "A complexity statement with n and m defined, judged against the realistic input size, with a better structure proposed.",
+      "expectations": [
+        "The algorithms skill was activated",
+        "n (orders) and m (customers) are defined precisely before any complexity is stated",
+        "Time and space are both stated and judged against the realistic input size, not asymptotics alone",
+        "A structure chosen for the dominant operation (such as a hash map keyed on the join field) is proposed with its costs"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "What's the cheapest way to always pull the highest-priority job out of a collection that keeps receiving new jobs?",
+      "expected_output": "A data-structure choice justified by the dominant operations, with per-operation costs.",
+      "expectations": [
+        "The algorithms skill was activated",
+        "A binary heap (or equivalent) is chosen with O(log n) push and pop and O(1) peek",
+        "The answer names which operations dominate and over how many elements"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "My coin-change solution always takes the biggest coin that still fits. It passes my examples, so is it correct?",
+      "expected_output": "A correctness verdict that demands an exchange argument for the greedy choice and otherwise labels it a heuristic.",
+      "expectations": [
+        "The algorithms skill was activated",
+        "The greedy choice is not called optimal without an exchange-argument proof",
+        "Absent a proof it is labelled a heuristic, and a counterexample or the dynamic-programming alternative is offered"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Write a function that finds the first timestamp at or after a given time in a sorted list, and convince me it is right at the edges.",
+      "expected_output": "A search with its loop invariant stated and the boundary cases walked.",
+      "expectations": [
+        "The algorithms skill was activated",
+        "The loop invariant is stated with its initialization, maintenance and termination parts",
+        "Empty input, a single element, the full range and duplicates are each walked as boundaries"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Given two strings, find the minimum number of single-character edits to turn one into the other. How should I approach it, and what will it cost?",
+      "expected_output": "A dynamic-programming approach with the recurrence stated before any code, and defined costs.",
+      "expectations": [
+        "The algorithms skill was activated",
+        "The recurrence is stated before code is written",
+        "Time and space are given with both string lengths defined as separate variables"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Our nightly batch job takes 40 minutes on the production box. Profile it and tell me where the time actually goes.",
+      "expected_output": "A measured profiling investigation, not a design-time complexity analysis.",
+      "expectations": [
+        "The algorithms skill was NOT activated",
+        "The performance-engineering skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Write property-based tests checking that my sort function is idempotent, preserves length and keeps every element.",
+      "expected_output": "Property-based test design, not algorithm analysis.",
+      "expectations": [
+        "The algorithms skill was NOT activated",
+        "The testing skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "This function returns the wrong total for some inputs and I cannot tell why. Find the cause.",
+      "expected_output": "Root-cause diagnosis through reproduction and hypotheses, not an algorithm review.",
+      "expectations": [
+        "The algorithms skill was NOT activated",
+        "The debugging skill was activated"
+      ]
+    }
+  ]
+}

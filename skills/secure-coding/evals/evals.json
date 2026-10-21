@@ -1,0 +1,85 @@
+{
+  "skill_name": "secure-coding",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Do a security review of this file upload endpoint.",
+      "expected_output": "A threat frame followed by severity-sorted findings, each with a class, CWE, exploitation scenario and fix.",
+      "expectations": [
+        "The secure-coding skill was activated",
+        "Assets, trust boundaries and abuse cases are identified before the code is read",
+        "Each finding gives the vulnerability class with a CWE ID, an exploitation scenario, a concrete fix and a severity",
+        "Findings are sorted by severity and a pattern without an exploitation path is reported as a hardening note"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "We build the report query by concatenating the filter text that comes in on the URL. Is that okay?",
+      "expected_output": "An injection finding with the parameterized-query fix.",
+      "expectations": [
+        "The secure-coding skill was activated",
+        "The string-built query is identified as SQL injection (CWE-89) with a concrete payload",
+        "The fix binds parameters, and an allowlist on the input is kept as defense in depth"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Is it fine to hash passwords with a single SHA-256 pass and encrypt session tokens with a key defined as a constant in the config file?",
+      "expected_output": "Both choices flagged with the correct replacements.",
+      "expectations": [
+        "The secure-coding skill was activated",
+        "Passwords are directed to a unique salt and an expensive KDF, not a fast digest",
+        "The constant key is flagged and keys are directed to a KDF or a keystore",
+        "A vetted library with an AEAD construction is recommended over any homegrown scheme"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Our service downloads an image from a URL the user gives us for their avatar. Anything to worry about?",
+      "expected_output": "An SSRF analysis with allowlisting and canonicalize-then-validate.",
+      "expectations": [
+        "The secure-coding skill was activated",
+        "Server-side request forgery is identified as the risk, including access to internal addresses",
+        "The URL is canonicalized before it is validated against an allowlist",
+        "The request path fails closed on validation errors"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "In our iOS app, once biometrics succeed we show the saved credentials. The gate is just `if success`.",
+      "expected_output": "A local-authentication finding with the Keychain access-control fix.",
+      "expectations": [
+        "The secure-coding skill was activated",
+        "Gating on the Boolean result of the biometric evaluation is flagged as bypassable by hooking",
+        "The fix stores the secret as a Keychain item under an access control with .biometryCurrentSet, not .biometryAny"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Turn on Enhanced Security and pointer authentication in our Xcode target's build settings for release.",
+      "expected_output": "Build-setting hardening, not a code security review.",
+      "expectations": [
+        "The secure-coding skill was NOT activated",
+        "The xcode skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "This C image decoder allocates its buffer from the header width but loops over the body's pixel count. Walk me through the overflow and who owns what.",
+      "expected_output": "Memory-corruption and ownership analysis, not a trust-boundary review.",
+      "expectations": [
+        "The secure-coding skill was NOT activated",
+        "The memory-safety skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Set up our dependency update policy: how often we upgrade, who approves, and how we pin versions.",
+      "expected_output": "Dependency policy and update discipline, not a vulnerability review.",
+      "expectations": [
+        "The secure-coding skill was NOT activated",
+        "The engineering-practices skill was activated"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "skill_name": "performance-engineering",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Our search endpoint's p99 jumped from 300 ms to 2 s after the last release. Figure out what happened.",
+      "expected_output": "A measured investigation: a stated metric and budget, a profile before any code change, and before and after numbers.",
+      "expectations": [
+        "The performance-engineering skill was activated",
+        "A target metric with a budget is stated and percentiles are used rather than averages",
+        "The bottleneck is located with a profile or trace before any code is changed",
+        "The fix is reported as before and after numbers with units"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I added a custom buffer pool to the parser and it feels about 30 percent faster. Can you confirm that?",
+      "expected_output": "A verification that compares like with like and reports median and spread.",
+      "expectations": [
+        "The performance-engineering skill was activated",
+        "Both numbers come from the same harness, inputs and build configuration, in release mode",
+        "The median and spread are reported, not the best run",
+        "The claim is withheld if no before and after measurement exists"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I spread the work over 16 threads but it is only 3x faster, and none of the locks look contended.",
+      "expected_output": "A bounded expectation from Amdahl's law and false sharing as a suspect, confirmed with a measurement.",
+      "expectations": [
+        "The performance-engineering skill was activated",
+        "The Amdahl's-law ceiling from the parallelizable fraction is computed",
+        "False sharing is named as a suspect and a confirming measurement (per-cache-line counters) is proposed"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Write me a quick microbenchmark for this function and tell me the result.",
+      "expected_output": "A benchmark following the discipline rules and matching production access patterns.",
+      "expectations": [
+        "The performance-engineering skill was activated",
+        "The benchmark warms up, runs many iterations and fixes its inputs",
+        "It runs in a release build and its access pattern matches production use"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "The app freezes for a couple of seconds at random, but the CPU is idle while it happens.",
+      "expected_output": "Blocking and priority problems as suspects, confirmed with a wait-state trace.",
+      "expectations": [
+        "The performance-engineering skill was activated",
+        "Priority inversion or a blocked worker pool is suspected rather than a CPU-bound loop",
+        "A wait-state trace or lock-holder stacks are named as the confirming evidence"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Which data structure should I use for a leaderboard with frequent inserts and top-k queries, and what is the asymptotic cost of each operation?",
+      "expected_output": "Design-time data-structure selection and complexity, not machine measurement.",
+      "expectations": [
+        "The performance-engineering skill was NOT activated",
+        "The algorithms skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "My SwiftUI list re-renders every row whenever one item changes and scrolling hitches.",
+      "expected_output": "View invalidation and rendering advice, not general profiling.",
+      "expectations": [
+        "The performance-engineering skill was NOT activated",
+        "The swiftui skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "My fragment shader drops to 20 fps on a mobile GPU. How do I cut its cost?",
+      "expected_output": "GPU shader optimization, not CPU or memory profiling.",
+      "expectations": [
+        "The performance-engineering skill was NOT activated",
+        "The graphics skill was activated"
+      ]
+    }
+  ]
+}

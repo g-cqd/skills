@@ -1,0 +1,84 @@
+{
+  "skill_name": "swiftui",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "After updating Xcode my view stops compiling: \"variable 'self.counter' used before being initialized\". The init assigns counter = 42 and the property is declared with = 0.",
+      "expected_output": "The initial value is dropped from the declaration and the value is assigned only in init; the assignments are not merely reordered.",
+      "expectations": [
+        "The swiftui skill was activated",
+        "The fix removes the initial value at the declaration and keeps a single assignment in init",
+        "Reordering the assignments is rejected because the declaration's value would still win at run time"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "The pictures in my scrolling feed reload every time I scroll back up. How do I stop that?",
+      "expected_output": "AsyncImage caching on the SDK 27 floor, with a custom session or request policy where needed.",
+      "expectations": [
+        "The swiftui skill was activated",
+        "The answer states that AsyncImage gets standard HTTP caching by default in SDK 27 and checks the deployment floor first",
+        "`AsyncImage(request:)` or `asyncImageURLSession(_:)` is offered for a per-request cache policy or a custom session",
+        "Below the floor, the SDK 27 API is not used unconditionally"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I loop over my items with ForEach using the array index as the id, and rows animate strangely or lose their toggle state when I delete one.",
+      "expected_output": "Stable, unique identity in place of indices or minted ids.",
+      "expectations": [
+        "The swiftui skill was activated",
+        "Identity is moved to a stable and unique id on the element, not the array index",
+        "The answer rules out `UUID()` minted in the loop and ids derived from mutable content"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Build a new app that opens, edits and saves its own file type, with the standard open and save behavior and autosave.",
+      "expected_output": "A document-based app on the new Document API, with undo registered so autosave works.",
+      "expectations": [
+        "The swiftui skill was activated",
+        "The document code is read from the document-apps reference and uses `Document` with `DocumentGroup` rather than `FileDocument` at an SDK 27 floor",
+        "Every example registers undo actions, with the reason that SwiftUI reads the undo stack to detect unsaved changes"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "`Text(title)` doesn't get translated, and title is a String property on my model. Also this view lives in a Swift package.",
+      "expected_output": "Localization fix: LocalizedStringKey or LocalizedStringResource, and the package bundle.",
+      "expectations": [
+        "The swiftui skill was activated",
+        "The answer explains that a String variable passed to Text is not localized, unlike a literal that becomes a LocalizedStringKey",
+        "Non-view types carry `LocalizedStringResource` rather than `String`",
+        "`bundle: #bundle` is used inside the package"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "There is a data race between my actor and a background task, and an actor method reads state before an await and writes after it. Fix the concurrency.",
+      "expected_output": "Language concurrency, not view code.",
+      "expectations": [
+        "The swiftui skill was NOT activated",
+        "The swift skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Migrate the app delegate to the scene lifecycle and replace UIScreen.main everywhere before the next SDK.",
+      "expected_output": "UIKit modernization, not SwiftUI view work.",
+      "expectations": [
+        "The swiftui skill was NOT activated",
+        "The apple-platforms skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Run the app in the simulator, tap Login, and tell me whether the settings screen looks right.",
+      "expected_output": "Device verification, not view authoring.",
+      "expectations": [
+        "The swiftui skill was NOT activated",
+        "The xcode skill was activated"
+      ]
+    }
+  ]
+}

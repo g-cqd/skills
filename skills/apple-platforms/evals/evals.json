@@ -1,0 +1,86 @@
+{
+  "skill_name": "apple-platforms",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Make our tab bar and sheets pick up the new glass look from the latest OS release.",
+      "expected_output": "Liquid Glass adoption scoped by deployment target, with the version context stated and the Xcode 27 opt-out removal flagged as scheduled work.",
+      "expectations": [
+        "The apple-platforms skill was activated",
+        "The deployment target is checked before an API is recommended",
+        "The answer states the version context, such as available iOS 26+ and what it back-deploys to",
+        "The answer notes that the Liquid Glass opt-out is removed in Xcode 27, so adoption is scheduled work"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "This UIView subclass reads UIScreen.main.scale inside layoutSubviews. Fix it.",
+      "expected_output": "A drop-in replacement applied on the fast path, with no extra edits.",
+      "expectations": [
+        "The apple-platforms skill was activated",
+        "`UIScreen.main.scale` is replaced with `self.traitCollection.displayScale` rather than left as a TODO or an empty diff",
+        "No line that does not contain the target API is changed"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "We're about to bump to the iOS 27 SDK. The app still sets up its window in application(_:didFinishLaunchingWithOptions:). Anything we should worry about before we ship?",
+      "expected_output": "The mandatory UIScene lifecycle is named as a release blocker and scheduled before the SDK bump, with the read-only project prerequisite checks reported.",
+      "expectations": [
+        "The apple-platforms skill was activated",
+        "The answer states that under the iOS 27 SDK the UIScene lifecycle is mandatory and an app without a scene manifest will not launch (TN3187)",
+        "The scene-lifecycle migration is scheduled before the SDK bump",
+        "The launch screen, iPad orientation and UIRequiresFullScreen checks are reported read-only, without adding or deleting any key"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Let people say 'show my last order' to Siri or Shortcuts and have the app open it. Add the intent and the phrases.",
+      "expected_output": "App Intents code that uses public API only, treats identifiers as a contract and includes the application name in each phrase.",
+      "expectations": [
+        "The apple-platforms skill was activated",
+        "Every AppShortcut phrase includes `\\(.applicationName)` and the shortcut provides a shortTitle and systemImageName",
+        "AppEntity ids are stable across launches and devices, and no shipped identifier is renamed silently",
+        "Version-specific APIs are gated with their real availability floor"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "A helper reads UITraitCollection.current and the old method is called from a dozen places. I'm adding an overload that takes a traitCollection. What should the end state look like?",
+      "expected_output": "The four-part deprecate-and-forward pattern applied at the lowest method that touches the shared state.",
+      "expectations": [
+        "The apple-platforms skill was activated",
+        "The old method is kept, marked deprecated and forwards to the new overload; it is not deleted",
+        "The deprecation is placed on the helper that reads the shared state, not pushed onto every caller",
+        "The pattern is applied completely or skipped with an explicit reason, never partially"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "After the SDK update my @State counter shows 0 even though init assigns 42, and the compiler complains about variable used before being initialized.",
+      "expected_output": "A SwiftUI state fix, not a platform adoption task.",
+      "expectations": [
+        "The apple-platforms skill was NOT activated",
+        "The swiftui skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Convert this completion-handler API client to async/await and make it pass Swift 6 strict concurrency.",
+      "expected_output": "A language and concurrency task, not a framework adoption task.",
+      "expectations": [
+        "The apple-platforms skill was NOT activated",
+        "The swift skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Launch the app on the iPad simulator, tap through the settings screen and screenshot what you see.",
+      "expected_output": "Device and simulator verification, not framework migration.",
+      "expectations": [
+        "The apple-platforms skill was NOT activated",
+        "The xcode skill was activated"
+      ]
+    }
+  ]
+}

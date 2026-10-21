@@ -1,0 +1,83 @@
+{
+  "skill_name": "code-review",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Can you take a look at my PR before I merge it? It is the diff against main.",
+      "expected_output": "A prioritized review with an overall assessment, labelled inline comments with fixes, and a checklist summary.",
+      "expectations": [
+        "The code-review skill was activated",
+        "Every inline comment is labelled blocking, suggestion or nit",
+        "Each comment shows the fix as code rather than saying it could be simpler",
+        "The output has an overall assessment and a checklist summary table by category"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Here is a function I wrote last night. Tell me honestly what you think of it.",
+      "expected_output": "Findings ordered by priority with correctness first, plus what was done well.",
+      "expectations": [
+        "The code-review skill was activated",
+        "Correctness and safety findings come before naming and polish findings",
+        "The review calls out what was done well, not only negatives"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Give me feedback on this branch. We target Java 11 and use constructor injection everywhere.",
+      "expected_output": "A review calibrated to the stated version floor and the established patterns.",
+      "expectations": [
+        "The code-review skill was activated",
+        "No comment recommends an API or language feature newer than the stated version floor",
+        "The surrounding code and call sites are read before a defect is asserted"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Review this diff. A few spots have the same unused variable, and a couple of variables named `users` only hold one value.",
+      "expected_output": "Repeated nits batched with the first occurrence detailed and the rest listed by location.",
+      "expectations": [
+        "The code-review skill was activated",
+        "The first occurrence of the repeated nit is detailed and the rest are listed by location with 'Same here'",
+        "Nit-level items carry the literal 'Nit:' prefix"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Does anything in this change look off? It touches the sync code, and I made one method public only so the tests can reach it.",
+      "expected_output": "A review that flags the access-control relaxation and any swallowed error, each with a fix.",
+      "expectations": [
+        "The code-review skill was activated",
+        "Relaxing access control just for tests is flagged and the language's test-visibility mechanism is suggested instead",
+        "A blocking finding names the concrete input or state that breaks and shows the fix as code"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Audit this login handler for injection and auth bypass, and give me a severity-rated list.",
+      "expected_output": "A security audit with exploitation scenarios, not a general code review.",
+      "expectations": [
+        "The code-review skill was NOT activated",
+        "The secure-coding skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Are the tests in this change actually meaningful, or do they just push the coverage number up?",
+      "expected_output": "An assessment of test quality, not a general code review.",
+      "expectations": [
+        "The code-review skill was NOT activated",
+        "The testing skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Do not review anything. Just extract this block into smaller functions and split the work into two commits, one for the refactor and one for the behaviour change.",
+      "expected_output": "Producing the change with refactoring discipline, not judging it.",
+      "expectations": [
+        "The code-review skill was NOT activated",
+        "The engineering-practices skill was activated"
+      ]
+    }
+  ]
+}

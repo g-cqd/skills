@@ -1,0 +1,84 @@
+{
+  "skill_name": "project-conventions",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I just cloned this repository for the first time and I need to add a small feature. What should I know before I touch anything?",
+      "expected_output": "A detection pass over the repository that reports only what was observed.",
+      "expectations": [
+        "The project-conventions skill was activated",
+        "Recent history and the root instruction files (AGENTS.md, CONTRIBUTING.md, CLAUDE.md) are read before any rule is applied",
+        "Linter and formatter configs are reported as enforced rules",
+        "A convention that was not seen is reported as 'not detected' rather than guessed"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Name my branch and write the commit message for this change.",
+      "expected_output": "Branch and commit names that follow the observed ticket convention without inventing an ID.",
+      "expectations": [
+        "The project-conventions skill was activated",
+        "The ticket ID pattern and its placement are taken from recent history or the current branch name",
+        "No ticket number is invented; the user is asked when none can be found",
+        "No ticket convention is introduced when the history shows none"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Where should the code for the new notifications feature live in this codebase?",
+      "expected_output": "A location derived from existing module layering and examples.",
+      "expectations": [
+        "The project-conventions skill was activated",
+        "The decision rests on at least three existing examples of how comparable code is placed",
+        "No new layering or module scheme is introduced without evidence of one"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "The generic guidance says to use one style of mock, but the tests in this repo do something different. Which one do I follow?",
+      "expected_output": "The observed repository convention wins over generic guidance.",
+      "expectations": [
+        "The project-conventions skill was activated",
+        "The observed convention is chosen over the generic guidance",
+        "The choice is backed by existing examples cited from the tree"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "I am adding the new settings page. Is there anything in this repo I am not supposed to touch?",
+      "expected_output": "Off-limits areas reported only if observed, with no template placeholders in the output.",
+      "expectations": [
+        "The project-conventions skill was activated",
+        "Off-limits areas such as generated code, CI configuration or pinning files are reported only where the repository shows them",
+        "No unfilled placeholder text from the team template appears in the output"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Turn our release workflow into a reusable skill that other agents can load.",
+      "expected_output": "Skill authoring, not convention detection.",
+      "expectations": [
+        "The project-conventions skill was NOT activated",
+        "The skill-creator skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "What is a good general branching and release strategy for a team of six that ships weekly?",
+      "expected_output": "Generic delivery practice, not detection of this repository's rules.",
+      "expectations": [
+        "The project-conventions skill was NOT activated",
+        "The engineering-practices skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Write the pull request description for this change.",
+      "expected_output": "A PR description document, not convention detection.",
+      "expectations": [
+        "The project-conventions skill was NOT activated",
+        "The work-docs skill was activated"
+      ]
+    }
+  ]
+}

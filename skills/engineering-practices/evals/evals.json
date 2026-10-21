@@ -1,0 +1,87 @@
+{
+  "skill_name": "engineering-practices",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I have about 3000 changed lines: a rename across several modules plus a new retry feature. How should I split this up for review?",
+      "expected_output": "A split that separates refactoring from behaviour change and slices by behaviour into small reviewable pieces.",
+      "expectations": [
+        "The engineering-practices skill was activated",
+        "The rename and the retry feature are kept in separate commits or PRs",
+        "Slices follow behaviour rather than file type",
+        "Each PR is sized to be reviewable in roughly fifteen minutes"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I want to pull in a small library to parse dates. Anything I should think about first?",
+      "expected_output": "Dependency addition treated as an architectural decision with named criteria.",
+      "expectations": [
+        "The engineering-practices skill was activated",
+        "Maintenance activity, transitive surface, license and supply-chain posture are weighed",
+        "The standard library or platform is preferred where it suffices",
+        "The third-party API is wrapped at a module boundary the team controls"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I inherited a 2000-line function with no tests and I have to change one branch of it. Where do I start?",
+      "expected_output": "Characterize, find a seam, then change behaviour.",
+      "expectations": [
+        "The engineering-practices skill was activated",
+        "Current behaviour is pinned with characterization tests, bugs included, before any change",
+        "The smallest workable seam (sprout, wrap or extract an interface) is chosen",
+        "Behaviour is changed only after the safety net exists"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Bump every dependency in the project to its latest version in one go to save time. Plan it.",
+      "expected_output": "A plan that upgrades one dependency per PR instead of in bulk.",
+      "expectations": [
+        "The engineering-practices skill was activated",
+        "Upgrades are split to one dependency per PR with the changelog read and the lockfile committed",
+        "The bulk upgrade is pushed back on because a failure would not identify its cause"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "The feature is written and the tests pass. Anything I should do before I tell the team it is done?",
+      "expected_output": "The completion gate run in full, with residual risks stated.",
+      "expectations": [
+        "The engineering-practices skill was activated",
+        "The original request is re-read to confirm this was what was asked",
+        "The full suite runs once and the change is exercised once like a user",
+        "The author's own diff is reviewed for debug prints, dead code and unrelated edits",
+        "Residual risks and follow-ups are stated explicitly"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Look over my teammate's pull request and leave feedback on naming and architecture.",
+      "expected_output": "Judging a change with prioritized findings, not producing one.",
+      "expectations": [
+        "The engineering-practices skill was NOT activated",
+        "The code-review skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Design the test strategy for the payments module: what to unit test, what to integration test, and which test doubles to use.",
+      "expected_output": "Test strategy and double selection, not delivery practice.",
+      "expectations": [
+        "The engineering-practices skill was NOT activated",
+        "The testing skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Break the migration to the new billing system into phases, with an order and owners for each phase.",
+      "expected_output": "Task decomposition and sequencing, not delivery practice.",
+      "expectations": [
+        "The engineering-practices skill was NOT activated",
+        "The planner skill was activated"
+      ]
+    }
+  ]
+}

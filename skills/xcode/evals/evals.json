@@ -1,0 +1,88 @@
+{
+  "skill_name": "xcode",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "The project won't build for the simulator, it throws dozens of errors. Get it compiling and tell me if it works.",
+      "expected_output": "Schemes and destinations discovered first, the first error fixed before each rebuild, and the highest rung reached reported.",
+      "expectations": [
+        "The xcode skill was activated",
+        "Schemes and destinations are discovered with xcodebuild -list and -showdestinations before the first build instead of guessing names",
+        "The first error is read and fixed, then the project is rebuilt, rather than batching speculative fixes",
+        "The report states which rung of the build, test, preview, run ladder was reached and does not call a successful compile done"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Half my tests fail instantly with 0.000s while two other agent sessions are running on this Mac, and the log says Mach error -308.",
+      "expected_output": "Infrastructure exhaustion recognized before any debugging of the tests.",
+      "expectations": [
+        "The xcode skill was activated",
+        "The failure is identified as simulator exhaustion, not a code bug, and other running sessions are checked before the tests are debugged",
+        "Serializing xcodebuild behind a machine-wide lock is recommended",
+        "Parallel testing is disabled under pressure with -parallel-testing-enabled NO"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Launch the app on the iPhone simulator, tap Login and tell me what the next screen shows.",
+      "expected_output": "Hierarchy-driven interaction with captures before and after, and an honest report of what was exercised.",
+      "expectations": [
+        "The xcode skill was activated",
+        "The tap point is taken from the hitPoint in the hierarchy, not estimated from the screenshot",
+        "The screen is captured before and after the interaction",
+        "The device session is ended when done, and the report states only what was observed and what was not exercised"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Turn on the security hardening build options for our app. Pure Swift, one app target and a widget extension.",
+      "expected_output": "Enhanced Security applied with minimal edits, one confirmation, and no signing changes.",
+      "expectations": [
+        "The xcode skill was activated",
+        "ENABLE_ENHANCED_SECURITY is set at project level and the existing method (xcconfig or project file) is matched rather than introducing a second source of truth",
+        "Only the one setting or xcconfig line is changed, and signing and provisioning are left untouched",
+        "Clang safety warnings are skipped because the project is pure Swift",
+        "Default-off options such as memory tagging are reported and offered, not enabled automatically"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Here is the unpacked release build of our app. What in its entitlements and Info.plist would a pentester go after?",
+      "expected_output": "Effective entitlements read from the signed binary, with each risky entry flagged.",
+      "expectations": [
+        "The xcode skill was activated",
+        "Effective entitlements are read from the signed binary with codesign rather than only from a stray .entitlements file",
+        "get-task-allow = true in a release build is flagged as debuggable",
+        "Associated domains, App Groups and keychain access groups, and the URL types in Info.plist are listed for confirmation as intended"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Rewrite our XCTest suite to use Swift Testing with @Test and #expect.",
+      "expected_output": "Test migration, not toolchain work.",
+      "expectations": [
+        "The xcode skill was NOT activated",
+        "The testing skill was activated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Store the refresh token in the Keychain and pin the server certificate in our URLSession.",
+      "expected_output": "Keychain and TLS work, which the xcode skill excludes.",
+      "expectations": [
+        "The xcode skill was NOT activated",
+        "The secure-coding skill was activated"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Adopt the new glass design in our UIKit navigation bars and move the app to the scene lifecycle.",
+      "expected_output": "Framework adoption, not toolchain work.",
+      "expectations": [
+        "The xcode skill was NOT activated",
+        "The apple-platforms skill was activated"
+      ]
+    }
+  ]
+}
