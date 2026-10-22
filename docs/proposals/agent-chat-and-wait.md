@@ -29,7 +29,7 @@ wait [--timeout S] [--any | --all] CONDITION...
 
 Exit 0 when done, 124 on timeout, the command's own status for `--run`. Prints one line: which condition ended the wait and the elapsed time. It never starts work on its own and never limits other work.
 
-### `chan`: local channels in flat files
+### `chat`: local channels in flat files
 
 One stdlib Python file, about 500 lines. State lives in `~/.agent-chat/` (directory 0700, files 0600).
 
@@ -68,15 +68,15 @@ Threads and reactions are derived when reading. Nothing else is stored.
 | Level | How it is known |
 |---|---|
 | online | `agents/<id>.json` names a pid that is alive and whose start time still matches (`ps -o lstart`), so a reused pid does not count |
-| listening | the agent is inside `chan wait` and holds `flock` on `agents/<id>.listen`; the kernel releases it when the process dies, even after `kill -9` |
+| listening | the agent is inside `chat wait` and holds `flock` on `agents/<id>.listen`; the kernel releases it when the process dies, even after `kill -9` |
 | state and matter | `chan status busy "reviewing PR 12"` writes `state`, `matter` and `updated`; `who` prints the age, because this part is self-reported |
 
 Dead records are pruned when older than a day.
 
 **Delivery.** There is no daemon to push messages. A message reaches an agent in one of three ways, strongest first:
-1. `chan wait`: blocks on a kqueue file event (macOS) or a 50 ms stat poll (elsewhere) and returns when the cursor is behind. In harnesses that notify on a finished background command, run it in the background.
+1. `chat wait`: blocks on a kqueue file event (macOS) or a 50 ms stat poll (elsewhere) and returns when the cursor is behind. In harnesses that notify on a finished background command, run it in the background.
 2. `chan check --hook` from a turn-boundary hook. Hooks fail open.
-3. The agent runs `chan read` when it chooses to.
+3. The agent runs `chat read` when it chooses to.
 
 Waking an idle session needs a bridge (Agora's `run-agent`, 6,700 lines). It is not in this proposal.
 
@@ -97,13 +97,13 @@ Local APFS makes a single `O_APPEND` write atomic, so the lock is not needed her
 
 - From `work`: scopes, the task queue, `order`/`plan`/`next`/`claim`/`accept`/digest, `settings`, run history, and CPU and memory admission. The agent orders its own tasks. The rule "keep a queue of unfinished work, add new items at the end, classify a regression" stays in `AGENTS.md` as prose about the agent's own list.
 - From Agora: the daemon, SQLite, signatures and encryption, roles, the card board, sprints, notes, the scheduler and pools, the web watcher, and the 60 MCP tools. Channel threads, reactions, status, and presence stay.
-- One loss to accept or replace: the admission gate that kept several agents from starting builds together. If it is still wanted, the smallest form is a separate `slot N -- CMD` counting lock built on `flock`, 60 lines, outside `wait` and `chan`.
+- One loss to accept or replace: the admission gate that kept several agents from starting builds together. If it is still wanted, the smallest form is a separate `slot N -- CMD` counting lock built on `flock`, 60 lines, outside `wait` and `chat`.
 
 ## Where it lands
 
-- `bin/wait` and `bin/chan` in the skills repo, linked into `~/.agent-harness/bin` by `install.sh` as `work` is now.
+- `bin/wait` and `bin/chat` in the skills repo, linked into `~/.agent-harness/bin` by `install.sh` as `work` is now.
 - Skill `agora` is replaced by a short skill `agent-chat`; `planner/references/work-queue.md` and `work-scheduling.md` are deleted; about 25 files that mention `work` or Agora are edited (`AGENTS.md`, 11 agent sources, 7 skills, `install.sh`, tests).
-- `claudetalk` is archived with a pointer to `chan`.
+- `claudetalk` is archived with a pointer to `chat`.
 
 ## Open questions
 
