@@ -17,7 +17,7 @@ File-based locks for dependency synchronization:
 1. Create `P1.lock` through `P{N}.lock` at plan start
 2. Lock file content: phase, name, status, depends_on, started, completed, items
 3. Agent reads lock, sets `in_progress`, checks dependency locks
-4. Dependency check: `work wait --gone P{N}.lock` (`scripts/work.py`), which returns the moment the lock is deleted;
+4. Dependency check: `wait --gone P{N}.lock` (`~/.agent-harness/bin/wait`), which returns the moment the lock is deleted;
    never a fixed sleep
 5. On completion: agent **deletes** lock file (absence = done)
 6. An agent edits only files in its own phase's scope; touching a file owned by another in-progress phase produces conflicting edits that no lock can detect

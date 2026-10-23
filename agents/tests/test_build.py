@@ -48,15 +48,39 @@ class GeneratedFilesTests(unittest.TestCase):
                 self.assertTrue(any(line.startswith("model: ") for line in lines))
                 self.assertTrue(any(line.startswith("effort: ") for line in lines))
 
-    def test_every_source_has_the_same_agent_in_all_three_harnesses(self):
+    def test_every_source_has_the_same_agent_in_all_six_harnesses(self):
         sources = {path.stem for path in (AGENTS / "src").glob("*.md")}
         self.assertEqual({path.stem for path in (AGENTS / "claude").glob("*.md")}, sources)
         self.assertEqual({path.name.removesuffix(".agent.md") for path in (AGENTS / "copilot").glob("*.md")}, sources)
         self.assertEqual({path.stem for path in (AGENTS / "codex").glob("*.toml")}, sources)
+        self.assertEqual({path.stem for path in (AGENTS / "vibe").glob("*.toml")}, sources)
+        self.assertEqual({path.stem for path in (AGENTS / "opencode").glob("*.md")}, sources)
+        self.assertEqual({path.parent.name for path in (AGENTS / "agy").glob("*/agent.md")}, sources)
+
+    def test_every_vibe_file_is_valid_toml_with_subagent_type(self):
+        for path in sorted((AGENTS / "vibe").glob("*.toml")):
+            with self.subTest(path.name):
+                agent = tomllib.loads(path.read_text())
+                self.assertEqual(agent["agent_type"], "subagent")
+                self.assertIn(agent["safety"], ("safe", "neutral"))
+                self.assertIn("You are the", agent["instructions"])
+
+    def test_every_opencode_and_agy_file_has_valid_frontmatter(self):
+        for path in sorted((AGENTS / "opencode").glob("*.md")):
+            with self.subTest(f"opencode/{path.name}"):
+                lines = frontmatter(path.read_text())
+                self.assertIn("mode: subagent", lines)
+                self.assertIn("permission:", lines)
+        for path in sorted((AGENTS / "agy").glob("*/agent.md")):
+            with self.subTest(f"agy/{path.parent.name}"):
+                lines = frontmatter(path.read_text())
+                self.assertIn(f"name: {path.parent.name}", lines)
+                self.assertIn("subagent: true", lines)
+                self.assertIn("  - send_message", lines)
 
 
 class RenderTests(unittest.TestCase):
-    def test_a_readonly_shell_is_guarded_on_claude_and_absent_on_copilot(self):
+    def test_a_readonly_shell_is_guarded_on_claude_and_absent_on_copilot_and_opencode(self):
         agent = meta(tools=["read", "search", "shell-readonly"])
         claude = build.render_claude(agent, "Body.\n")
         self.assertIn("tools: Read, Grep, Glob, Bash", claude)
@@ -65,6 +89,16 @@ class RenderTests(unittest.TestCase):
         codex = tomllib.loads(build.render_codex(agent, "Body.\n"))
         self.assertEqual(codex["sandbox_mode"], "read-only")
         self.assertIn("nothing but you enforces", codex["developer_instructions"])
+        vibe = tomllib.loads(build.render_vibe(agent, "Body.\n"))
+        self.assertEqual(vibe["safety"], "safe")
+        self.assertEqual(vibe["enabled_tools"], ["read_file", "grep", "bash", "skill"])
+        self.assertIn("enforce this role's read-only rule yourself", vibe["instructions"])
+        opencode = frontmatter(build.render_opencode(agent, "Body.\n"))
+        self.assertIn("  read: allow", opencode)
+        self.assertNotIn("  bash: allow", opencode)
+        agy = build.render_agy(agent, "Body.\n")
+        self.assertIn("  - run_command", frontmatter(agy))
+        self.assertIn("enforce this role's read-only rule yourself", agy)
 
     def test_a_full_shell_has_no_guard(self):
         agent = meta(tools=["read", "shell", "edit"])
@@ -73,6 +107,14 @@ class RenderTests(unittest.TestCase):
         codex = tomllib.loads(build.render_codex(agent, "Body.\n"))
         self.assertEqual(codex["sandbox_mode"], "workspace-write")
         self.assertNotIn("nothing but you enforces", codex["developer_instructions"])
+        vibe = tomllib.loads(build.render_vibe(agent, "Body.\n"))
+        self.assertEqual(vibe["safety"], "neutral")
+        self.assertIn("edit", vibe["enabled_tools"])
+        opencode = frontmatter(build.render_opencode(agent, "Body.\n"))
+        self.assertIn("  bash: allow", opencode)
+        self.assertIn("  edit: allow", opencode)
+        agy = frontmatter(build.render_agy(agent, "Body.\n"))
+        self.assertIn("  - replace_file_content", agy)
 
     def test_all_with_a_denial_inherits_every_tool_but_the_denied_ones(self):
         agent = meta(tools=["all"], deny=["edit"])
@@ -83,19 +125,36 @@ class RenderTests(unittest.TestCase):
         self.assertIn('"execute"', copilot)
         self.assertIn('"agent"', copilot)
         self.assertNotIn('"edit"', copilot)
+        vibe = tomllib.loads(build.render_vibe(agent, "Body.\n"))
+        self.assertEqual(vibe["disabled_tools"], ["edit", "write_file"])
+        self.assertNotIn("enabled_tools", vibe)
+        opencode = frontmatter(build.render_opencode(agent, "Body.\n"))
+        self.assertIn('  "*": allow', opencode)
+        self.assertIn("  edit: deny", opencode)
+        agy = frontmatter(build.render_agy(agent, "Body.\n"))
+        self.assertIn("  - invoke_subagent", agy)
+        self.assertNotIn("  - replace_file_content", agy)
 
     def test_spawns_become_the_agent_allowlist(self):
         agent = meta(tools=["read", "agents"], spawns=["scout", "test-runner"])
         self.assertIn("tools: Read, Agent(scout, test-runner)", build.render_claude(agent, "Body.\n"))
         self.assertIn('"agent"', build.render_copilot(agent, "Body.\n"))
+        self.assertIn("task", tomllib.loads(build.render_vibe(agent, "Body.\n"))["enabled_tools"])
+        self.assertIn("  task: allow", frontmatter(build.render_opencode(agent, "Body.\n")))
+        self.assertIn("  - invoke_subagent", frontmatter(build.render_agy(agent, "Body.\n")))
 
-    def test_a_turn_budget_is_claudes_limit_and_every_harness_prompt(self):
+    def test_a_turn_budget_is_claudes_limit_opencodes_steps_and_every_harness_prompt(self):
         agent = meta(max_turns="12")
         claude = build.render_claude(agent, "Body.\n")
         self.assertIn("maxTurns: 12", frontmatter(claude))
         self.assertIn("Finish within 12 turns", claude)
         self.assertIn("Finish within 12 turns", build.render_copilot(agent, "Body.\n"))
         self.assertIn("Finish within 12 turns", tomllib.loads(build.render_codex(agent, "Body.\n"))["developer_instructions"])
+        self.assertIn("Finish within 12 turns", tomllib.loads(build.render_vibe(agent, "Body.\n"))["instructions"])
+        opencode = build.render_opencode(agent, "Body.\n")
+        self.assertIn("steps: 12", frontmatter(opencode))
+        self.assertIn("Finish within 12 turns", opencode)
+        self.assertIn("Finish within 12 turns", build.render_agy(agent, "Body.\n"))
 
     def test_each_harness_takes_its_tiers_model_and_effort(self):
         for tier in ("micro", "economy", "standard", "reasoning", "frontier"):
@@ -103,13 +162,17 @@ class RenderTests(unittest.TestCase):
                 agent = meta(tier=tier)
                 expected = build.TIERS[tier]
                 claude = frontmatter(build.render_claude(agent, "Body.\n"))
-                self.assertIn(f"model: {expected['claude']['model']}", claude)
+                self.assertIn(f"model: {expected['claude']['models'][0]}", claude)
+                self.assertIn(f"# fallback_models: {', '.join(expected['claude']['models'][1:])}", claude)
                 self.assertIn(f"effort: {expected['claude']['effort']}", claude)
                 copilot = frontmatter(build.render_copilot(agent, "Body.\n"))
-                self.assertIn(f"model: \"{expected['copilot']['model']}\"", copilot)
+                copilot_models = "[" + ", ".join(f'"{m}"' for m in expected["copilot"]["models"]) + "]"
+                self.assertIn(f"model: {copilot_models}", copilot)
                 self.assertIn(f"reasoningEffort: {expected['copilot']['effort']}", copilot)
-                codex = tomllib.loads(build.render_codex(agent, "Body.\n"))
-                self.assertEqual(codex["model"], expected["codex"]["model"])
+                codex_raw = build.render_codex(agent, "Body.\n")
+                codex = tomllib.loads(codex_raw)
+                self.assertEqual(codex["model"], expected["codex"]["models"][0])
+                self.assertIn("# fallback_models = [", codex_raw)
                 self.assertEqual(codex["model_reasoning_effort"], expected["codex"]["effort"])
 
     def test_an_agents_effort_replaces_its_tiers_everywhere(self):
@@ -125,10 +188,12 @@ class RenderTests(unittest.TestCase):
         self.assertIn("color: pink", claude)
         self.assertIn("background: true", claude)
 
-    def test_a_prompt_keeps_backslashes_and_quotes_in_codex(self):
+    def test_a_prompt_keeps_backslashes_and_quotes_in_codex_and_vibe(self):
         body = "Run `find . -exec true {} \\;` and say \"\"\"done\"\"\" or '''done'''.\n"
         codex = tomllib.loads(build.render_codex(meta(), body))
         self.assertIn(body.strip(), codex["developer_instructions"])
+        vibe = tomllib.loads(build.render_vibe(meta(), body))
+        self.assertIn(body.strip(), vibe["instructions"])
 
 
 class ValidationTests(unittest.TestCase):
@@ -174,17 +239,20 @@ class CheckTests(unittest.TestCase):
     def test_check_names_missing_stale_and_extra_files(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
-            for harness in ("claude", "copilot", "codex"):
+            for harness in ("claude", "copilot", "codex", "vibe", "opencode", "agy"):
                 (root / harness).mkdir()
             (root / "claude" / "a.md").write_text("old")
             (root / "claude" / "gone.md").write_text("x")
             (root / "claude" / "hooks").mkdir()
             (root / "claude" / "hooks" / "guard.py").write_text("hand-written, not generated")
-            files = {"claude/a.md": "new", "codex/b.toml": "x"}
+            (root / "agy" / "scout").mkdir()
+            (root / "agy" / "scout" / "agent.md").write_text("agy-doc")
+            files = {"claude/a.md": "new", "codex/b.toml": "x", "agy/scout/agent.md": "agy-doc"}
             self.assertEqual(
                 build.check(files, root),
                 ["missing  codex/b.toml", "stale    claude/a.md", "extra    claude/gone.md"])
-            self.assertEqual(build.check({"claude/a.md": "old", "claude/gone.md": "x"}, root), [])
+            self.assertEqual(
+                build.check({"claude/a.md": "old", "claude/gone.md": "x", "agy/scout/agent.md": "agy-doc"}, root), [])
 
 
 class ParseTests(unittest.TestCase):
@@ -203,3 +271,4 @@ class ParseTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

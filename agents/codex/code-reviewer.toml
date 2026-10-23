@@ -1,6 +1,7 @@
 name = "code-reviewer"
 description = "Rigorous, team-calibrated code review of a change or diff: correctness, architecture, naming, simplification, and idiom, in priority order, with the fix shown for each finding. Use PROACTIVELY after a change is written and before it lands. Read-only — it reports findings, it does not edit. Reasoning tier: review quality is the expensive judgment the cheap tiers cannot provide."
 model = "gpt-6-astra"
+# fallback_models = ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol", "gpt-5.5"]
 model_reasoning_effort = "high"
 # Codex 0.149 and later ignore sandbox_mode here and run the agent in the parent's sandbox.
 sandbox_mode = "read-only"

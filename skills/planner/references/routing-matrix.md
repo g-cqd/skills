@@ -7,10 +7,10 @@ Before routing, run `bash scripts/discover-skills.sh [project-root]` to get the 
 ## Scan Directories (in priority order)
 
 1. **Project-level** (highest priority — project-specific overrides):
-   - `./.claude/skills/`, `./.codex/skills/`, `./.copilot/skills/`, `./.opencode/skills/`, `./.agents/skills/`
+   - `./.claude/skills/`, `./.codex/skills/`, `./.vibe/skills/`, `./.gemini/skills/`, `./.opencode/skills/`, `./.pi/skills/`, `./.copilot/skills/`, `./.agents/skills/`
    - `./.claude/commands/`
 2. **User-level** (personal defaults):
-   - `~/.claude/skills/`, `~/.codex/skills/`, `~/.copilot/skills/`, `~/.opencode/skills/`, `~/.agents/skills/`
+   - `~/.claude/skills/`, `~/.codex/skills/`, `~/.vibe/skills/`, `~/.gemini/config/skills/`, `~/.config/opencode/skills/`, `~/.pi/agent/skills/`, `~/.copilot/skills/`, `~/.agents/skills/`
    - `~/.claude/commands/`
 
 Project-level skills take precedence over user-level skills with the same name.
@@ -44,7 +44,7 @@ For each intent, scan the live catalog descriptions for the best match. Score by
 
 - If two discovered skills cover the same intent, prefer the more specific one (narrower description)
 - If a skill exists at both project and user level, prefer the project-level version
-- Skills from other tools (codex, copilot, opencode, agents) are treated as equivalent — route by capability match, not tool origin
+- Skills from other tools (codex, vibe, agy, opencode, pi, copilot, agents) are treated as equivalent — route by capability match, not tool origin
 
 ## Composition Rules
 

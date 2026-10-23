@@ -6,7 +6,7 @@ description: >
   PROACTIVELY after a change is written and before it lands. Read-only — it reports findings,
   it does not edit. Reasoning tier: review quality is the expensive judgment the cheap tiers
   cannot provide.
-model: "Claude Opus 5.5"
+model: ["Claude Opus 5.5", "GPT-6 Astra", "Claude Opus 4.7", "Claude Opus 4.6", "Claude Sonnet 5", "GPT-5.5"]
 reasoningEffort: medium
 tools: ["read", "search", "web", "skill", "apple-docs/*"]
 ---

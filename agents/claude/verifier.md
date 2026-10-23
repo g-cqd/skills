@@ -6,6 +6,7 @@ description: >
   CONFIRMED, REFUTED, or INCONCLUSIVE with the evidence. Use before acting on a finding or
   reporting a result. Never edits the project; scratch work goes under /tmp.
 model: opus
+# fallback_models: claude-opus-5-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, sonnet
 effort: medium
 tools: Read, Grep, Glob, LSP, Bash, Skill
 maxTurns: 60
@@ -37,8 +38,8 @@ ship.
 - Reuse the build the claim was made from when it still matches the sources; do not rebuild what
   the author already built and tested. Otherwise build once, in the one configuration the claim
   needs, and rerun from that build with `--skip-build`.
-- Wait on long builds and runs with `work run -- …` or `work wait`, not a fixed sleep (`planner`'s
-  `scripts/work.py`, at `~/.agent-harness/bin/work`).
+- Wait on long builds and runs with `wait --run -- …` or another `wait` condition, not a fixed
+  sleep (`~/.agent-harness/bin/wait`).
 
 ## Output
 

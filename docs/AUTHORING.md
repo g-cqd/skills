@@ -243,9 +243,10 @@ spawns: <optional agents it may start, with the agents capability>
 <system prompt: role, method, stay-in-lane rules, output contract>
 ```
 
-Then `python3 agents/build.py` renders `claude/<name>.md`, `copilot/<name>.agent.md`, and
-`codex/<name>.toml`. It maps the tier to each harness's model and effort (`agents/tiers.json`) and
-each capability to the harness's tools. The header of `build.py` lists each key, and
+Then `python3 agents/build.py` renders `claude/<name>.md`, `copilot/<name>.agent.md`,
+`codex/<name>.toml`, `vibe/<name>.toml`, `opencode/<name>.md`, and `agy/<name>/agent.md`. It maps
+the tier to each harness's model and effort (`agents/tiers.json`) and each capability to the
+harness's tools or permissions. The header of `build.py` lists each key, and
 `python3 agents/build.py --check` fails when a generated file is stale.
 
 Design rules:
@@ -260,9 +261,25 @@ Design rules:
   for a `git log` costs more than one that runs it. An agent that can edit when its job is to
   report is a risk.
 - **Make the agent read-only when its job allows.** `shell-readonly` gives a shell that only reads:
-  Claude Code runs the guard in `agents/claude/hooks/` before each command, Copilot gets no shell,
-  and Codex, which runs each agent in its parent's sandbox, relies on the prompt.
-- **Give small jobs a turn budget.** On Claude Code, `max_turns` stops a micro agent at the
-  budget; on every harness, the build states the budget in the prompt.
+  Claude Code runs the guard in `agents/claude/hooks/` before each command, Copilot and OpenCode get
+  no shell, Mistral Vibe and Antigravity block edits at the tool layer and prepend the read-only
+  shell rule to the prompt, and Codex, which runs each agent in its parent's sandbox, relies on the
+  prompt.
+- **Give small jobs a turn budget.** On Claude Code (`maxTurns`) and OpenCode (`steps`),
+  `max_turns` stops a micro agent at the budget; on every harness, the build states the budget in
+  the prompt.
 `agents/tiers.json` maps tiers to models and is the cost dial. Re-audit it every three months: the
 best-value model in each class changes.
+
+## Tools
+
+`tools/` holds the tools that agents call: `wait.py` and `chat.py` (reference: `docs/tools.md`). A tool is one Python
+file that uses only the standard library, runs on Python 3.9 or later, and needs no setup. `install.sh` links it to
+`~/.agent-harness/bin/<name>`, so a skill or an agent names the tool by that path and does not depend on `PATH`.
+
+Rules for a tool:
+- It keeps no state that the caller cannot see. `wait` keeps none; `chat` keeps flat files under `$CHAT_HOME`.
+- It exits with a status that means one thing: 0 done, 124 the time ran out, 2 usage error.
+- Its tests start real processes and use temporary directories. Write the test first and watch it fail.
+- A skill that tells an agent to use a tool carries the rule in its `SKILL.md` and the command table in `references/`
+  (`planner` holds `chat`, `engineering-practices` holds `wait`).

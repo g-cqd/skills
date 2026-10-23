@@ -9,10 +9,22 @@ import unittest
 WAIT = os.path.join(os.path.dirname(__file__), "..", "wait.py")
 
 
+HOME = tempfile.mkdtemp(prefix="wait-tests-")
+
+
 def wait(*args, timeout=30):
     started = time.monotonic()
-    result = subprocess.run([sys.executable, WAIT, "--every", "0.05", *args], capture_output=True, text=True, timeout=timeout)
+    environment = dict(os.environ, WAIT_HOME=os.path.join(HOME, "jobs"))
+    result = subprocess.run([sys.executable, WAIT, "--every", "0.05", *args], capture_output=True, text=True,
+                            timeout=timeout, env=environment)
     return result, time.monotonic() - started
+
+
+def job_id_of(result):
+    for line in result.stderr.splitlines():
+        if "started job " in line:
+            return line.split("started job ")[1].split(";")[0]
+    raise AssertionError(result.stderr)
 
 
 class WaitTests(unittest.TestCase):
@@ -46,13 +58,80 @@ class WaitTests(unittest.TestCase):
     def test_run_maps_a_signal_to_128_plus_n(self):
         self.assertEqual(wait("--run", "--", "sh", "-c", "kill -TERM $$")[0].returncode, 128 + 15)
 
-    def test_timeout_exits_124_and_stops_the_command(self):
+    def test_a_job_outlives_a_timeout_and_wait_job_continues_it(self):
         marker = self.path
-        result, elapsed = wait("--timeout", "0.5", "--run", "--", "sh", "-c", f"sleep 30; touch {marker}")
+        result, elapsed = wait("--timeout", "0.5", "--run", "--", "sh", "-c",
+                               f"echo begun; sleep 1; echo between; sleep 1; touch {marker}; echo finished; exit 3")
         self.assertEqual(result.returncode, 124)
         self.assertLess(elapsed, 10)
-        self.assertIn("timeout", result.stderr)
-        self.assertFalse(os.path.exists(marker))
+        self.assertIn("begun", result.stdout)
+        job = job_id_of(result)
+        self.assertIn(f"wait --job {job}", result.stderr)
+        time.sleep(1.2)
+        again, _ = wait("--job", job)
+        self.assertEqual(again.returncode, 3, again.stderr)
+        self.assertIn("between", again.stdout, "output written between two calls is printed by the second")
+        self.assertTrue(os.path.exists(marker), "the job kept running after the first wait timed out")
+        self.assertIn("finished", again.stdout)
+        self.assertNotIn("begun", again.stdout, "a resumed wait does not repeat what an earlier call printed")
+        self.assertEqual(wait("--job", job)[0].returncode, 3, "a finished job keeps its status")
+        listed = wait("--jobs")[0].stdout
+        self.assertRegex(listed, job + r"\s+exited 3")
+
+    def test_stop_on_timeout_stops_the_job_and_its_children(self):
+        marker = self.path
+        result, _ = wait("--timeout", "0.5", "--stop-on-timeout", "--run", "--", "sh", "-c",
+                         f"(sleep 2; touch {marker}) & sleep 30")
+        self.assertEqual(result.returncode, 124)
+        time.sleep(2.5)
+        self.assertFalse(os.path.exists(marker), "the job's whole process group was stopped")
+
+    def test_stop_ends_a_running_job(self):
+        result, _ = wait("--timeout", "0.3", "--run", "--", "sleep", "30")
+        job = job_id_of(result)
+        self.assertEqual(wait("--stop", job)[0].returncode, 0)
+        self.assertEqual(wait("--job", job)[0].returncode, 128 + 15)
+        self.assertEqual(wait("--stop", "not-a-job")[0].returncode, 2)
+
+    def test_a_failing_job_ends_the_wait_even_when_other_conditions_remain(self):
+        result, elapsed = wait("--run", "--file", self.path + ".never", "--", "sh", "-c", "exit 5")
+        self.assertEqual(result.returncode, 5)
+        self.assertLess(elapsed, 10)
+
+    def test_a_job_reads_no_standard_input(self):
+        result = subprocess.run([sys.executable, WAIT, "--run", "--", "cat"], input="secret", capture_output=True,
+                                text=True, timeout=30, env=dict(os.environ, WAIT_HOME=os.path.join(HOME, "jobs")))
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn("secret", result.stdout)
+
+    def test_the_jobs_directory_must_be_private(self):
+        shared = os.path.join(self.dir.name, "shared")
+        os.mkdir(shared, 0o777)
+        os.chmod(shared, 0o777)
+        target = os.path.join(self.dir.name, "elsewhere")
+        os.mkdir(target)
+        link = os.path.join(self.dir.name, "link")
+        os.symlink(target, link)
+        environment = dict(os.environ, WAIT_HOME=link)
+        refused = subprocess.run([sys.executable, WAIT, "--run", "--", "true"], capture_output=True, text=True,
+                                 timeout=30, env=environment)
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("refusing", refused.stderr)
+        environment["WAIT_HOME"] = shared
+        fixed = subprocess.run([sys.executable, WAIT, "--run", "--", "true"], capture_output=True, text=True,
+                               timeout=30, env=environment)
+        self.assertEqual(fixed.returncode, 0, fixed.stderr)
+        self.assertEqual(os.stat(shared).st_mode & 0o777, 0o700)
+
+    def test_until_cannot_hang_past_the_timeout(self):
+        result, elapsed = wait("--until", "sleep 30", "--timeout", "1")
+        self.assertEqual(result.returncode, 124)
+        self.assertLess(elapsed, 5)
+
+    def test_until_with_a_missing_program_is_a_usage_error(self):
+        result, _ = wait("--until", "no-such-program-xyz")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("not found", result.stderr)
 
     def test_until_holds_when_the_command_exits_zero(self):
         self.later(0.4, lambda: self.put("w", ""))

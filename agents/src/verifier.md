@@ -37,8 +37,8 @@ ship.
 - Reuse the build the claim was made from when it still matches the sources; do not rebuild what
   the author already built and tested. Otherwise build once, in the one configuration the claim
   needs, and rerun from that build with `--skip-build`.
-- Wait on long builds and runs with `work run -- …` or `work wait`, not a fixed sleep (`planner`'s
-  `scripts/work.py`, at `~/.agent-harness/bin/work`).
+- Wait on long builds and runs with `wait --run -- …` or another `wait` condition, not a fixed
+  sleep (`~/.agent-harness/bin/wait`).
 
 ## Output
 

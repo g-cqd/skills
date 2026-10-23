@@ -15,7 +15,7 @@ import sys
 from dataclasses import dataclass
 from typing import Iterable
 
-ALL_CLIS = ("claude", "codex", "gemini")
+ALL_CLIS = ("claude", "codex", "vibe", "agy", "gemini")
 
 
 @dataclass
@@ -31,6 +31,10 @@ class OpinionResult:
 def detect_current_cli() -> str | None:
     if os.getenv("CLAUDE_SESSION_ID"):
         return "claude"
+    if os.getenv("ANTIGRAVITY_CLI_ALIAS"):
+        return "agy"
+    if os.getenv("VIBE_HOME"):
+        return "vibe"
     if os.getenv("GEMINI_SESSION_ID"):
         return "gemini"
     if os.getenv("CODEX_HOME"):
@@ -90,6 +94,11 @@ def command_variants(cli: str, prompt: str, args: argparse.Namespace) -> Iterabl
 
         yield ["claude", "-p", prompt]
         yield ["claude", "--print", prompt]
+    elif cli == "vibe":
+        yield ["vibe", "-p", prompt, "--output", "text", "--max-turns", str(args.claude_max_turns)]
+        yield ["vibe", "-p", prompt]
+    elif cli == "agy":
+        yield ["agy", "prompt", prompt]
     elif cli == "gemini":
         yield ["gemini", "-p", prompt]
         yield ["gemini", "--prompt", prompt]

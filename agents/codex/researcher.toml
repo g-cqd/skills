@@ -1,6 +1,7 @@
 name = "researcher"
 description = "Answers a factual question from primary sources: official documentation, specifications, release notes, and source code, each fact cited with its URL or path. Use for \"what does the API accept / which version / what do the docs say\" questions, and before relying on anything that changes over time, such as model names, tool flags, or platform availability. Read-only; never edits."
 model = "gpt-6-sol"
+# fallback_models = ["gpt-6.1-sol", "gpt-5.6-sol", "gpt-5.5"]
 model_reasoning_effort = "medium"
 # Codex 0.149 and later ignore sandbox_mode here and run the agent in the parent's sandbox.
 sandbox_mode = "read-only"

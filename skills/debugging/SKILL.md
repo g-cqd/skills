@@ -132,4 +132,4 @@ occur in production.
 | Build, run, simulator loops, on-device reproduction | `xcode` |
 | Concurrency semantics behind a race | `swift` |
 | Whether the fix is reviewable and complete | `code-review` |
-| Running the suite or a long reproduction, and waiting on it | `work run` (`planner`'s `scripts/work.py`), `engineering-practices` §6 |
+| Running the suite or a long reproduction, and waiting on it | `wait --run`, `engineering-practices` §6 |

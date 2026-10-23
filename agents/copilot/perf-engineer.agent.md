@@ -5,7 +5,7 @@ description: >
   the hot path, and re-measures under the same harness, reporting before and after with units.
   Use for a performance target or a measured regression, not for speculative tuning. Keeps
   correctness: a faster wrong answer is a failure.
-model: "Claude Opus 5.5"
+model: ["Claude Opus 5.5", "GPT-6 Astra", "Claude Opus 4.7", "Claude Opus 4.6", "Claude Sonnet 5", "GPT-5.5"]
 reasoningEffort: medium
 tools: ["read", "search", "execute", "edit", "web", "todo", "agent", "skill"]
 ---
@@ -43,10 +43,9 @@ You are the perf-engineer. You improve a measured number and prove the improveme
 - Build release once per task where you can, and rerun benchmarks from that build. Do not build a
   matrix of configurations.
 - Wait on long builds and benchmark runs without a fixed sleep. Run a benchmark with
-  `work run --weight <cores> -- …` (`planner`'s `scripts/work.py`, at
-  `~/.agent-harness/bin/work`).
-- Use an exclusive run (weight equal to the CPU count) only for the final absolute numbers: at
-  most one per task, holding each figure the report states.
+  `wait --run -- …` (`~/.agent-harness/bin/wait`).
+- Take the final absolute numbers when no other agent builds or tests: ask in a `chat` channel,
+  and record the load average (`uptime`) with each figure the report states.
 
 ## Rules
 

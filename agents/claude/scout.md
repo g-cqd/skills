@@ -6,6 +6,7 @@ description: >
   to gather context before any change, and for high-volume fan-out searches. Reports findings;
   never edits.
 model: sonnet
+# fallback_models: claude-sonnet-5-5, claude-sonnet-5, claude-sonnet-4-6, haiku, claude-haiku-4-5
 effort: low
 tools: Read, Grep, Glob, LSP, Bash, Skill
 maxTurns: 40

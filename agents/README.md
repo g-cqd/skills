@@ -58,8 +58,15 @@ edits documents, but its shell is read-only. Enforcement differs per harness:
   `sed -n`, …), refuses the rest with exit 2, and refuses any command it cannot parse. It guards
   against mistakes; it is not a sandbox against a hostile repository. `verifier` has a full shell,
   to build and run tests, so only its prompt keeps it read-only.
-- **Copilot** enforces it by the tool list only. It has no per-agent hook, so an agent with a
-  read-only shell gets no shell on Copilot.
+- **Copilot** and **OpenCode** enforce it by the tool and permission list. Neither has a per-agent
+  hook, so an agent with a read-only shell gets no shell (`execute` / `bash`) there.
+- **Mistral Vibe** blocks edits at the tool layer: `enabled_tools` omits `edit` and `write_file`,
+  and the Vibe runtime sets `file_system.write_file` and `file_system.search_replace` to `"deny"`.
+  The build also sets `safety = "safe"` on a read-only subagent and prepends a read-only shell rule
+  to `instructions`.
+- **Google Antigravity (`agy`)** blocks edits at the tool layer: `tools` omits
+  `replace_file_content`, `multi_replace_file_content`, and `write_to_file`. When the agent has
+  `run_command`, the build prepends the read-only shell rule to the agent instructions.
 - **Codex** cannot enforce it per agent. Since Codex 0.149, Codex ignores an agent file's
   `sandbox_mode`, MCP, and approval settings, and runs the agent in its parent's sandbox. The
   generated file still sets `sandbox_mode` for older versions and opens the prompt with the
@@ -67,66 +74,72 @@ edits documents, but its shell is read-only. Enforcement differs per harness:
 
 ## The cost dial — `tiers.json`
 
-`tiers.json` maps each tier to a model and effort per harness. It is the only place cost is
-tuned:
+`tiers.json` maps each tier to an ordered `models` fallback list and an effort per harness. The
+list lets a harness fall back when a preferred model is unavailable on a plan or provider. It is
+the only place cost is tuned:
 
-| Tier | Claude Code | Codex | Copilot | For |
-|---|---|---|---|---|
-| micro | `sonnet`, low | `gpt-6-luna`, low | Claude Sonnet 5, low | one small mechanical job with a clear stop |
-| economy | `sonnet`, medium | `gpt-6-sol`, low | Claude Sonnet 5, medium | mechanical, high-volume, cheap to retry |
-| standard | `sonnet`, high | `gpt-6-sol`, medium | Claude Sonnet 5, high | clear-scope reasoning; tests catch mistakes |
-| reasoning | `opus`, medium | `gpt-6-astra`, high | Claude Opus 5.5, medium | ambiguous, high-risk, expensive to fix |
-| frontier | `fable`, high | `gpt-6-astra`, xhigh | Claude Fable 5.1, high | the costliest miss, the longest runs |
+| Tier | Claude Code (`models`) | Codex (`models`) | Copilot (`model: [...]`) | Vibe / OpenCode / AGY | For |
+|---|---|---|---|---|---|
+| micro | `sonnet` → `haiku` (low) | `gpt-6-luna` → `gpt-6-sol` → `gpt-5.6-luna` → `gpt-5.4-mini` (low) | `Claude Sonnet 5` → `Claude Sonnet 4.6` → `GPT-5.4 mini` → `Claude Haiku 4.5` (low) | `devstral-small` / `fast` / `flash` (low) | one small mechanical job with a clear stop |
+| economy | `sonnet` → `haiku` (medium) | `gpt-6-sol` → `gpt-6-luna` → `gpt-5.6-sol` → `gpt-5.4-mini` (low) | `Claude Sonnet 5` → `Claude Sonnet 4.6` → `GPT-5.4 mini` (medium) | `devstral-2` / `balanced` / `flash` (low) | mechanical, high-volume, cheap to retry |
+| standard | `sonnet` → `opus` → `haiku` (high) | `gpt-6-sol` → `gpt-6.1-sol` → `gpt-5.6-sol` → `gpt-5.4` (medium) | `Claude Sonnet 5` → `Claude Sonnet 4.6` → `GPT-5.4` (high) | `devstral-2` / `balanced` / `inherit` (medium) | clear-scope reasoning; tests catch mistakes |
+| reasoning | `opus` → `fable` → `sonnet` (medium) | `gpt-6-astra` → `gpt-6.1-sol` → `gpt-6-sol` → `gpt-5.6-terra` → `gpt-5.4` (high) | `Claude Opus 5.5` → `Claude Opus 4.6` → `Claude Sonnet 5` → `GPT-5.4` (medium) | `devstral-2` / `deep` / `pro` (high) | ambiguous, high-risk, expensive to fix |
+| frontier | `fable` → `opus` → `sonnet` (high) | `gpt-6-astra` → `gpt-6.1-sol` → `gpt-6-sol` → `gpt-5.6-terra` → `gpt-5.4` (xhigh) | `Claude Fable 5.1` → `Claude Opus 5.5` → `Claude Opus 4.6` → `GPT-5.4` (high) | `devstral-2` / `deep` / `pro` (xhigh) | the costliest miss, the longest runs |
 
 An agent's own `effort` replaces its tier's effort on every harness. **Re-audit this map every
 three months:** the best-value model in each class changes, and a stale map costs more for the same
 work. To change it, edit `tiers.json` and re-run `build.py`; no agent source changes.
 
-Model names follow each harness's documentation. Claude Code takes an alias (`sonnet`, `opus`,
-`fable`) or a full id (`claude-opus-5-5`, `claude-fable-5-1`). Codex takes a slug;
-`codex debug models` lists the slugs the installed client knows. Copilot's documentation for VS
-Code gives display names (`Claude Opus 5.5`) and no other form; the Copilot CLI accepts them from
-version 1.0.24. Claude Opus 5.5 and Claude Fable 5.1 need Copilot Pro+ or higher. In an organization, the
-Fable 5.1 policy is off until an admin enables it.
+Model names follow each harness's schema:
+- **Copilot** natively accepts an ordered YAML array (`model: ["Model 1", "Model 2", ...]`) and uses
+  the first available model. The names are display names (`Claude Opus 5.5`); the Copilot CLI
+  accepts them from version 1.0.24. Claude Opus 5.5 and Claude Fable 5.1 need Copilot Pro+ or
+  higher, and in an organization the Fable 5.1 policy is off until an admin enables it.
+- **Claude Code** (`model: <primary>` + `# fallback_models: ...`) takes an alias (`sonnet`, `opus`,
+  `fable`, `haiku`) or a full id (`claude-opus-5-5`, `claude-fable-5-1`).
+- **Codex** (`model = "<primary>"` + `# fallback_models = [...]`) takes a slug; `codex debug models`
+  lists the ones the installed client knows.
+- **Mistral Vibe (`vibe`)**, **Google Antigravity (`agy`)**, and **OpenCode** subagents inherit the
+  session's active model by default and record their tier's ordered `tier_models` fallback list in
+  the generated header.
 
 ## Cross-harness compatibility
 
 Each harness reads a different format and tunes different fields, so one neutral source renders
-three variants:
+six variants:
 
-| | Claude Code | Copilot | Codex |
-|---|---|---|---|
-| Location | `~/.claude/agents/<name>.md` | `~/.copilot/agents/<name>.agent.md` | `~/.codex/agents/<name>.toml` |
-| Model and effort | `model`, `effort` | `model`, `reasoningEffort` (CLI) | `model`, `model_reasoning_effort` |
-| Tools | `tools` allowlist, or `disallowedTools` | `tools` aliases | the parent's |
-| Delegation | `Agent(name, …)` in `tools` | `agent` alias | `spawn_agent`, session-wide |
-| Limits | `maxTurns`, hooks | none per agent | none per agent |
-| Skills | `skills` loaded at start, and the Skill tool | the `skill` tool | discovered automatically |
+| | Claude Code | Codex | Mistral Vibe | Antigravity (`agy`) | OpenCode | Copilot |
+|---|---|---|---|---|---|---|
+| Location | `~/.claude/agents/<name>.md` | `~/.codex/agents/<name>.toml` | `~/.vibe/agents/<name>.toml` | `~/.gemini/config/agents/<name>/agent.md` | `~/.config/opencode/agents/<name>.md` | `~/.copilot/agents/<name>.agent.md` |
+| Model and effort | `model`, `effort` | `model`, `model_reasoning_effort` | session model | `inherit` (or caller tier) | session model | `model`, `reasoningEffort` |
+| Tools | `tools` allowlist, or `disallowedTools` | the parent's | `enabled_tools` or `disabled_tools` | `tools` allowlist | `permission` map (`allow`/`deny`) | `tools` aliases |
+| Delegation | `Agent(name, …)` in `tools` | `spawn_agent`, session-wide | `task` tool | `invoke_subagent` | `task` permission | `agent` alias |
+| Limits | `maxTurns`, hooks | none per agent | `safety` (`safe`/`neutral`) | none per agent | `steps` | none per agent |
+| Skills | `skills` loaded at start, and the Skill tool | discovered automatically | `skill` tool | discovered automatically | `skill` permission | the `skill` tool |
 
 The capability map in `build.py`:
 
-| Capability | Claude Code | Copilot |
-|---|---|---|
-| `read` | Read | `read` |
-| `search` | Grep, Glob | `search` |
-| `lsp` | LSP (needs a code-intelligence plugin) | — |
-| `shell` | Bash | `execute` |
-| `shell-readonly` | Bash, with the read-only guard | — |
-| `edit` | Edit, Write | `edit` |
-| `web` | WebFetch, WebSearch | `web` |
-| `todo` | TodoWrite | `todo` |
-| `agents` | `Agent(<spawns>)` | `agent` |
-| `skills` | Skill | `skill` |
-| `apple-docs` | `mcp__apple-docs` | `apple-docs/*` |
+| Capability | Claude Code | Copilot | Mistral Vibe | OpenCode | Antigravity (`agy`) |
+|---|---|---|---|---|---|
+| `read` | Read | `read` | `read_file` | `read` | `view_file`, `view_file_outline`, `view_code_item` |
+| `search` | Grep, Glob | `search` | `grep` | `grep`, `glob` | `grep_search`, `find_by_name` |
+| `lsp` | LSP | — | — | `lsp` | — |
+| `shell` | Bash | `execute` | `bash` | `bash` | `run_command`, `manage_task` |
+| `shell-readonly` | Bash + guard | — | `bash` + prompt rule | — | `run_command`, `manage_task` + prompt rule |
+| `edit` | Edit, Write | `edit` | `edit`, `write_file` | `edit` | `replace_file_content`, `multi_replace_file_content`, `write_to_file` |
+| `web` | WebFetch, WebSearch | `web` | `web_fetch`, `web_search` | `webfetch`, `websearch` | `read_url_content`, `search_web` |
+| `todo` | TodoWrite | `todo` | `todo` | `todowrite` | — |
+| `agents` | `Agent(<spawns>)` | `agent` | `task` | `task` | `invoke_subagent`, `manage_subagents`, `define_subagent` |
+| `skills` | Skill | `skill` | `skill` | `skill` | — |
+| `apple-docs` | `mcp__apple-docs` | `apple-docs/*` | `mcp_apple_docs_*` | `apple-docs_*` | `call_mcp_tool`, `list_resources`, `read_resource` |
 
 `tools: all` with `deny:` gives every tool the session has except the denied ones. The
 orchestrator uses it to keep messaging and MCP tools without Edit and Write. On macOS, Claude Code
 leaves Grep and Glob out of a session that has Bash, so an agent with a shell searches with `grep`
 and `find`, which the guard allows.
 
-`max_turns` renders as Claude's `maxTurns` (the agent stops and returns partial work that can be
-resumed) and as a Budget section in the prompt on every harness, because Copilot and Codex have
-no per-agent limit.
+The turn budget is Claude's `maxTurns`, OpenCode's `steps`, and a Budget section in the prompt on
+every harness.
 
 ## Layout
 
@@ -134,11 +147,14 @@ no per-agent limit.
 agents/
   src/*.md                neutral sources — EDIT THESE
   tiers.json              tier -> per-harness model and effort (the cost dial)
-  build.py                render src/ -> claude/ copilot/ codex/; --check verifies they are current
+  build.py                render src/ -> claude/ copilot/ codex/ vibe/ opencode/ agy/; --check verifies they are current
   claude/hooks/           hand-written: the read-only Bash guard
   claude/*.md             generated — do not edit
   copilot/*.agent.md      generated — do not edit
   codex/*.toml            generated — do not edit
+  vibe/*.toml             generated — do not edit
+  opencode/*.md           generated — do not edit
+  agy/*/agent.md          generated — do not edit
   tests/                  tests for build.py and the guard
 ```
 
@@ -146,7 +162,7 @@ agents/
 
 ```bash
 # edit a source or the tier map, then:
-python3 agents/build.py                              # regenerate all three variants
+python3 agents/build.py                              # regenerate all six variants
 python3 agents/build.py --check                      # exit 1 if a generated file is stale
 python3 -m unittest discover -s agents/tests         # build and guard tests
 
@@ -169,3 +185,7 @@ comma-separated), a `description` that says when to delegate to it, and the prom
 - Copilot CLI: https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference
 - Codex subagents: https://learn.chatgpt.com/docs/agent-configuration/subagents
 - Codex configuration: https://learn.chatgpt.com/docs/config-file/config-reference
+- Mistral Vibe agents and TOML profiles: `~/.vibe/agents/*.toml` (`vibe/core/agents/models.py`)
+- Google Antigravity (`agy`) subagents: `~/.gemini/config/agents/<name>/agent.md`
+- OpenCode subagents: `~/.config/opencode/agents/<name>.md` (`opencode debug agents`)
+

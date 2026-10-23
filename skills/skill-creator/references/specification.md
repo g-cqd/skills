@@ -136,24 +136,25 @@ Three-level loading system to manage context efficiently:
 | Scope | Path | Applies To |
 |-------|------|------------|
 | Enterprise | Managed settings | All org users |
-| Personal | `~/.claude/skills/<name>/SKILL.md` | All your projects |
-| Project | `.claude/skills/<name>/SKILL.md` | This project only |
+| Personal | `~/.claude/skills/`, `~/.codex/skills/`, `~/.vibe/skills/`, `~/.gemini/config/skills/`, `~/.config/opencode/skills/`, `~/.pi/agent/skills/`, `~/.agents/skills/` | All your projects |
+| Project | `.claude/skills/`, `.codex/skills/`, `.vibe/skills/`, `.gemini/skills/`, `.opencode/skills/`, `.pi/skills/`, `.agents/skills/` | This project only |
 | Plugin | `<plugin>/skills/<name>/SKILL.md` | Where plugin enabled |
 
-Priority: enterprise > personal > project. Plugin skills use `plugin:skill` namespace.
+Priority: enterprise > personal > project (with project overrides winning when the same skill name exists in both project and personal scopes). Plugin skills use `plugin:skill` namespace.
 
 ## Cross-Platform Compatibility
 
 The Agent Skills standard works across platforms. Platform-specific features:
 
-| Feature | Claude Code | Codex | Cursor | Others |
-|---------|:-:|:-:|:-:|:-:|
-| SKILL.md + frontmatter | Yes | Yes | Yes | Yes |
-| `context: fork` (subagents) | Yes | No | No | Varies |
-| `allowed-tools` | Yes | No | No | Varies |
-| `disable-model-invocation` | Yes | No | No | Varies |
-| Dynamic context injection | Yes | No | No | No |
-| `agents/openai.yaml` | No | Yes | No | No |
+| Feature | Claude Code | Codex | Mistral Vibe | Antigravity (`agy`) | OpenCode | Pi |
+|---------|:-:|:-:|:-:|:-:|:-:|:-:|
+| `SKILL.md` + frontmatter | Yes | Yes | Yes | Yes | Yes | Yes |
+| `allowed-tools` | Yes | No | Yes | No | No | No |
+| `user-invocable` | Yes | No | Yes | No | No | No |
+| `context: fork` (subagents) | Yes | No | No | No | No | No |
+| `disable-model-invocation` | Yes | No | No | No | No | Yes |
+| Dynamic context injection | Yes | No | No | No | No | No |
+| `agents/openai.yaml` | No | Yes | No | No | No | No |
 
 For Codex compatibility, also create `agents/openai.yaml` — see `references/openai_yaml.md`.
 

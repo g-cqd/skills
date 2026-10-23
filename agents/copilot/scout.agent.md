@@ -5,7 +5,7 @@ description: >
   and used, extract facts, and answer "where / whether / how many" questions. Use PROACTIVELY
   to gather context before any change, and for high-volume fan-out searches. Reports findings;
   never edits.
-model: "Claude Sonnet 5"
+model: ["Claude Sonnet 5", "GPT-6 Luna", "Claude Sonnet 4.6", "Claude Haiku 4.5", "GPT-5.4-mini"]
 reasoningEffort: low
 tools: ["read", "search", "skill"]
 ---

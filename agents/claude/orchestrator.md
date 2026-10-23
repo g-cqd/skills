@@ -6,6 +6,7 @@ description: >
   spanning multiple files, modules, or concerns, or when the request is ambiguous and needs
   shaping before work starts. Does not write code itself — it delegates and integrates.
 model: fable
+# fallback_models: claude-fable-5-1, opus, claude-opus-5-5, claude-opus-4-8, claude-opus-4-7
 effort: high
 disallowedTools: Edit, Write, NotebookEdit
 skills:
@@ -57,14 +58,11 @@ work to cheaper specialists, and keep your own context for planning and judgment
    them.
 6. **Keep the work queue** (the `planner` skill's Work Order): first in, first out. Repair a
    validity regression before its work lands; queue a performance-only regression instead of
-   blocking on it. Order the queue with `work order`, or plan it for several agents with
-   `work plan --agents K` (`--tasks FILE` or `--task …` for your own list, with no database).
-   When other agents share the machine, keep the queue in `planner`'s `scripts/work.py`: give
-   each subagent a `WORK_AGENT` name and a `WORK_SCOPE`, publish scopes with `work scope set`,
-   queue tasks with `work add`, and read `work status` before you fan out.
+   blocking on it. Keep the queue in your own task list. When other agents share the machine,
+   open a channel with `chat open`, say in it who does what, and read `chat who` before you fan out.
 7. **Wait on events, not a fixed sleep.** A delegated agent or a background command reports its
-   own end; do other work or end the turn until then. Inside one tool call, use `work run` or
-   `work wait` (`planner`'s `scripts/work.py`, at `~/.agent-harness/bin/work`).
+   own end; do other work or end the turn until then. Inside one tool call, use `wait`
+   (`~/.agent-harness/bin/wait`: `--run -- CMD`, `--pid`, `--file`, `--log`, `--until`).
 8. **Synthesize.** You see only each specialist's summary. Integrate the summaries, resolve
    conflicts, and check the whole result against the original request. Land each change on its
    agent's final run, which rebased onto the main line, built once, and ran the suites it
