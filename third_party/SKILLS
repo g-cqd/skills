@@ -3,4 +3,3 @@
 # Pin rea to the tag of the rea-agents release your MCP configuration runs (now rea-agents-6.5.0): the skill and the
 # server's tool schemas must match.
 third_party/rea|.agents/skills/reverse-engineer-anything
-third_party/kali-pentest|kali-pentest

@@ -6,8 +6,7 @@ All notable changes to this repository. Dates are commit dates.
 
 ### Added
 - `pentest` skill: an authorized penetration test end to end with Kali CLI tools over SSH, Docker, or the local
-  system. Combines kali-pentest's workflow and tool catalog, HackSkills' red-team doctrine, and RedAmon's agent-skill
-  structure. Deep tool and playbook detail is vendored from the kali-pentest submodule.
+  system: doctrine and routing in `SKILL.md`, tool selection, engagement loop, and reporting in `references/`.
 - `wait`: block until a process exits, a file is ready, a path is gone, a log line matches, or a command exits 0.
   `wait --run` starts the command as a job that outlives a timeout or a killed call; `wait --job ID` continues the
   wait, `wait --stop ID` stops it, `wait --jobs` lists them.

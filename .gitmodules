@@ -2,6 +2,3 @@
 	path = third_party/rea
 	url = https://github.com/morluto/rea
 	shallow = true
-[submodule "third_party/kali-pentest"]
-	path = third_party/kali-pentest
-	url = https://github.com/x-glacier/kali-pentest
