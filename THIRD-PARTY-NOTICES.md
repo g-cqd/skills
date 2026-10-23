@@ -10,7 +10,8 @@ License: Apache License 2.0 — see `skills/skill-creator/LICENSE.txt`.
 
 ## Swift concurrency references
 
-The reference files under `skills/swift/references/concurrency/` are derived
+The reference files under `skills/swift/references/concurrency/`, and the "Setup, teardown, and scoping traits"
+section of `skills/testing/references/swift-testing.md`, are derived
 from **Swift-Concurrency-Agent-Skill** by Antoine van der Lee
 (https://github.com/AvdLee/Swift-Concurrency-Agent-Skill).
 

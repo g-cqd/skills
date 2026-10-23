@@ -102,6 +102,81 @@ Attach data to test results for debugging:
 }
 ```
 
+## Setup, teardown, and scoping traits
+
+### `init` and `deinit`
+
+```swift
+@MainActor
+final class DatabaseTests {
+    let database: Database
+    
+    init() async throws {
+        database = Database()
+        await database.prepare()
+    }
+    
+    deinit {
+        // Synchronous cleanup only
+    }
+    
+    @Test
+    func `inserts an item into the database`() async throws {
+        try await database.insert(item)
+        #expect(await database.count() == 1)
+    }
+}
+```
+
+**Limitation**: `deinit` cannot call async methods.
+
+### Scoping traits for async teardown
+
+For async teardown:
+
+```swift
+@MainActor
+struct DatabaseTrait: SuiteTrait, TestTrait, TestScoping {
+    func provideScope(
+        for test: Test,
+        testCase: Test.Case?,
+        performing function: () async throws -> Void
+    ) async throws {
+        let database = Database()
+        
+        try await Environment.$database.withValue(database) {
+            await database.prepare()
+            try await function()
+            await database.cleanup() // Async teardown
+        }
+    }
+}
+
+// Environment for task-local storage
+@MainActor
+struct Environment {
+    @TaskLocal static var database = Database()
+}
+
+// Apply to suite
+@Suite(DatabaseTrait())
+@MainActor
+final class DatabaseTests {
+    @Test
+    func `inserts an item through the environment database`() async throws {
+        try await Environment.database.insert(item)
+    }
+}
+
+// Or apply to individual test
+@Test(DatabaseTrait())
+func `runs with a fresh database`() async throws {
+    // Test code
+}
+```
+
+**Use when**: Need async cleanup after each test.
+
 ## Async Testing
 
 - Use `withMainSerialExecutor` for deterministic tests
