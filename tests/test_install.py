@@ -7,6 +7,7 @@ import os
 import pathlib
 import subprocess
 import tempfile
+import time
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -188,6 +189,7 @@ while [ $# -gt 0 ]; do
   case "$1" in --output-dir) out="$2"; shift 2 ;; *) shift ;; esac
 done
 [ -n "$FAKE_XCODE_FAIL" ] && exit 1
+[ -n "$FAKE_XCODE_HANG" ] && exec sleep 30
 mkdir -p "$out"
 for name in $FAKE_XCODE_SKILLS; do
   mkdir -p "$out/$name"; printf -- '---\nname: %s\ndescription: x\n---\n' "$name" > "$out/$name/SKILL.md"
@@ -233,6 +235,15 @@ class ThirdPartySkillTests(InstallCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("the export failed", result.stdout)
         self.assertFalse((self.root / "skills" / "swiftui-specialist").exists())
+
+    def test_a_hanging_export_is_stopped_and_the_previous_one_kept(self):
+        self.run_xcode("device-interaction")
+        started = time.monotonic()
+        result = self.run_xcode("device-interaction", FAKE_XCODE_HANG="1", AGENT_HARNESS_XCODE_TIMEOUT="2")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertLess(time.monotonic() - started, 20)
+        self.assertIn("did not finish in 2 s", result.stdout)
+        self.assertTrue((self.root / "skills" / "device-interaction" / "SKILL.md").exists())
 
     def test_a_failed_export_keeps_the_previous_one(self):
         self.run_xcode("device-interaction")
