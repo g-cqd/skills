@@ -55,7 +55,7 @@ UIScene lifecycle, which is an adoption task *and* a hard iOS 27 gate.
 ## 2. SDK-generation framework adoption
 
 The iOS 26 / macOS 26 generation. For the next generation see `swiftui` (SDK 27 view APIs) and
-§3.4 plus `xcode` (Xcode 27 tooling).
+§3 plus `xcode` (Xcode 27 tooling).
 
 | Area | Reference |
 |---|---|
@@ -93,7 +93,7 @@ required work for the move to Xcode 27, not as optional polish.
 
 ### 2.1 App Intents
 
-The files named `app-intents-specialist/...`, `app-intents-whats-new-27/...` and `app-resizability/...` belong to the Xcode skill pack: `install.sh` exports it from Xcode 27.1 or later and links each skill into the skills directory (see `xcode`, "Xcode skill pack"). When the pack is not installed, use `apple-docs`.
+The files named `app-intents-specialist/...` and `app-intents-whats-new-27/...` belong to the Xcode skill pack, under `~/.agent-harness/xcode-skills/` (see `xcode`, "Xcode skill pack"). When the pack is not installed, use `apple-docs`.
 
 Apple publishes this guidance and it supersedes prior training. Read the reference for the topic in
 play before writing or reviewing code; the files teach the non-obvious traps rather than restate
@@ -150,179 +150,22 @@ New in iOS 26 and 27, in `app-intents-whats-new-27/references/` (floors are in e
 
 ## 3. UIKit modernization
 
-Modernize UIKit apps (Swift and Objective-C) for multi-window and resizable presentation: remove
-legacy shared-state APIs and migrate to the scene lifecycle.
+Use for UIKit apps (Swift and Objective-C) that must adapt to a window that changes size, support multiple windows, or
+move to the scene lifecycle: replacing `UIScreen.main`, layout checks on `interfaceOrientation` or
+`userInterfaceIdiom`, hard-coded safe-area insets, and app-delegate lifecycle callbacks.
 
-### 3.1 The governing principles
+Follow Apple's procedure in `~/.agent-harness/xcode-skills/app-resizability/SKILL.md` (from the Xcode skill pack; see `xcode`, "Xcode skill pack"): its principles,
+its fast path, its workflow, deprecate-and-forward, and the read-only prerequisite checks for a whole project. It
+routes each task to a file under `~/.agent-harness/xcode-skills/app-resizability/references/` (`uiscreen-task.md`, `orientation-task.md`,
+`scene-lifecycle-task.md`, `safe-area-task.md`, `idiom-task.md`).
 
-The task references cite these by number. Keep the numbering.
+Rules of this repository on top of it:
 
-1. **Closest to the consumer.** Prefer the information nearest the point of use: a view's trait
-   collection over the window's, the window's over the screen's.
-2. **Always apply a replacement when the target API is present.** A lone TODO is a failure. **An
-   empty diff on a file containing the target API is also a failure.** Skip only when the API
-   appears exclusively in dead code (`#if 0`). When two replacements are both valid, pick the one
-   that fits the request rather than producing nothing. Never silently skip a file — if you will
-   not change it, say why. Do not over-think simple substitutions (§3.2): empty diffs on simple
-   files are the single most common mistake.
-3. **TODOs must be actionable.** State *why*, *what the replacement would be*, and any lifecycle or
-   threading concern, on their own line above the unchanged code. A vague TODO is worse than none.
-   Indent each line of an inserted comment to match the line it precedes; do not re-emit the next
-   line to realign it, because that edits a line you were not asked to touch.
-4. **No redundant TODO.** Where an existing `#pragma clang diagnostic ignored` with a bug
-   reference, an existing TODO, or a deprecation comment already covers the migration, add nothing.
-5. **Ask before a risky change.** When a replacement could break callers or change observable
-   behaviour (a header signature other modules import, or substituting `width > height` for
-   orientation where left-versus-right matters), ask first. Fall back to a TODO only when running
-   non-interactively or when the user declines. The drop-in replacements in §3.2 are not risky;
-   apply them (principle 2).
-6. **Honor explicit instructions.** If the user names an attribute, parameter name or position,
-   trait source, or fallback, use exactly that. Apply the reference-file defaults only when the
-   request is general.
-7. **Never replace a dynamic value with a literal.** Replacements stay dynamic.
-8. **Preserve control flow.** Prefer drop-in replacements that keep the original structure; add a
-   guard or early return only when direct substitution does not work. After each edit, check that
-   branching survives: collapsing `if`/`else` into sequential execution runs both bodies
-   unconditionally, a critical bug. Remove a branch only when the active task names that condition
-   itself as the defect and says the correct behaviour is unconditional. Then delete the
-   condition, keep the body that matches the correct behaviour, and name the removed branch in the
-   summary.
-9. **Stay in scope.** Touch only lines containing the active task's target API. No adjacent
-   deprecation fixes, no whitespace trimming, no reformatting. Out-of-scope edits turn a clean
-   change into a warning.
-10. **Extract a repeated replacement** into a named local when the same value is used several times
-    in one scope.
-11. **Never walk global scene or window state** as a "replacement": not `UIApplication.shared`,
-    not `UIDevice.current`, not `UIScreen.main`. If no local object is in reach, add a parameter to
-    the method and update its callers.
-12. **Complete patterns: atomic, never partial.** A multi-part pattern applies as one unit (§3.4);
-    an API replacement plus its reactive update (trait-change observation) is one change. If you
-    cannot finish every part, skip with an explicit reason.
-13. **Preserve unrelated guards and fallbacks.** Change only the reference to the target API. Leave
-    `respondsToSelector:` checks, nil guards, and `@available` checks unchanged.
-14. **Off-target replacement guard.** Before editing a line, verify that the line contains the
-    target API of the *active* task and that you are editing the deprecation the user asked about,
-    not a nearby line that looks similar.
-
-### 3.2 Fast path — apply and move on
-
-These `UIScreen.main` occurrences need no analysis:
-
-| Original | Replacement |
-|---|---|
-| `UIScreen.main.scale` (Swift) in a `UIView`/`UIViewController` instance method, used inline | `self.traitCollection.displayScale` |
-| `[UIScreen mainScreen].scale` (ObjC), same conditions | `self.traitCollection.displayScale` |
-| `UIScreen.main.scale` in `layoutSubviews`, `drawRect:`, `updateConstraints`, `viewIsAppearing:` | `self.traitCollection.displayScale` — no registration needed, UIKit calls these on trait change |
-
-If the enclosing class is a `UIView`/`UIViewController` and the value is not stored into an ivar,
-layer property, constraint, or cached image, **substitute without further analysis**. Analyze only
-a non-view class, a cached value, a class/static method, or a case with special instructions.
-
-### 3.3 Workflow
-
-**Phase 0 — prerequisites.** When the request covers a project, run the three read-only checks in
-§3.7 first.
-
-**Phase 1 — detect.** Run detection for **each** task in the registry (§3.5) that applies, not
-only one. Foldable-iPhone ("iPhone Duo") and Stage Manager requests, split-screen readiness, and
-"make this app resizable" all mean every task, because a screen that changes size exposes all of
-them.
-
-**Phase 2 — analyze** each occurrence: class hierarchy (view subclass vs plain `NSObject`), method
-kind (instance, static, `dispatch_once` helper), lifecycle phase, and intent (layout, rendering,
-display scale, full-screen dimensions). Use subagents to keep context small.
-
-**Phase 3 — decide.**
-
-| Condition | Action |
-|---|---|
-| A safe 1:1 replacement exists | **Apply it**, with no added commentary |
-| Several valid approaches, or relocation >10 lines | **Ask the user** |
-| No safe replacement (rare) | Leave an actionable TODO — never a silent empty diff |
-
-Repo note, not from Apple: when principle 2 and this table disagree, ask the user if you can ask. If you cannot ask, pick the replacement that fits the request.
-
-**Phase 3b — completeness.** Before starting, write out the full file list; mark each file done.
-Process files one at a time or in batches of 3 to 5, so the tail of the list is not dropped.
-Before finishing, compare the list against your output: **any file with neither a diff nor an
-explicit skip reason is a processing failure.** Large files (1000+ lines) and macro-heavy files
-are not exempt; when unsure how to fix one, ask rather than emit an empty diff.
-
-**Phase 4 — implement** per the active task's gates and post-file checklist.
-
-**Phase 5 — verify** file coverage with a subagent. Every input file has a non-empty diff or a
-stated reason.
-
-### 3.4 Deprecate-and-forward — atomic, never partial
-
-Multi-part patterns apply as one unit. Deprecate-and-forward has **four** parts:
-
-1. A new overload with the right parameter name, type, and position.
-2. The old method delegating to it via shared state (`UITraitCollection.current`, `UIScreen.main`).
-3. The old method marked deprecated.
-4. **The deprecated wrapper kept in place.**
-
-> **Never delete the old method when adding the overload** — even if it looks unused. Deleting it
-> removes the deprecation signal and drops the migration bridge callers rely on to find the new
-> API. This holds for ObjC methods, Swift methods, initializers, computed properties, and
-> protocol-extension methods. If you are removing a method while adding an overload, stop.
-
-Replacing the pattern with an inline reference to a shared object is also an error.
-If you cannot complete all four parts, skip with an explicit reason.
-
-Where an API replacement also needs a **reactive update** (trait-change observation), the two are
-one atomic change. Do not apply one without the other.
-
-**Deprecate at the lowest method that touches the deprecated API.** When several callers funnel
-into one helper that reads the shared state, deprecate **the helper**; do not make every public
-caller grow a `traitCollection:` parameter. When each caller reads the state directly with no
-helper, the callers are the lowest point.
-
-### 3.5 Task registry
-
-Apply every task unless the request scopes to a subset. Run them in the order of the table.
-
-| Task | Reference | What it does |
-|---|---|---|
-| `UIScreen.main` | `app-resizability/references/uiscreen-task.md` | Replace with context-appropriate APIs |
-| Orientation | `app-resizability/references/orientation-task.md` | Replace layout-related orientation checks with size classes or window bounds, and migrate the deprecated scene geometry callback to `didUpdateEffectiveGeometry` |
-| Scene lifecycle | `app-resizability/references/scene-lifecycle-task.md` | Migrate `AppDelegate` to `SceneDelegate` |
-| Safe area | `app-resizability/references/safe-area-task.md` | Replace `topLayoutGuide` and hard-coded insets with safe-area references; handle asymmetric insets and insets that change while the app runs |
-| `userInterfaceIdiom` | `app-resizability/references/idiom-task.md` | Replace layout-related idiom checks with size classes; read a genuinely needed idiom from the local trait collection |
-
-Two things the orientation task spells out: `windowScene.effectiveGeometry.interfaceOrientation` is
-current API but not a replacement for a layout decision, because a scene reporting landscape can
-be taller than wide; and `windowScene(_:didUpdate:interfaceOrientation:traitCollection:)` migrates
-only at an iOS 26 floor and only together with a guard that does expensive work once the size
-changed and `isInteractivelyResizing` is false. Catalyst window-frame persistence
-(`systemFrame`, `#if targetEnvironment(macCatalyst)`) is in `uiscreen-task.md`.
-
-### 3.6 The iOS 27 gate
-
-**Under the iOS 27 SDK the UIScene lifecycle is mandatory. An app with no scene manifest will not
-launch** (TN3187). Report this as a release blocker, not a warning. `UIScreen.main`,
-`UIWindow(frame:)`, and the legacy app-delegate callbacks are deprecated on the same timeline.
-
-Schedule the scene-lifecycle task before the SDK bump, not after.
-
-### 3.7 Prerequisites for a whole project
-
-These checks are read-only: add no key, change no value, delete no key. Read the `Info.plist` and
-the build settings from the project file and every `.xcconfig` (the project file wins when two
-sources disagree; a key missing from one source proves nothing), then report what you found. Skip
-the checks when the request names files rather than a project, and do not mention them.
-
-| Check | Satisfied when | Otherwise report |
-|---|---|---|
-| Launch screen | Any of `UILaunchScreen`, `UILaunchScreens`, `UILaunchStoryboardName`, `UILaunchStoryboards`, or `INFOPLIST_KEY_UILaunchScreen_Generation` is set | No launch screen: iOS 27 rejects the upload with `ITMS-90870` (TN3208). One key is enough; leave an existing storyboard alone |
-| iPad orientations | The iPad declaration (`UISupportedInterfaceOrientations~ipad`, else the plain key) lists all four, or the target declares none | Name the omitted orientations; a `supportedInterfaceOrientations` override can still lock the scene, and you did not look for one. iPad only: a portrait-only iPhone is normal |
-| Full-screen opt-out | `UIRequiresFullScreen` is absent, or `UIRequiresFullScreenIgnoredStartingWithVersion` is set | iOS 27 ignores `UIRequiresFullScreen` and resizes the scene anyway (TN3192) |
-
-Never delete `UIRequiresFullScreen` (the app becomes resizable at once, before the layouts are
-ready) and never add `UIRequiresFullScreenIgnoredStartingWithVersion` (its value picks which
-releases keep the old behavior, which is the developer's decision, and 27 or earlier makes the app
-fully resizable on iOS 27). The key comes out after the app handles resizing; confirm by running
-the app and resizing it.
+- **Under the iOS 27 SDK the UIScene lifecycle is mandatory: an app with no scene manifest will not launch** (TN3187).
+  Report a missing scene manifest as a release blocker, and schedule the scene-lifecycle task before the SDK bump.
+- Never delete `UIRequiresFullScreen` and never add `UIRequiresFullScreenIgnoredStartingWithVersion`: the first makes
+  the app resizable before its layouts are ready, and the second's value is the developer's decision.
+- When the pack is not installed, use `apple-docs` for the same APIs and say so.
 
 ---
 

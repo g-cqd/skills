@@ -27,11 +27,13 @@ All notable changes to this repository. Dates are commit dates.
   files. The method is adapted from Cloudflare's `security-audit` skill (MIT), so that skill is no longer installed.
   The `security-auditor` agent and the planner's `security-audit` template follow it.
 - Apple's Xcode 27 skill pack is no longer stored in this repository (about 1 MB of mirrored references and one
-  script). `install.sh` exports it from Xcode 27.1 or later and links each skill. The skills here that used its files
+  script). `install.sh` exports it from Xcode 27.1 or later. The skills here that used its files
   now name the pack skill and the file (`swiftui-specialist/references/foreach.md`), and `xcode` has a section that
   maps the pack to its owning skills.
-- `install.sh` shortens an exported Xcode skill description over 1,024 characters (Pi refuses those) at a sentence
-  boundary, limits the export to 120 s, and falls back to the previous export when a new one fails.
+- The Xcode skill pack is reference material, not ten more skills: `install.sh` exports it to
+  `~/.agent-harness/xcode-skills/` (at most 120 s, keeping the previous export when a new one fails) and the owning
+  skills read it by path. `xcode` §6 and §7, `testing` §9.2, and `apple-platforms` §3 route to Apple's procedures
+  instead of repeating them.
 - `install.sh` moves a real directory that is in the way of a skill link to `~/.agent-harness/backups/`, drops links to
   skills that no longer exist, and takes `--skip-submodules`, `--skip-xcode`, and `--skip-third-party`.
 - Skills, agent definitions, and `AGENTS.md` are rewritten in plain, literal-safe language (`docs/AUTHORING.md`

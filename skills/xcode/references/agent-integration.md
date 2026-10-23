@@ -20,6 +20,6 @@ Detail for `SKILL.md` §3. Read it when wiring Xcode's MCP bridge, project instr
   `~/Library/Developer/Xcode/CodingAssistant/<agent-config>/skills/`, and ships Apple-authored
   skills for SwiftUI, document apps, App Intents, UIKit resizability, security-settings auditing,
   C bounds safety, test modernization, and device interaction. `install.sh` exports that pack
-  and links it into the skills directory (`SKILL.md`, "Xcode skill pack"); the skills here route to it.
+  into `~/.agent-harness/xcode-skills/` (`SKILL.md`, "Xcode skill pack"); the skills here route to it by path.
 - **Plans** — Xcode's plan mode produces editable Markdown. When working alongside it, write plans
   as Markdown artifacts the user can edit.
