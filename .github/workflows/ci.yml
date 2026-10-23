@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    name: Checks (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Generated agent files are current
+        run: python3 agents/build.py --check
+      - name: install.sh
+        run: python3 -m unittest discover -s tests
+      - name: Agent build and read-only guard
+        run: python3 -m unittest discover -s agents/tests
+      - name: wait and chat
+        run: python3 -m unittest discover -s tools/tests
+      - name: simplification scripts
+        run: python3 -m unittest discover -s skills/simplification/scripts/tests
+      - name: secure-coding audit validator
+        run: python3 -m unittest discover -s skills/secure-coding/scripts/tests
+      - name: Skill validation
+        run: |
+          for skill in skills/*; do
+            python3 skills/skill-creator/scripts/quick_validate.py "$skill" || exit 1
+          done
+
+  floor:
+    name: Python 3.9 floor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - run: python3 agents/build.py --check
+      - run: python3 -m unittest discover -s tests
+      - run: python3 -m unittest discover -s tools/tests
+      - run: python3 -m unittest discover -s skills/simplification/scripts/tests
+      - run: python3 -m unittest discover -s skills/secure-coding/scripts/tests
