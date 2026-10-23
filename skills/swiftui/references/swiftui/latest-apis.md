@@ -82,4 +82,4 @@ Note: not every left-column entry is formally deprecated — some (e.g., `Observ
 - Slider tick marks and neutral value
 
 ### New iOS 27 (SDK 27) APIs
-- `dragContainer(for:)` — multi-item drag operations (iOS/iPadOS 27.0, macOS 26; see `../sdk-27/` for SDK 27 changes)
+- `dragContainer(for:)` — multi-item drag operations (iOS/iPadOS 27.0, macOS 26; see `swiftui-whats-new-27` for SDK 27 changes)

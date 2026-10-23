@@ -20,7 +20,7 @@ the cascaded build settings. Keep pointer authentication on: it appends `arm64e`
 `ARCHS_STANDARD`, so the target ships a universal `arm64`/`arm64e` binary, and only one slice is
 loaded at run time, so the larger file costs no RAM or speed. Warn when a library's Release
 configuration sets `ONLY_ACTIVE_ARCH = YES`, which forces every consumer onto one slice; confirm
-the slices with `lipo -archs`. See `references/universal-binaries-for-libraries.md`.
+the slices with `lipo -archs`. See `audit-xcode-security-settings/references/universal-binaries-for-libraries.md`.
 
 ---
 
@@ -53,7 +53,7 @@ library or framework sets the build setting only, and the consuming app's entitl
   pointer-arithmetic bug (a difference between pointers into two allocations, `uintptr_t`
   subtraction, an offset from a NULL base) terminates the app. Say so before enabling it.
 - Verify with `lipo -archs`: `arm64 arm64e arm64e.x1`. Details in
-  `references/checked-pointer-arithmetic.md`.
+  `audit-xcode-security-settings/references/checked-pointer-arithmetic.md`.
 
 ---
 

@@ -37,29 +37,16 @@ THE SOFTWARE.
 "Course Deep Dive" links inside those files point to the author's Swift
 Concurrency Course and are kept as attribution and further reading.
 
-## Xcode 27 skill pack
+## Skills installed from elsewhere
 
-Apple-authored agent skills distributed with Xcode and exportable for use by external agents.
-This repository mirrors the pack exported from **Xcode 27.1 (build 27A9275)** with
-`xcrun agent skills export`. The pack has ten skills; the references and the script are kept
-verbatim for parity with upstream (listed edits aside), and each skill's own `SKILL.md` is
-condensed into the `SKILL.md` of the skill that owns the concern, not copied.
+This repository does not contain the following skills. `install.sh` fetches or exports them and links them into the
+skills directory. Each stays under its own license.
 
-| Apple skill | Lands in this repository |
-|---|---|
-| `swiftui-specialist` | `skills/swiftui/references/idiom/` |
-| `swiftui-whats-new-27` | `skills/swiftui/references/sdk-27/` |
-| `building-document-based-swiftui-applications` | `skills/swiftui/references/document-apps/` |
-| `app-intents-specialist` | `skills/apple-platforms/references/app-intents/` |
-| `app-intents-whats-new-27` | `skills/apple-platforms/references/app-intents-27/` |
-| `app-resizability` | `skills/apple-platforms/references/uikit/` |
-| `adopt-c-bounds-safety` | `skills/memory-safety/references/c-bounds-safety/` |
-| `audit-xcode-security-settings` | `skills/xcode/references/` and `skills/xcode/scripts/` |
-| `device-interaction` | section 6 of `skills/xcode/SKILL.md` (no reference files) |
-| `modernize-tests` | section 9 of `skills/testing/SKILL.md` (no reference files) |
+| Skill | Source | License | How it arrives |
+|---|---|---|---|
+| `reverse-engineer-anything` | [morluto/rea](https://github.com/morluto/rea) (REA) | MIT | git submodule `third_party/rea`, pinned to the `rea-agents` release tag; only the skill directory is checked out |
+| `swiftui-specialist`, `swiftui-whats-new-27`, `building-document-based-swiftui-applications`, `app-intents-specialist`, `app-intents-whats-new-27`, `app-resizability`, `adopt-c-bounds-safety`, `audit-xcode-security-settings`, `device-interaction`, `modernize-tests` | Apple's Xcode skill pack, exported from Xcode 27.1 or later with `xcrun mcpbridge run-agent skills export` | Apple's terms for Xcode; Apple keeps its rights in the pack | exported on your machine into `~/.agent-harness/xcode-skills/`; never stored in this repository |
 
-Edits to the mirrored files, all deliberate: the two places in the bounds-safety adoption guide
-that name Claude say "the agent"; the UIKit `uiscreen-task.md` links to the principles in
-`skills/apple-platforms/SKILL.md` section 3.1, whose numbering the task files cite; and the audit
-`adoption-strategy.md` points to the `memory-safety` skill where upstream names
-`adopt-c-bounds-safety`. The 27.0 and 27.1 exports differ only in frontmatter key order.
+The skills in this repository that route to those skills (`swiftui`, `apple-platforms`, `memory-safety`, `xcode`,
+`testing`) are condensed, original text. They name the pack skills and their files and do not copy
+them.
