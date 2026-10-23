@@ -26,15 +26,20 @@
   </audit-areas>
 
   <execution>
-    <order strategy="threat-model-first,audit-second,report-third" />
-    <verification policy="proof-of-concept-when-feasible" />
-    <false-positive-check required="true" />
+    <mode value="$MODE" values="review,audit" note="audit only on an explicit request; secure-coding §1" />
+    <workflow source="secure-coding/references/audit-workflow.md" when="mode=audit"
+              phases="reconnaissance,coverage-led-hunting,candidate-validation,findings-json,record-verification,reports" />
+    <profile value="$PROFILE" values="quick,standard,deep" />
+    <finding-gate source="secure-coding §3" verdicts="confirmed,needs_validation,rejected" />
+    <evidence policy="source-first,bounded-local-check-in-sandbox,no-live-or-shared-targets" />
+    <verification policy="independent-agent-tries-to-refute-each-candidate" />
   </execution>
 
   <report>
-    <destination path="./security-audit.$AIPROVIDER-$AIPROVIDER_MODEL.yml" />
-    <content include="threat-model,findings-by-severity,attack-vectors,remediation-plan,compliance-gaps" />
-    <severity-levels values="critical,high,medium,low,informational" />
+    <destination path="$OUTPUT_DIR" note="outside the target repository" />
+    <files include="run-metadata.json,architecture.md,coverage-ledger.json,findings.json,REPORT.md,FINDINGS-DETAIL.md,NEEDS-VALIDATION.md" />
+    <validate command="python3 secure-coding/scripts/validate_audit.py findings|ledger FILE" />
+    <severity-levels values="critical,high,medium,low,informational" applies-to="confirmed" />
   </report>
 
   <skills>
