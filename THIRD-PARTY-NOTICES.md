@@ -73,7 +73,7 @@ skills directory. Each stays under its own license.
 | Skill | Source | License | How it arrives |
 |---|---|---|---|
 | `reverse-engineer-anything` | [morluto/rea](https://github.com/morluto/rea) (REA) | MIT | git submodule `third_party/rea`, pinned to the `rea-agents` release tag; only the skill directory is checked out |
-| `swiftui-specialist`, `swiftui-whats-new-27`, `building-document-based-swiftui-applications`, `app-intents-specialist`, `app-intents-whats-new-27`, `app-resizability`, `adopt-c-bounds-safety`, `audit-xcode-security-settings`, `device-interaction`, `modernize-tests` | Apple's Xcode skill pack, exported from Xcode 27.1 or later with `xcrun mcpbridge run-agent skills export` | Apple's terms for Xcode; Apple keeps its rights in the pack | exported on your machine into `~/.agent-harness/xcode-skills/`; never stored in this repository |
+| `swiftui-specialist`, `swiftui-whats-new-27`, `building-document-based-swiftui-applications`, `app-intents-specialist`, `app-intents-whats-new-27`, `app-resizability`, `adopt-c-bounds-safety`, `audit-xcode-security-settings`, `device-interaction`, `modernize-tests` | Apple's Xcode skill pack, exported from Xcode 27.1 or later with `xcrun mcpbridge run-agent skills export` | Apple's terms for Xcode; Apple keeps its rights in the pack | exported on your machine into `~/.agent-harness/xcode-skills/`; never stored in this repository. A description over 1,024 characters is shortened in that local export |
 
 The skills in this repository that route to those skills (`swiftui`, `apple-platforms`, `memory-safety`, `xcode`,
 `testing`) are condensed, original text. They name the pack skills and their files and do not copy
