@@ -256,79 +256,17 @@ struct UserServiceTests {
 - Tags select runs: `.unit`, `.integration`, `.regression`, `.acceptance`, `.smoke`,
   `.performance`, `.fuzz`, `.contract`, `.characterization`, `.snapshot`.
 
-### 9.2 Migrating from XCTest
+### 9.2 Migrating from XCTest and modernizing
 
-Migrate **one class at a time**; a file may contain both frameworks during the transition.
+Follow Apple's procedure in `~/.agent-harness/xcode-skills/modernize-tests/SKILL.md` (from the Xcode skill pack; see
+`xcode`, "Xcode skill pack"). Rules of this repository on top of it:
 
-A test method that uses `measure { }` stays on XCTest, like XCUI tests; the other methods in the
-same `XCTestCase` can move.
-
-**Imports** — `import XCTest` → `import Testing`. XCTest re-exports Foundation; if the file uses
-`URL`, `Data`, `CharacterSet`, or `ProcessInfo`, add `import Foundation`.
-
-**Suites** — drop `XCTestCase` inheritance; prefer `struct`. Use `actor` or `final class` only
-when `deinit` is needed, since a struct has none.
-
-**Lifecycle** — `setUp` → `init` (may be `async throws`); `tearDown` → `deinit`. Swift Testing
-runs the initializer again before **every** test, so convert implicitly-unwrapped optionals to
-non-optional properties initialized inline or in `init`. A test that mutates a value-semantic
-property must be `mutating`.
-
-**Assertions**
-
-| XCTest | Swift Testing |
-|---|---|
-| `XCTAssert(x)`, `XCTAssertTrue(x)` | `#expect(x)` |
-| `XCTAssertFalse(x)` | `#expect(!x)` |
-| `XCTAssertNil(x)` / `XCTAssertNotNil(x)` | `#expect(x == nil)` / `#expect(x != nil)` |
-| `XCTAssertEqual(x, y)` / `XCTAssertNotEqual` | `#expect(x == y)` / `#expect(x != y)` |
-| `XCTAssertIdentical` / `XCTAssertNotIdentical` | `#expect(x === y)` / `#expect(x !== y)` |
-| `XCTAssertGreaterThan(x, y)` | `#expect(x > y)` |
-| `XCTAssertGreaterThanOrEqual(x, y)` | `#expect(x >= y)` |
-| `XCTAssertLessThan(x, y)` | `#expect(x < y)` |
-| `XCTAssertLessThanOrEqual(x, y)` | `#expect(x <= y)` |
-| `try XCTUnwrap(x)` | `try #require(x)` |
-| `XCTAssertThrowsError(try f())` | `#expect(throws: (any Error).self) { try f() }` |
-| `XCTAssertNoThrow(try f())` | `#expect(throws: Never.self) { try f() }` |
-| `XCTestExpectation` + `fulfill` + `fulfillment(of:)` | `await confirmation("…") { confirm in … }` |
-| `try XCTSkipIf(c)` / `try XCTSkipUnless(c)` | `@Test(.disabled(if: c))` / `@Test(.enabled(if: c))` |
-| `throw XCTSkip("…")` mid-test | `try Test.cancel("…")` |
-| `XCTExpectFailure("…") { }` | `withKnownIssue("…") { }` |
-| `XCTAttachment` + `add` | `Attachment.record(value)` |
-
-`XCTAssertEqual(_:_:accuracy:)` has no direct equivalent — compare with explicit floating-point
-tolerance.
-
-For over-fulfilment, `assertForOverFulfill = false` with a count becomes a range:
-`await confirmation("…", expectedCount: 10...)`. For intermittent known issues, `.nonStrict()`
-becomes `isIntermittent: true`; conditional cases use `when:` and `matching:`.
-
-**`continueAfterFailure = false`** makes XCTest stop at the first failure. To keep that
-behavior, convert each assertion after the setting to `try #require`, and mark the method
-`throws`. If the setting is in `setUp`, convert **every assertion in every test** of that class.
-
-**Skips by OS version** — replace `.enabled(if:)` with an `@available` attribute on the test.
-
-**Concurrency** — XCTest runs synchronous tests on the main actor, serially within a suite. Swift
-Testing runs them on arbitrary tasks, in parallel. Add `@MainActor` **only** where the XCTest test
-relied on main-actor isolation. Add `@Suite(.serialized)` where tests share mutable state.
-
-### 9.3 Modernization rules
-
-- Promote `XCTFail` and `Issue.record` to `#expect` or `#require`: a `guard … else { Issue.record }`
-  chain becomes `try #require(…)`. Keep `Issue.record` only where no `#expect` or `#require` can
-  state the check.
-- Leave `try #require` as it is. Converting it to `#expect` changes behavior: the test no longer
-  stops at that point.
-- Convert loops over inputs and near-duplicate tests into `@Test(arguments:)`.
-- Convert multi-word camelCase `@Test` names to sentence-case raw identifiers.
-- Do not use underscore-prefixed API such as `#_sourceLocation`; use the full
-  `SourceLocation(fileID:filePath:line:column:)`. Leave an existing `#_sourceLocation` in place.
-- Split the work across agents when the modernization is large.
-
-Do **not** apply migration when the user is writing new tests from scratch, asking only about
-XCTest features, running tests or reading results, adding coverage for new functionality, or
-debugging a failure without mentioning migration.
+- Migrate only when the task asks for migration or modernization, or touches an XCTest suite in scope (`AGENTS.md`
+  STEP 9). Do not migrate when the user is writing new tests, asking only about XCTest features, running tests,
+  adding coverage, or debugging a failure without mentioning migration.
+- Leave `try #require` as it is: converting it to `#expect` changes behavior, because the test no longer stops there.
+- Keep UI tests that use `XCUI*` APIs in XCTest.
+- When the pack is not installed, use `apple-docs` for the Swift Testing API and say so.
 
 ---
 

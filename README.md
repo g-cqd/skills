@@ -60,14 +60,16 @@ Re-run `./install.sh` after `git pull`. Check the install:
 | Systems and graphics | `system-architect`, `graphics` |
 | Authoring | `skill-creator` |
 
-Two more sets of skills arrive at install time and are not stored in this repository:
+Two more sets arrive at install time and are not stored in this repository:
 
 | Set | Skills | Source |
 |---|---|---|
 | Reverse engineering | `reverse-engineer-anything`: evidence-first analysis of shipped apps and binaries with REA | [morluto/rea](https://github.com/morluto/rea), git submodule |
-| Xcode skill pack | `swiftui-specialist`, `swiftui-whats-new-27`, `building-document-based-swiftui-applications`, `app-intents-specialist`, `app-intents-whats-new-27`, `app-resizability`, `adopt-c-bounds-safety`, `audit-xcode-security-settings`, `device-interaction`, `modernize-tests` | Apple, exported from your Xcode 27.1 or later |
+| Xcode skill pack (reference material, not installed as separate skills) | `swiftui-specialist`, `swiftui-whats-new-27`, `building-document-based-swiftui-applications`, `app-intents-specialist`, `app-intents-whats-new-27`, `app-resizability`, `adopt-c-bounds-safety`, `audit-xcode-security-settings`, `device-interaction`, `modernize-tests` | Apple, exported from your Xcode 27.1 or later |
 
-The skills above route to them: `xcode` explains the pack, and `secure-coding` names `reverse-engineer-anything` in
+The skills above route to them: `xcode` explains the pack and maps each pack skill to the skill that owns its topic
+(`swiftui`, `apple-platforms`, `memory-safety`, `testing`, `xcode`), which reads it by path when the topic comes up. One
+skill per request: the pack does not compete with its owners. And `secure-coding` names `reverse-engineer-anything` in
 its boundaries. A full security audit needs no extra skill: `secure-coding` has an audit mode with a coverage ledger,
 independent verification, and a validator for its JSON files. See `THIRD-PARTY-NOTICES.md` for licenses.
 
@@ -152,10 +154,10 @@ standard, the skills, the agents, and `bin/wait` and `bin/chat`. Besides the ski
    checks out only the skill's directory (sparse checkout), so the REA repository costs about 1 MB on disk. The
    submodules are pinned to a commit. Pin `rea` to the `rea-agents-<version>` tag of the REA server that your MCP
    configuration runs, so the skill matches the server's tools. To update one: `git -C third_party/<name> fetch --depth 1 origin main`, `git -C third_party/<name> checkout FETCH_HEAD`, then commit the changed pointer.
-2. **Xcode skill pack.** It runs `xcrun mcpbridge run-agent skills export` into `~/.agent-harness/xcode-skills/` and
-   links each exported skill. A description longer than the format's 1,024 characters (Pi refuses those) is
-   shortened at a sentence boundary in the local export. A skill of this repository with the same name wins. A skill that leaves the pack, or
-   that leaves this repository, loses its link on the next install.
+2. **Xcode skill pack.** It runs `xcrun mcpbridge run-agent skills export` into `~/.agent-harness/xcode-skills/`
+   (at most 120 s; the previous export stays when a new one fails). The pack is not linked into the skills directory:
+   the owning skills read it by path. Links into the export left by earlier versions are removed. A skill that leaves
+   this repository loses its link on the next install.
 
 A real directory that is in the way of a skill link moves to `~/.agent-harness/backups/`, not into the skills
 directory, where a harness would load it as a second copy.
@@ -215,5 +217,4 @@ agent, create `agents/src/<name>.md` and run `python3 agents/build.py`.
 
 ## License
 
-MIT, see `LICENSE`. Some content is derived from other works or mirrored from Apple's Xcode 27 skill pack under their
-own terms: see `THIRD-PARTY-NOTICES.md`. To report a security problem, read `SECURITY.md`.
+MIT, see `LICENSE`. Some content is derived from other works under their own terms: see `THIRD-PARTY-NOTICES.md`. To report a security problem, read `SECURITY.md`.

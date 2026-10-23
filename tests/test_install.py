@@ -195,11 +195,6 @@ mkdir -p "$out"
 for name in $FAKE_XCODE_SKILLS; do
   mkdir -p "$out/$name"; printf -- '---\nname: %s\ndescription: x\n---\n' "$name" > "$out/$name/SKILL.md"
 done
-for name in $FAKE_XCODE_LONG; do
-  mkdir -p "$out/$name"
-  long=$(printf 'Use for topic %s. ' $(seq 1 120))
-  printf -- '---\ndescription: "%s"\nname: %s\n---\nBody stays.\n' "$long" "$name" > "$out/$name/SKILL.md"
-done
 """
 
 
@@ -217,43 +212,35 @@ class ThirdPartySkillTests(InstallCase):
         environment.update(extra)
         return self.install("--skip-submodules", extra=environment, third_party=True)
 
-    def test_the_xcode_pack_is_exported_and_each_skill_is_linked(self):
+    def xcode_links(self):
+        skills = self.root / "skills"
+        return sorted(p.name for p in skills.iterdir() if p.is_symlink() and "xcode-skills" in os.readlink(p))
+
+    def test_the_xcode_pack_is_exported_but_not_linked_as_skills(self):
         result = self.run_xcode("swiftui-specialist device-interaction")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         for name in ("swiftui-specialist", "device-interaction"):
-            self.assertLinks(self.root / "skills" / name, self.root / "xcode-skills" / name)
-        self.assertIn("2 Xcode skills", result.stdout)
+            self.assertTrue((self.root / "xcode-skills" / name / "SKILL.md").is_file())
+        self.assertEqual(self.xcode_links(), [])
+        self.assertIn("2 Xcode skills exported", result.stdout)
 
-    def test_a_repository_skill_wins_over_an_xcode_skill_of_the_same_name(self):
-        result = self.run_xcode("swift device-interaction")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertLinks(self.root / "skills" / "swift", REPO / "skills" / "swift")
-        self.assertIn("keeping the repository's", result.stdout)
+    def test_links_into_the_export_from_an_earlier_install_are_removed(self):
+        self.run_xcode("device-interaction")
+        (self.root / "skills" / "device-interaction").symlink_to(self.root / "xcode-skills" / "device-interaction")
+        self.run_xcode("device-interaction")
+        self.assertEqual(self.xcode_links(), [])
 
-    def test_a_skill_that_leaves_the_pack_is_unlinked_on_the_next_install(self):
+    def test_a_skill_that_leaves_the_pack_leaves_the_export(self):
         self.run_xcode("swiftui-specialist device-interaction")
         self.run_xcode("device-interaction")
-        self.assertFalse((self.root / "skills" / "swiftui-specialist").is_symlink())
-        self.assertTrue((self.root / "skills" / "device-interaction").is_symlink())
+        self.assertFalse((self.root / "xcode-skills" / "swiftui-specialist").exists())
+        self.assertTrue((self.root / "xcode-skills" / "device-interaction").exists())
 
     def test_a_failed_export_is_skipped_and_the_install_still_succeeds(self):
         result = self.run_xcode("swiftui-specialist", FAKE_XCODE_FAIL="1")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("the export failed", result.stdout)
-        self.assertFalse((self.root / "skills" / "swiftui-specialist").exists())
-
-    def test_an_over_long_description_is_shortened_in_the_export_only(self):
-        result = self.run_xcode("device-interaction", FAKE_XCODE_LONG="app-intents-specialist")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("description shortened", result.stdout)
-        text = (self.root / "skills" / "app-intents-specialist" / "SKILL.md").read_text()
-        line = next(l for l in text.splitlines() if l.startswith("description: "))
-        description = json.loads(line[len("description: "):])
-        self.assertLessEqual(len(description), 1024)
-        self.assertTrue(description.startswith("Use for topic 1. Use for topic 2."))
-        self.assertTrue(description.endswith("The skill body lists the rest."))
-        self.assertIn("name: app-intents-specialist", text)
-        self.assertTrue(text.endswith("Body stays.\n"))
+        self.assertFalse((self.root / "xcode-skills").exists())
 
     def test_a_hanging_export_is_stopped_and_the_previous_one_kept(self):
         self.run_xcode("device-interaction")
@@ -263,14 +250,13 @@ class ThirdPartySkillTests(InstallCase):
         self.assertLess(time.monotonic() - started, 20)
         self.assertIn("did not finish in 2 s", result.stdout)
         self.assertIn("using the previous export", result.stdout)
-        self.assertTrue((self.root / "skills" / "device-interaction" / "SKILL.md").exists())
+        self.assertTrue((self.root / "xcode-skills" / "device-interaction" / "SKILL.md").exists())
 
     def test_a_failed_export_keeps_the_previous_one(self):
         self.run_xcode("device-interaction")
-        os.remove(self.root / "skills" / "device-interaction")
         result = self.run_xcode("device-interaction", FAKE_XCODE_FAIL="1")
         self.assertIn("using the previous export", result.stdout)
-        self.assertLinks(self.root / "skills" / "device-interaction", self.root / "xcode-skills" / "device-interaction")
+        self.assertTrue((self.root / "xcode-skills" / "device-interaction" / "SKILL.md").exists())
 
     def test_skip_xcode_does_not_export(self):
         result = self.install("--skip-submodules", "--skip-xcode", extra={"AGENT_HARNESS_XCODE_EXPORT": "/nonexistent"},
@@ -284,14 +270,6 @@ class ThirdPartySkillTests(InstallCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("would run: /nonexistent --output-dir", result.stdout)
         self.assertFalse((self.root / "xcode-skills").exists())
-
-    def test_a_real_directory_in_the_way_of_a_skill_is_backed_up_outside_the_skills_root(self):
-        (self.root / "skills" / "swiftui-specialist").mkdir(parents=True)
-        (self.root / "skills" / "swiftui-specialist" / "SKILL.md").write_text("old")
-        self.run_xcode("swiftui-specialist")
-        self.assertLinks(self.root / "skills" / "swiftui-specialist", self.root / "xcode-skills" / "swiftui-specialist")
-        self.assertEqual([p.name for p in (self.root / "skills").iterdir() if ".bak" in p.name], [])
-        self.assertEqual(len(list((self.root / "backups").glob("swiftui-specialist.*"))), 1)
 
     def make_checkout(self):
         """A copy of this repository's installer in a git checkout whose submodule has not been fetched."""

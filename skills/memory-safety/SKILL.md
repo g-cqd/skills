@@ -78,7 +78,7 @@ Rules that close the class, for each parser of untrusted bytes:
 - **Treat each previewed media format as an attack surface**, because the parser runs before any
   human decision. Parse untrusted bytes in a bounds-safe language or under `-fbounds-safety`
   (§7.2), and run the parser with the hardened-runtime mitigations that `xcode` enables (§4 here;
-  enabled in `xcode` §7.3).
+  enabled in `xcode` §7).
 
 ---
 
@@ -357,7 +357,7 @@ Read bounds with `__ptr_lower_bound(p)` and `__ptr_upper_bound(p)`.
 
 ## References
 
-Apple-specific, supporting §7.2. These files belong to the Xcode skill pack skill `adopt-c-bounds-safety`: `install.sh` exports the pack from Xcode 27.1 or later (see `xcode`, "Xcode skill pack"). When it is not installed, use `apple-docs`.
+Apple-specific, supporting §7.2. These files belong to the Xcode skill pack skill `adopt-c-bounds-safety`, under `~/.agent-harness/xcode-skills/` (see `xcode`, "Xcode skill pack"). When the pack is not installed, use `apple-docs`.
 
 - `adopt-c-bounds-safety/references/language-overview.md` — full language reference: conversion tables,
   flexible array members, value-terminated arrays, out/in-out parameter shapes, forging rules.

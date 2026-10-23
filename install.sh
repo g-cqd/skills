@@ -12,7 +12,8 @@
 #     skills/<name>        -> <repo>/skills/<name>       (one link per skill)
 #     agents/<fmt>         -> <repo>/agents/<fmt>       (per-harness rendered agents)
 #     skills/<name>        -> <repo>/third_party/<submodule>/<dir>   (skills from submodules: REA)
-#     skills/<name>        -> ~/.agent-harness/xcode-skills/<name>   (Apple's Xcode skill pack, exported from your Xcode)
+#     xcode-skills/<name>/                                       (Apple's Xcode skill pack, exported from your Xcode;
+#                                                                 reference material for the owning skills, not linked as skills)
 #     bin/wait, bin/chat   -> <repo>/tools/wait.py, <repo>/tools/chat.py   (one path every agent can call)
 #
 #   ~/.claude/  ~/.codex/  ~/.vibe/  ~/.gemini/config/  ~/.config/opencode/  ~/.pi/agent/  ~/.copilot/
@@ -182,7 +183,9 @@ run_bounded() {
   wait "$pid"
 }
 
-# Apple's Xcode skill pack is not shipped here. Xcode 27.1 or later exports it, and each exported skill is linked.
+# Apple's Xcode skill pack is not shipped here. Xcode 27.1 or later exports it into $ROOT/xcode-skills, where the skills
+# of this repository that own its topics read it by path. It is not linked into the skills directory: each pack skill
+# would compete with its owner for the same requests.
 # AGENT_HARNESS_XCODE_EXPORT replaces the exporter command; it is called with --output-dir DIR --replace-existing.
 # The exporter starts Xcode when it is not running and can wait on a dialog that nobody sees (over SSH, on a first
 # launch), so it gets AGENT_HARNESS_XCODE_TIMEOUT seconds (default 120).
@@ -214,32 +217,21 @@ install_xcode_skills() {
   else
     rm -rf "$dest"; mv "$fresh" "$dest"
   fi
-  # The format limits a description to 1,024 characters and some harnesses (Pi) refuse a longer one; Apple's pack has
-  # descriptions above it, so the local export gets them shortened at a sentence boundary.
-  if command -v python3 >/dev/null 2>&1; then
-    python3 "$SRC/tools/install/shorten_descriptions.py" "$dest"
-  else
-    skip "python3 not found: Xcode skill descriptions over 1,024 characters are left as they are"
-  fi
-  local d name count=0
-  for d in "$dest"/*/; do
-    name="$(basename "$d")"
-    [[ -f "$d/SKILL.md" ]] || continue
-    if [[ -d "$SRC/skills/$name" ]]; then skip "$name is also a skill of this repository; keeping the repository's"; continue; fi
-    link "${d%/}" "$ROOT/skills/$name"
-    count=$((count + 1))
-  done
-  say "  ${count} Xcode skills"
+  local count
+  count=$(find "$dest" -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l | tr -d ' ')
+  say "  ${count} Xcode skills exported to $dest (reference material, not linked as skills)"
 }
 install_xcode_skills
 
-# Drop skill links that no longer point at anything: a skill removed from this repository, or from the Xcode pack.
+# Drop skill links that no longer point at anything (a skill removed from this repository), and links into the Xcode
+# export, which earlier versions of this script created.
 if [[ $DRY -eq 0 && -d "$ROOT/skills" ]]; then
   for stale in "$ROOT/skills"/*; do
-    [[ -L "$stale" && ! -e "$stale" ]] || continue
-    case "$(readlink "$stale")" in
-      "$SRC"/*|"$ROOT"/xcode-skills/*) rm -f "$stale"; printf '  removed stale link %s\n' "$stale" ;;
-    esac
+    [[ -L "$stale" ]] || continue
+    target="$(readlink "$stale")"
+    if [[ "$target" == "$ROOT"/xcode-skills/* ]] || { [[ ! -e "$stale" ]] && [[ "$target" == "$SRC"/* ]]; }; then
+      rm -f "$stale"; printf '  removed link %s\n' "$stale"
+    fi
   done
 fi
 

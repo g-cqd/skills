@@ -233,7 +233,7 @@ before/after numbers. Methodology is in `performance-engineering`.
 
 ## 10. SDK 27 changes
 
-Check the deployment floor before using any of these. The `@State` trap is §3 — the rest. Files named `swiftui-whats-new-27/...`, `swiftui-specialist/...` and `building-document-based-swiftui-applications/...` belong to the Xcode skill pack: `install.sh` exports it from Xcode 27.1 or later and links each skill into the skills directory (see `xcode`, "Xcode skill pack"). When the pack is not installed, use `apple-docs`.
+Check the deployment floor before using any of these. The `@State` trap is §3 — the rest. Files named `swiftui-whats-new-27/...`, `swiftui-specialist/...` and `building-document-based-swiftui-applications/...` belong to the Xcode skill pack, under `~/.agent-harness/xcode-skills/` (see `xcode`, "Xcode skill pack"). When the pack is not installed, use `apple-docs`.
 
 
 | Change | What it is | Reference |
