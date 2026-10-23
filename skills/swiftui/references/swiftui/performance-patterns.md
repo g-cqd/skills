@@ -362,6 +362,114 @@ struct ItemsView: View {
 var itemCount: Int { items.count }  // Computed property
 ```
 
+
+## Auditing a slow view
+
+A method for a performance complaint: review the code first, then profile, diagnose, and fix, and measure again.
+
+### Four-Phase Audit Methodology
+
+#### Phase 1: Code-First Review
+**Collect**: View code, data flow (`@State`, `@Environment`, `@Observable`), symptoms, reproduction steps.
+
+**Focus Areas**:
+- View invalidation storms from broad state mutations
+- List identity instability (`UUID()` per render, `id: \.self` on mutable values)
+- Expensive operations in `body` (formatting, sorting, image decoding)
+- Layout thrash (deep hierarchies, `GeometryReader` overuse)
+- Unoptimized image assets (main-thread decoding)
+- Implicit animation propagation to unintended subtrees
+
+**Deliverable**: Root causes with file:line references, suggested refactors, minimal repro if needed.
+
+#### Phase 2: Guide to Instruments
+When code review is inconclusive, guide profiling:
+1. **Product -> Profile** with SwiftUI template
+2. **Release build** on physical device (never Simulator for perf)
+3. Reproduce exact interaction (scroll, navigate, animate)
+4. Capture **SwiftUI Timeline** + **Time Profiler** lanes
+5. Export trace or screenshots for analysis
+
+Request: Device model, iOS version, build configuration.
+
+#### Phase 3: Analyze & Diagnose
+**Instruments Metrics**:
+- **Orange markers**: View body >500us (warning)
+- **Red markers**: View body >1000us (critical)
+- **Hitches**: Missed frame deadlines
+- **Platform View Updates**: AppKit/UIKit bridging overhead
+
+Correlate SwiftUI timeline with Time Profiler call trees. Identify hot paths.
+
+#### Phase 4: Remediate & Verify
+Apply targeted fixes, then **re-profile** to confirm improvement:
+- Measure baseline -> apply fix -> measure again
+- Compare frame drops, CPU%, memory footprint
+- No fix ships without verification
+
+### Diagnostic Techniques
+
+#### Debug View Updates (Development Only)
+```swift
+var body: some View {
+  let _ = Self._printChanges() // Logs dependency changes
+  // ... view content
+}
+```
+
+#### Identify Dependency Graph Issues
+- Single property change triggers many view updates -> narrow scope
+- `body` called without visible state change -> check `@Observable` property access
+- Child views updating when parent state changes -> extract to separate view
+
+#### Instruments Checklist
+1. [ ] SwiftUI Timeline shows no red markers
+2. [ ] No hitches during scroll/animation
+3. [ ] Time Profiler shows no `body` in hot path
+4. [ ] Memory stable during repeated navigation
+5. [ ] Main thread blocked <16ms per frame (60fps) or <8ms (120fps)
+
+### Rules by area
+
+**View body**
+- Finish within the frame budget: under 8 ms at 120 Hz, under 16 ms at 60 Hz.
+- Do not create formatters, date components, or other heavy objects in `body`.
+- Do not do synchronous I/O or network calls in `body`.
+- Sort and filter in the model, not inline in `body`.
+- Load async data with `.task` rather than `onAppear`.
+
+**State and dependencies**
+- Keep state as close to the leaf views that read it as possible.
+- Prefer `@Observable` to `ObservableObject`: views update per property read.
+- Keep frequently changing state away from stable layout.
+- Do not store closures that capture a parent's state.
+
+**Lists and collections**
+- Give `ForEach` stable, unique identifiers.
+- Precompute filtered and sorted collections in the model.
+- Do not put `AnyView` in list content: it breaks identity-based diffing.
+- Flatten nested `ForEach` where the layout allows.
+
+**Images**
+- Decode off the main thread and downsample to the displayed size.
+- Cache decoded images, and use `AsyncImage` with placeholder and phase handling.
+
+**Animation**
+- Scope each animation with an explicit `value:`.
+- Respect `accessibilityReduceMotion`.
+- Prefer `withAnimation` to an implicit `.animation()`, and isolate animated views so the change does not invalidate
+  their siblings.
+
+### General rules
+
+- Measure before you optimize, and profile again after each fix. Profile a release build on a physical device; the
+  Simulator's timings are not representative.
+- Name the root cause before proposing a fix. Calling an issue a "SwiftUI limitation" is not a diagnosis.
+- Do not hide a UI update problem with `DispatchQueue.main.async`, and do not add `@MainActor` without tracing the data
+  flow.
+- Do not use `AnyView` to resolve a type mismatch on a hot path.
+- Do not create a `DateFormatter` or `NumberFormatter` in `body`, and do not use `UUID()` as `ForEach` identity.
+
 ## Summary Checklist
 
 - [ ] State updates check for value changes before assigning

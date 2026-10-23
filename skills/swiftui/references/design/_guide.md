@@ -125,8 +125,8 @@ Phase 4: Remediate & Verify   → Apply fix, re-profile, confirm improvement
 
 ## Detailed References
 - `typography.md` — Type scale, Dynamic Type, legibility
-- `accessibility.md` — WCAG POUR, VoiceOver, reduced motion, contrast
 - `design-tokens.md` — Colors, spacing, radius, duration, haptics, theming
 - `layout-responsive.md` — Size class adaptation, container-relative sizing
 - `previews.md` — Preview-driven development, scenarios
-- `performance-audit.md` — Full four-phase audit methodology
+- Accessibility and the performance audit method live in `../swiftui/accessibility-patterns.md` and
+  `../swiftui/performance-patterns.md`

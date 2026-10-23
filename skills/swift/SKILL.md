@@ -307,7 +307,8 @@ referent provably outlives the reference.
 **Language** — `references/swift/_guide.md`, `architecture.md` (SOLID, composition, DI),
 `type-system.md`, `package-structure.md`, `naming-conventions.md`, `documentation.md`,
 `deep-patterns.md` (`some` vs `any`, COW, property wrappers, anti-patterns, UIKit interop),
-`memory-layout-performance.md` (ARC traffic, COW internals, cache-aware Swift)
+`memory-layout-performance.md` (ARC traffic, COW internals, cache-aware Swift), `inlinearray-and-span.md` (Swift 6.2
+`InlineArray`, `Span`, `MutableSpan`, `RawSpan`)
 
 **Concurrency** — `references/concurrency/_guide.md`, `async-await-basics.md`, `tasks.md`,
 `actors.md`, `sendable.md`, `async-sequences.md`, `async-algorithms.md`, `threading.md`,
