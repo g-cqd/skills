@@ -389,23 +389,38 @@ Check before upgrading.
 | UIKit scene lifecycle, Liquid Glass, platform frameworks | `apple-platforms` |
 | Authoritative API and HIG lookup | `apple-docs` |
 | Interpreting a profile once captured | `performance-engineering` |
-| Running a long build or test run, and waiting on it | `work run` (`planner`'s `scripts/work.py`), `engineering-practices` §6 |
+| Running a long build or test run, and waiting on it | `wait --run`, `engineering-practices` §6 |
+
+## Xcode skill pack
+
+Xcode 27.1 or later exports Apple's own agent skills. `install.sh` runs `xcrun mcpbridge run-agent skills export` into
+`~/.agent-harness/xcode-skills/` and links each exported skill into the skills directory, so this repository does not
+ship them. The skills keep their Apple names:
+
+| Pack skill | Owning skill here | Use |
+|---|---|---|
+| `swiftui-specialist`, `swiftui-whats-new-27`, `building-document-based-swiftui-applications` | `swiftui` | SwiftUI idiom, SDK 27 APIs, document apps |
+| `app-intents-specialist`, `app-intents-whats-new-27`, `app-resizability` | `apple-platforms` | App Intents, UIKit resizability tasks |
+| `adopt-c-bounds-safety` | `memory-safety` | C bounds annotations: language, adoption, debugging |
+| `audit-xcode-security-settings` | `xcode` (§7) | The full audit workflow and the settings references named below |
+| `device-interaction` | `xcode` (§6) | Device and simulator interaction |
+| `modernize-tests` | `testing` (§9) | XCTest to Swift Testing |
+
+Paths such as `swiftui-specialist/references/foreach.md` are relative to the skills directory. When the pack is not
+installed (no Xcode 27.1, or a machine that is not a Mac), use `apple-docs` for the same questions, and tell the user
+that the pack is missing.
 
 ## References
 
-`references/security-settings-reference.md` (full settings list with scope column),
-`references/enhanced-security.md` (key list, defaults, deprecated keys, version migration,
-supported product types), `references/pointer-authentication.md`, `references/typed-allocators.md`,
-`references/stack-zero-init.md`, `references/readonly-platform-memory.md`,
-`references/runtime-restrictions.md`, `references/security-compiler-warnings.md`,
-`references/cpp-hardening.md`, `references/hardware-memory-tagging.md`,
-`references/additional-settings.md`, `references/adoption-strategy.md`,
-`references/decision-document.md`, `references/reading-build-settings.md` (output schema, the
-audit-table columns and predicates, and the filter recipe for large results — do not read a saved
-settings dump linearly), `references/checked-pointer-arithmetic.md`,
-`references/universal-binaries-for-libraries.md`. These files come from Apple's audit workflow and
-cite its phase numbers ("Phase 3 Step 4"); the matching steps here are the Phase 1 analysis and the
-Phase 2 apply in §7.2.
+The settings references belong to the pack skill `audit-xcode-security-settings`, under its `references/`:
+`security-settings-reference.md` (full settings list with scope column), `enhanced-security.md` (key list, defaults,
+deprecated keys, version migration, supported product types), `pointer-authentication.md`, `typed-allocators.md`,
+`stack-zero-init.md`, `readonly-platform-memory.md`, `runtime-restrictions.md`, `security-compiler-warnings.md`,
+`cpp-hardening.md`, `hardware-memory-tagging.md`, `additional-settings.md`, `adoption-strategy.md`,
+`decision-document.md`, `reading-build-settings.md` (output schema, the audit-table columns and predicates, and the
+filter recipe for large results; do not read a saved settings dump linearly), `checked-pointer-arithmetic.md`,
+`universal-binaries-for-libraries.md`, and `scripts/filter_build_settings.py`. They cite the pack's phase numbers
+("Phase 3 Step 4"); the matching steps here are the Phase 1 analysis and the Phase 2 apply in §7.2.
 
 Detail moved out of the body: `references/agent-integration.md` (§3), `run-and-profile.md` (§2),
 `device-interaction.md` (§6), `audit-workflow.md` (§7.1-7.2), `hardening-checks.md` (§7.3-7.5).

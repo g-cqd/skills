@@ -47,8 +47,8 @@ build settings and entitlements and rollback is otherwise manual. Detect languag
 `sourcecode.cpp.*` file type in `project.pbxproj` overrides the extension. Enumerate targets with
 product type, platform (`SDKROOT` / `SUPPORTED_PLATFORMS`), and the resolved
 `CODE_SIGN_ENTITLEMENTS` path. Join each target's evaluated build settings (filter large dumps with
-`scripts/filter_build_settings.py`) with the explicit occurrences in `*.xcconfig` and
-`project.pbxproj`; `references/reading-build-settings.md` defines the columns and the predicates
+`audit-xcode-security-settings/scripts/filter_build_settings.py`) with the explicit occurrences in `*.xcconfig` and
+`project.pbxproj`; `audit-xcode-security-settings/references/reading-build-settings.md` defines the columns and the predicates
 *already hardened*, *at default OFF* and *deliberately disabled*.
 
 ---
@@ -72,7 +72,7 @@ leaves the rest of the project or config file byte-identical and the diff review
 
 ## Phase 3: inquire
 
-**Phase 3 — inquire.** Find tracked settings (`references/security-settings-reference.md`) that are
+**Phase 3 — inquire.** Find tracked settings (`audit-xcode-security-settings/references/security-settings-reference.md`) that are
 *deliberately disabled*: not at a hardened value and set explicitly, as opposed to Xcode's default
 OFF, which is never a question. Restrict to settings whose scope covers a detected language.
 Flag an unconditional `ENABLE_POINTER_AUTHENTICATION = NO`, and

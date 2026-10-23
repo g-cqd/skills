@@ -233,18 +233,19 @@ before/after numbers. Methodology is in `performance-engineering`.
 
 ## 10. SDK 27 changes
 
-Check the deployment floor before using any of these. The `@State` trap is §3 — the rest:
+Check the deployment floor before using any of these. The `@State` trap is §3 — the rest. Files named `swiftui-whats-new-27/...`, `swiftui-specialist/...` and `building-document-based-swiftui-applications/...` belong to the Xcode skill pack: `install.sh` exports it from Xcode 27.1 or later and links each skill into the skills directory (see `xcode`, "Xcode skill pack"). When the pack is not installed, use `apple-docs`.
+
 
 | Change | What it is | Reference |
 |---|---|---|
-| Reordering | `.reorderable()` on `ForEach` + `.reorderContainer(for:)` for any container; `ReorderDifference` apply; drag-and-drop via `dragContainer` / `dropDestination`; combine-on-drop. iOS/macOS/watchOS/visionOS 27, **not tvOS** | `references/sdk-27/reorderable.md` |
-| `AsyncImage` | Standard HTTP caching by default; `AsyncImage(request:)` for a per-request cache policy; `asyncImageURLSession(_:)` for a custom session. Fixes "images reload when scrolling back" | `references/sdk-27/async-image.md` |
-| Toolbars | `visibilityPriority`, `ToolbarOverflowMenu`, `.topBarPinnedTrailing`, `toolbarMinimizeBehavior`, `contentMarginsRemoved`, `ToolbarPlacement.statusBar`; `ForEach` and `EmptyView` now work in toolbar builders | `references/sdk-27/toolbar.md` |
-| Item bindings | `confirmationDialog` and `alert` overloads taking `item: Binding<T?>` — the `sheet(item:)` shape, unwrapped value passed to `actions` and `message` | `references/sdk-27/item-binding.md` |
-| Swipe actions | `swipeActionsContainer()` on the container lets `swipeActions(edge:allowsFullSwipe:content:)` work outside `List`; new `onPresentationChanged` overload. Not tvOS | `references/sdk-27/swipe-actions.md` |
-| Documents | The `Document` protocol (`ReadableDocument` + `WritableDocument`), `DocumentGroup` and `DocumentGroupLaunchScene`, `DocumentReader` / `DocumentWriter`, `FileWrapperDocumentReader` / `FileWrapperDocumentWriter`, direct file-URL access, `Subprogress`. Details in "Document-based apps" below | `references/document-apps/` |
-| `@ContentBuilder` | Unified result builders. Source-incompatible where code relied on result-builder structure: ambiguous `ShapeStyle` overloads in `overlay` / `background`, ambiguous references when a module shadows a SwiftUI type, and a type-check performance regression in Swift Charts with deeply branching content | `references/sdk-27/content-builder.md` |
-| Deprecations | Hard-deprecated in 27.0, e.g. `statusBarHidden` on visionOS (no effect — remove the call) | `references/sdk-27/deprecations.md` |
+| Reordering | `.reorderable()` on `ForEach` + `.reorderContainer(for:)` for any container; `ReorderDifference` apply; drag-and-drop via `dragContainer` / `dropDestination`; combine-on-drop. iOS/macOS/watchOS/visionOS 27, **not tvOS** | `swiftui-whats-new-27/references/reorderable.md` |
+| `AsyncImage` | Standard HTTP caching by default; `AsyncImage(request:)` for a per-request cache policy; `asyncImageURLSession(_:)` for a custom session. Fixes "images reload when scrolling back" | `swiftui-whats-new-27/references/async-image.md` |
+| Toolbars | `visibilityPriority`, `ToolbarOverflowMenu`, `.topBarPinnedTrailing`, `toolbarMinimizeBehavior`, `contentMarginsRemoved`, `ToolbarPlacement.statusBar`; `ForEach` and `EmptyView` now work in toolbar builders | `swiftui-whats-new-27/references/toolbar.md` |
+| Item bindings | `confirmationDialog` and `alert` overloads taking `item: Binding<T?>` — the `sheet(item:)` shape, unwrapped value passed to `actions` and `message` | `swiftui-whats-new-27/references/item-binding.md` |
+| Swipe actions | `swipeActionsContainer()` on the container lets `swipeActions(edge:allowsFullSwipe:content:)` work outside `List`; new `onPresentationChanged` overload. Not tvOS | `swiftui-whats-new-27/references/swipe-actions.md` |
+| Documents | The `Document` protocol (`ReadableDocument` + `WritableDocument`), `DocumentGroup` and `DocumentGroupLaunchScene`, `DocumentReader` / `DocumentWriter`, `FileWrapperDocumentReader` / `FileWrapperDocumentWriter`, direct file-URL access, `Subprogress`. Details in "Document-based apps" below | `building-document-based-swiftui-applications/references/` |
+| `@ContentBuilder` | Unified result builders. Source-incompatible where code relied on result-builder structure: ambiguous `ShapeStyle` overloads in `overlay` / `background`, ambiguous references when a module shadows a SwiftUI type, and a type-check performance regression in Swift Charts with deeply branching content | `swiftui-whats-new-27/references/content-builder.md` |
+| Deprecations | Hard-deprecated in 27.0, e.g. `statusBarHidden` on visionOS (no effect — remove the call) | `references/sdk-27-deprecations.md` |
 
 ### Document-based apps
 
@@ -262,13 +263,13 @@ compile or misbehaves at run time.
 
 | Task | Reference |
 |---|---|
-| New document app: `DocumentGroup` setup, flat files and packages, custom reader and writer, undo, progress, coordinated access, launch scene, read-only viewer, export | `references/document-apps/creating-document-apps.md` |
-| Moving from `FileDocument` or `ReferenceFileDocument` (concept mapping, checklists, before and after) | `references/document-apps/migrating-document-apps.md` |
-| Declaring a custom `UTType`: conformance, export versus import, parent type, handler rank, verifying with `uttype` | `references/document-apps/uniform-type-identifiers.md` |
+| New document app: `DocumentGroup` setup, flat files and packages, custom reader and writer, undo, progress, coordinated access, launch scene, read-only viewer, export | `building-document-based-swiftui-applications/references/creating-document-apps.md` |
+| Moving from `FileDocument` or `ReferenceFileDocument` (concept mapping, checklists, before and after) | `building-document-based-swiftui-applications/references/migrating-document-apps.md` |
+| Declaring a custom `UTType`: conformance, export versus import, parent type, handler rank, verifying with `uttype` | `building-document-based-swiftui-applications/references/uniform-type-identifiers.md` |
 
 Soft-deprecated APIs are separate from the hard deprecations above. See
-`references/idiom/soft-deprecated-apis.md` for the searchable list and
-`references/idiom/soft-deprecation.md` for how to identify and migrate them.
+`swiftui-specialist/references/soft-deprecated-apis.md` for the searchable list and
+`swiftui-specialist/references/soft-deprecation.md` for how to identify and migrate them.
 
 ## 11. Review checklist
 
@@ -306,15 +307,15 @@ environment vs preferences, type erasure, Observation), `state-management.md`, `
 `liquid-glass.md`, `accessibility-patterns.md`, `charts.md`, `macos-scenes.md`,
 `macos-window-styling.md`
 
-**Idiom** — `references/idiom/`: `structure.md`, `dataflow.md`, `environment.md`, `modifiers.md`,
+**Idiom** — `swiftui-specialist/references/`: `structure.md`, `dataflow.md`, `environment.md`, `modifiers.md`,
 `foreach.md`, `animations.md` (custom `Animatable`), `localization.md`, `soft-deprecation.md`,
 `soft-deprecated-apis.md`
 
 **Design** — `references/design/`: `_guide.md`, `typography.md`, `accessibility.md`,
 `design-tokens.md`, `layout-responsive.md`, `previews.md`, `performance-audit.md`
 
-**SDK 27** — `references/sdk-27/`: `state-macro.md`, `reorderable.md`, `async-image.md`,
-`toolbar.md`, `item-binding.md`, `swipe-actions.md`, `content-builder.md`, `deprecations.md`
+**SDK 27** — `swiftui-whats-new-27/references/`: `state-macro.md`, `reorderable.md`, `async-image.md`,
+`toolbar.md`, `item-binding.md`, `swipe-actions.md`, `content-builder.md`; and `references/sdk-27-deprecations.md` here
 
-**Document apps** — `references/document-apps/`: `creating-document-apps.md`,
+**Document apps** — `building-document-based-swiftui-applications/references/`: `creating-document-apps.md`,
 `migrating-document-apps.md`, `uniform-type-identifiers.md`

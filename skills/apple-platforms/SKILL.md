@@ -70,8 +70,8 @@ The iOS 26 / macOS 26 generation. For the next generation see `swiftui` (SDK 27 
 | Foundation Models — on-device LLM | `references/FoundationModels-Using-on-device-LLM-in-your-app.md` |
 | Visual Intelligence | `references/Implementing-Visual-Intelligence-in-iOS.md` |
 | AppIntents — WWDC 2025 overview | `references/AppIntents-Updates.md` |
-| App Intents — best practices and traps | `references/app-intents/`, routed in §2.1 |
-| App Intents — iOS 26 and 27 APIs | `references/app-intents-27/`, routed in §2.1 |
+| App Intents — best practices and traps | `app-intents-specialist/references/`, routed in §2.1 |
+| App Intents — iOS 26 and 27 APIs | `app-intents-whats-new-27/references/`, routed in §2.1 |
 | StoreKit | `references/StoreKit-Updates.md` |
 | SwiftData class inheritance | `references/SwiftData-Class-Inheritance.md` |
 | AlarmKit | `references/SwiftUI-AlarmKit-Integration.md` |
@@ -93,6 +93,8 @@ required work for the move to Xcode 27, not as optional polish.
 
 ### 2.1 App Intents
 
+The files named `app-intents-specialist/...`, `app-intents-whats-new-27/...` and `app-resizability/...` belong to the Xcode skill pack: `install.sh` exports it from Xcode 27.1 or later and links each skill into the skills directory (see `xcode`, "Xcode skill pack"). When the pack is not installed, use `apple-docs`.
+
 Apple publishes this guidance and it supersedes prior training. Read the reference for the topic in
 play before writing or reviewing code; the files teach the non-obvious traps rather than restate
 the framework. For a broad review of a large codebase, scan for the areas (individual intents,
@@ -109,7 +111,7 @@ whole-codebase review into sections on a task list.
 - **Gate each version-specific API** with its real `@available` floor (every `app-intents-27`
   reference states it) and `if #available`, instead of dropping the feature or misdating it.
 
-Evergreen traps, in `references/app-intents/`:
+Evergreen traps, in `app-intents-specialist/references/`:
 
 | Topic | Trap | File |
 |---|---|---|
@@ -127,7 +129,7 @@ Evergreen traps, in `references/app-intents/`:
 | Widgets and controls | `WidgetConfigurationIntent` / `ControlConfigurationIntent` are parameter-only: no `perform()` | `configuration-intents.md` |
 | Modeling | `AppEnum` for a fixed set, `AppEntity` plus a query for a dynamic one, plain `@Parameter` for free-form; one intent per atomic task | `factoring.md` |
 
-New in iOS 26 and 27, in `references/app-intents-27/` (floors are in each file):
+New in iOS 26 and 27, in `app-intents-whats-new-27/references/` (floors are in each file):
 
 | Need | Reference |
 |---|---|
@@ -282,11 +284,11 @@ Apply every task unless the request scopes to a subset. Run them in the order of
 
 | Task | Reference | What it does |
 |---|---|---|
-| `UIScreen.main` | `references/uikit/uiscreen-task.md` | Replace with context-appropriate APIs |
-| Orientation | `references/uikit/orientation-task.md` | Replace layout-related orientation checks with size classes or window bounds, and migrate the deprecated scene geometry callback to `didUpdateEffectiveGeometry` |
-| Scene lifecycle | `references/uikit/scene-lifecycle-task.md` | Migrate `AppDelegate` to `SceneDelegate` |
-| Safe area | `references/uikit/safe-area-task.md` | Replace `topLayoutGuide` and hard-coded insets with safe-area references; handle asymmetric insets and insets that change while the app runs |
-| `userInterfaceIdiom` | `references/uikit/idiom-task.md` | Replace layout-related idiom checks with size classes; read a genuinely needed idiom from the local trait collection |
+| `UIScreen.main` | `app-resizability/references/uiscreen-task.md` | Replace with context-appropriate APIs |
+| Orientation | `app-resizability/references/orientation-task.md` | Replace layout-related orientation checks with size classes or window bounds, and migrate the deprecated scene geometry callback to `didUpdateEffectiveGeometry` |
+| Scene lifecycle | `app-resizability/references/scene-lifecycle-task.md` | Migrate `AppDelegate` to `SceneDelegate` |
+| Safe area | `app-resizability/references/safe-area-task.md` | Replace `topLayoutGuide` and hard-coded insets with safe-area references; handle asymmetric insets and insets that change while the app runs |
+| `userInterfaceIdiom` | `app-resizability/references/idiom-task.md` | Replace layout-related idiom checks with size classes; read a genuinely needed idiom from the local trait collection |
 
 Two things the orientation task spells out: `windowScene.effectiveGeometry.interfaceOrientation` is
 current API but not a replacement for a layout decision, because a scene reporting landscape can
@@ -338,5 +340,5 @@ the app and resizing it.
 ## References
 
 `references/_guide.md` first, then the framework table in §2.
-UIKit modernization tasks live under `references/uikit/`. App Intents live under
-`references/app-intents/` and `references/app-intents-27/`, routed in §2.1.
+UIKit modernization tasks live under `app-resizability/references/`. App Intents live under
+`app-intents-specialist/references/` and `app-intents-whats-new-27/references/`, routed in §2.1.

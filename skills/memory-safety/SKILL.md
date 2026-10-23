@@ -274,7 +274,7 @@ Two approaches:
 
 Ask the user which approach they want before you advise. If you cannot ask the user, stop and
 report both options. Before any source edit, read
-`references/c-bounds-safety/adoption-strategies.md`, `language-overview.md` and
+`adopt-c-bounds-safety/references/adoption-strategies.md`, `language-overview.md` and
 `common-patterns-and-pitfalls.md`. Adoption commits at several review checkpoints, so it has two
 prerequisites:
 
@@ -357,14 +357,14 @@ Read bounds with `__ptr_lower_bound(p)` and `__ptr_upper_bound(p)`.
 
 ## References
 
-Apple-specific, supporting §7.2:
+Apple-specific, supporting §7.2. These files belong to the Xcode skill pack skill `adopt-c-bounds-safety`: `install.sh` exports the pack from Xcode 27.1 or later (see `xcode`, "Xcode skill pack"). When it is not installed, use `apple-docs`.
 
-- `references/c-bounds-safety/language-overview.md` — full language reference: conversion tables,
+- `adopt-c-bounds-safety/references/language-overview.md` — full language reference: conversion tables,
   flexible array members, value-terminated arrays, out/in-out parameter shapes, forging rules.
-- `references/c-bounds-safety/adoption-strategies.md` — the complete full and header-only adoption
+- `adopt-c-bounds-safety/references/adoption-strategies.md` — the complete full and header-only adoption
   workflows.
-- `references/c-bounds-safety/common-patterns-and-pitfalls.md` — real-world recipes and
+- `adopt-c-bounds-safety/references/common-patterns-and-pitfalls.md` — real-world recipes and
   anti-patterns.
-- `references/c-bounds-safety/runtime-debugging.md` — trap behavior, LLDB commands, wide-pointer
+- `adopt-c-bounds-safety/references/runtime-debugging.md` — trap behavior, LLDB commands, wide-pointer
   inspection, watchpoints, crash-log analysis.
-- `references/c-bounds-safety/build-settings.md` — compiler flags, Xcode settings, soft-trap mode.
+- `adopt-c-bounds-safety/references/build-settings.md` — compiler flags, Xcode settings, soft-trap mode.
