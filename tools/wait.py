@@ -389,17 +389,19 @@ class JobWait:
     def _poll(self) -> bool:
         self.follow.pump()
         self.status = job_status(self.directory)
-        if self.status is not None:
-            self.follow.pump()
-            return True
-        if not job_running(self.directory):
+        if self.status is None and not job_running(self.directory):
+            # The job may have ended between the status read and the liveness check: give the supervisor a moment
+            # to write the status before calling the job lost.
             time.sleep(0.2)
             self.status = job_status(self.directory)
             if self.status is None:
                 self.status = 1
                 print(f"wait: job {self.job_id} ended without a status (its supervisor was killed)", file=sys.stderr)
-            return True
-        return False
+        if self.status is None:
+            return False
+        # Copy what the job wrote before it ended, on every path that ends the wait.
+        self.follow.pump()
+        return True
 
 
 # MARK: - Other conditions

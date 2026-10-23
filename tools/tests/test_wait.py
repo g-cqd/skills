@@ -207,7 +207,7 @@ class WaitTests(unittest.TestCase):
                 handle.write("DONE\n")
 
         self.later(0.4, replace)
-        self.assertEqual(wait("--log", self.path, "--match", "DONE", "--from-end")[0].returncode, 0)
+        self.assertEqual(wait("--log", self.path, "--match", "DONE")[0].returncode, 0)
 
     def test_log_decodes_a_character_split_between_writes(self):
         open(self.path, "w").close()
@@ -221,7 +221,7 @@ class WaitTests(unittest.TestCase):
                 handle.write(raw[4:])
 
         self.later(0.2, write)
-        self.assertEqual(wait("--log", self.path, "--match", "caf\u00e9 ok", "--from-end")[0].returncode, 0)
+        self.assertEqual(wait("--log", self.path, "--match", "caf\u00e9 ok")[0].returncode, 0)
 
     def test_log_never_matches_a_symlink_or_a_missing_file(self):
         target = self.path + ".real"
@@ -242,7 +242,7 @@ class WaitTests(unittest.TestCase):
                 handle.write("CEEDED\n")
 
         self.later(0.2, write)
-        self.assertEqual(wait("--log", self.path, "--match", "^BUILD SUCCEEDED$", "--from-end")[0].returncode, 0)
+        self.assertEqual(wait("--log", self.path, "--match", "^BUILD SUCCEEDED$")[0].returncode, 0)
 
     def test_all_needs_every_condition_and_any_needs_one(self):
         self.later(0.3, lambda: self.put("w", "x"))
