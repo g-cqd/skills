@@ -9,6 +9,7 @@
 #   ~/.agent-harness/
 #     AGENTS.md            -> <repo>/AGENTS.md          (canonical instructions)
 #     CLAUDE.md            -> AGENTS.md                 (alias for agents that read it)
+#     AGENTS.<fmt>.md      AGENTS.md + instructions/<fmt>.md, written for a harness with its own additions (codex)
 #     skills/<name>        -> <repo>/skills/<name>       (one link per skill)
 #     agents/<fmt>         -> <repo>/agents/<fmt>       (per-harness rendered agents)
 #     skills/<name>        -> <repo>/third_party/<submodule>/<dir>   (skills from submodules: REA)
@@ -279,7 +280,17 @@ for row in "${harness_rows[@]}"; do
   link "$ROOT/skills" "$home/skills"
   # Link the format-matching agents subdir under the harness's own agents/ dir.
   [[ $have_agents -eq 1 && -n "$afmt" && -d "$SRC/agents/$afmt" ]] && link "$ROOT/agents/$afmt" "$home/agents"
-  # Link the instruction file under the name this harness reads; the root has both.
+  # Link the instruction file under the name this harness reads; the root has both. A harness with its own additions
+  # (instructions/<fmt>.md) reads the standard followed by them, from a file this script writes into the root.
+  extra="$SRC/instructions/$afmt.md"
+  if [[ -n "$afmt" && -f "$extra" ]]; then
+    combined="$ROOT/AGENTS.$afmt.md"
+    if [[ $DRY -eq 0 ]]; then
+      { cat "$SRC/AGENTS.md"; printf '\n'; cat "$extra"; } > "$combined.tmp" && mv "$combined.tmp" "$combined"
+    fi
+    if [[ "$instr" == /* ]]; then link "$combined" "$instr"; else link "$combined" "$home/$instr"; fi
+    continue
+  fi
   if [[ "$instr" == /* ]]; then
     link "$ROOT/$(basename "$instr")" "$instr"
   else

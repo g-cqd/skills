@@ -41,7 +41,8 @@ Re-run `./install.sh` after `git pull`. Check the install:
 
 | Piece | What it is |
 |---|---|
-| `AGENTS.md` | The engineering standard. Portable: project-specific values are left as a `CONFIGURATION` block to fill in. `CLAUDE.md` is an alias. |
+| `AGENTS.md` | The engineering standard: general rules for any language, then a section for Swift and Apple platforms. Project-specific values are left as a `CONFIGURATION` block to fill in. `CLAUDE.md` is an alias. |
+| `instructions/` | Additions for one harness, appended to `AGENTS.md` for that harness only (`codex.md`: the Codex model preference). |
 | `skills/` | 20 skills. The catalog is below. |
 | `agents/` | 14 subagents, each with a model tier, its own tools, and a turn budget where the job is small. One neutral source renders for six harness formats. |
 | `tools/` | `wait` and `chat`: single Python files, linked to `~/.agent-harness/bin`. See `docs/tools.md`. |
@@ -174,6 +175,7 @@ skills, backs up a real file to `<name>.bak` before replacing it, and leaves oth
 
 ```
 AGENTS.md            engineering standard   (CLAUDE.md -> AGENTS.md)
+instructions/        per-harness additions to AGENTS.md (codex.md)
 install.sh           the linker
 skills/<skill>/      skills                 (SKILL.md, references/, evals/, scripts/)
 third_party/         the rea submodule, and SKILLS, the list of skill directories in submodules
