@@ -243,13 +243,15 @@ class ThirdPartySkillTests(InstallCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertLess(time.monotonic() - started, 20)
         self.assertIn("did not finish in 2 s", result.stdout)
+        self.assertIn("using the previous export", result.stdout)
         self.assertTrue((self.root / "skills" / "device-interaction" / "SKILL.md").exists())
 
     def test_a_failed_export_keeps_the_previous_one(self):
         self.run_xcode("device-interaction")
+        os.remove(self.root / "skills" / "device-interaction")
         result = self.run_xcode("device-interaction", FAKE_XCODE_FAIL="1")
-        self.assertIn("kept the previous export", result.stdout)
-        self.assertTrue((self.root / "skills" / "device-interaction" / "SKILL.md").exists())
+        self.assertIn("using the previous export", result.stdout)
+        self.assertLinks(self.root / "skills" / "device-interaction", self.root / "xcode-skills" / "device-interaction")
 
     def test_skip_xcode_does_not_export(self):
         result = self.install("--skip-submodules", "--skip-xcode", extra={"AGENT_HARNESS_XCODE_EXPORT": "/nonexistent"},
