@@ -169,3 +169,4 @@ This guide contains the core Swift engineering standards, conventions, and proje
 - `naming-conventions.md` — Naming, file structure, formatting, imports
 - `package-structure.md` — SPM layout, Package.swift, compiler flags, deps
 - `documentation.md` — Doc comments, MARK organization, complexity annotations
+- `inlinearray-and-span.md` — Swift 6.2 `InlineArray` and `Span`: fixed-size inline storage, safe views over memory

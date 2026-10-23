@@ -23,15 +23,17 @@ if #available(iOS 26, *) {
 The primary modifier for applying glass effects to views:
 
 ```swift
-.glassEffect(_ style: GlassEffectStyle = .regular, in shape: some Shape = .rect)
+func glassEffect(_ glass: Glass = .regular, in shape: some Shape = DefaultGlassEffectShape()) -> some View
 ```
+
+The default shape is a capsule.
 
 #### Basic Usage
 
 ```swift
 Text("Hello")
     .padding()
-    .glassEffect()  // Default regular style, rect shape
+    .glassEffect()  // regular glass in a capsule
 ```
 
 #### With Shape
@@ -51,14 +53,17 @@ Text("Capsule")
     .glassEffect(in: .capsule)
 ```
 
-### GlassEffectStyle
+### Glass variants
 
-#### Prominence Levels
+`Glass` has three variants (`.regular`, `.clear`, `.identity`) and two modifiers (`tint(_:)`, `interactive(_:)`):
 
 ```swift
-.glassEffect(.regular)     // Standard glass appearance
-.glassEffect(.prominent)   // More visible, higher contrast
+.glassEffect(.regular)     // standard glass
+.glassEffect(.clear)       // more transparent, for content over rich media
+.glassEffect(.identity)    // no glass: lets you toggle the effect without changing the view tree
 ```
+
+For a more prominent button, use the `.glassProminent` button style (see Glass Button Styles), not a `Glass` variant.
 
 #### Tinting
 
@@ -66,7 +71,7 @@ Add color tint to the glass:
 
 ```swift
 .glassEffect(.regular.tint(.blue))
-.glassEffect(.prominent.tint(.red.opacity(0.3)))
+.glassEffect(.regular.tint(.red.opacity(0.3)))
 ```
 
 #### Interactivity
@@ -113,6 +118,38 @@ GlassEffectContainer(spacing: 24) {
 ```
 
 **Note**: The container's `spacing` parameter should match the actual spacing in your layout for proper glass effect rendering.
+
+### Uniting effects into one shape
+
+`glassEffectUnion(id:namespace:)` merges the glass of several views into one effect, which helps when the views are
+created dynamically or do not share a stack:
+
+```swift
+@Namespace private var namespace
+
+GlassEffectContainer(spacing: 20) {
+    HStack(spacing: 20) {
+        ForEach(symbols.indices, id: \.self) { index in
+            Image(systemName: symbols[index])
+                .frame(width: 80, height: 80)
+                .glassEffect()
+                .glassEffectUnion(id: index < 2 ? "first" : "second", namespace: namespace)
+        }
+    }
+}
+```
+
+### Extending content under a sidebar or inspector
+
+`backgroundExtensionEffect()` mirrors a view's content into the area under a floating sidebar or inspector, so the
+glass has something to refract:
+
+```swift
+Image("hero")
+    .resizable()
+    .scaledToFill()
+    .backgroundExtensionEffect()
+```
 
 ## Glass Button Styles
 
@@ -286,7 +323,7 @@ struct GlassSegmentedControl: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         .glassEffect(
-                            selection == index ? .prominent.interactive() : .regular.interactive(),
+                            selection == index ? .regular.tint(.accentColor).interactive() : .regular.interactive(),
                             in: .capsule
                         )
                         .glassEffectID(selection == index ? "selected" : "option\(index)", in: animation)
@@ -330,14 +367,15 @@ if #available(iOS 26, *) {
 
 ```swift
 extension View {
+    /// Regular Liquid Glass on iOS 26 and later, a material below it. `Glass` itself needs iOS 26, so the parameter
+    /// list cannot mention it; only the body is version-gated.
     @ViewBuilder
     func glassEffectWithFallback(
-        _ style: GlassEffectStyle = .regular,
-        in shape: some Shape = .rect,
+        in shape: some Shape = Capsule(),
         fallbackMaterial: Material = .ultraThinMaterial
     ) -> some View {
         if #available(iOS 26, *) {
-            self.glassEffect(style, in: shape)
+            self.glassEffect(.regular, in: shape)
         } else {
             self.background(fallbackMaterial, in: shape)
         }

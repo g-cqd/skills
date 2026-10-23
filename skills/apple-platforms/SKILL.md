@@ -59,34 +59,26 @@ The iOS 26 / macOS 26 generation. For the next generation see `swiftui` (SDK 27 
 
 | Area | Reference |
 |---|---|
-| Liquid Glass — overview | `references/liquid-glass.md` |
-| Liquid Glass — SwiftUI | `references/SwiftUI-Implementing-Liquid-Glass-Design.md` |
 | Liquid Glass — UIKit | `references/UIKit-Implementing-Liquid-Glass-Design.md` |
 | Liquid Glass — AppKit | `references/AppKit-Implementing-Liquid-Glass-Design.md` |
 | Liquid Glass — WidgetKit | `references/WidgetKit-Implementing-Liquid-Glass-Design.md` |
-| Swift 6.2 concurrency updates | `references/Swift-Concurrency-Updates.md` |
-| `InlineArray`, `Span` | `references/Swift-InlineArray-Span.md` |
-| Swift 6.2 language updates | `references/swift-updates.md` |
 | Foundation Models — on-device LLM | `references/FoundationModels-Using-on-device-LLM-in-your-app.md` |
 | Visual Intelligence | `references/Implementing-Visual-Intelligence-in-iOS.md` |
-| AppIntents — WWDC 2025 overview | `references/AppIntents-Updates.md` |
 | App Intents — best practices and traps | `app-intents-specialist/references/`, routed in §2.1 |
 | App Intents — iOS 26 and 27 APIs | `app-intents-whats-new-27/references/`, routed in §2.1 |
 | StoreKit | `references/StoreKit-Updates.md` |
 | SwiftData class inheritance | `references/SwiftData-Class-Inheritance.md` |
 | AlarmKit | `references/SwiftUI-AlarmKit-Integration.md` |
-| 3D Swift Charts | `references/Swift-Charts-3D-Visualization.md` |
 | MapKit GeoToolbox | `references/MapKit-GeoToolbox-PlaceDescriptors.md` |
 | AttributedString | `references/Foundation-AttributedString-Updates.md` |
-| WebKit integration | `references/SwiftUI-WebKit-Integration.md` |
-| Styled text editing | `references/SwiftUI-Styled-Text-Editing.md` |
-| Toolbar customization | `references/SwiftUI-New-Toolbar-Features.md` |
-| SwiftUI feature overview | `references/swiftui-features.md` |
 | visionOS widgets | `references/Widgets-for-visionOS.md` |
 | visionOS overview | `references/visionos.md` |
-| Accessibility updates | `references/accessibility.md` |
+| Assistive Access and accessibility updates | `references/accessibility.md` |
 | Framework overview | `references/frameworks.md` |
 | Start here | `references/_guide.md` |
+
+SwiftUI APIs of this generation (Liquid Glass in SwiftUI, toolbars, `WebView`, styled text editing, 3D charts) are in
+`swiftui`. Swift 6.2 language changes (approachable concurrency, `InlineArray`, `Span`) are in `swift`.
 
 **Liquid Glass note:** the opt-out is removed in Xcode 27. Report Liquid Glass adoption as
 required work for the move to Xcode 27, not as optional polish.

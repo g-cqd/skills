@@ -163,7 +163,7 @@ This guide contains SwiftUI best practices, modern API usage, view composition r
 - `type-system-patterns.md` — **SwiftUI type system & design patterns**: protocols (`View`, `Shape`, `Layout`, `Gesture`), style system (Strategy pattern, configuration structs, environment cascade), `some` vs `any`, result builders (`@ViewBuilder` algebra), property wrappers taxonomy, environment vs preferences (bidirectional data flow), modifier pattern (`ModifiedContent` accumulation), type erasure spectrum (`AnyView` vs `AnyLayout`), `@Observable` framework, phantom/semantic types, generic containers (`TupleView`, `_ConditionalContent`)
 - `state-management.md` — Property wrappers and data flow
 - `view-structure.md` — View composition, extraction, containers
-- `performance-patterns.md` — Performance optimization and anti-patterns
+- `performance-patterns.md` — Performance optimization, anti-patterns, and the method for auditing a slow view
 - `list-patterns.md` — ForEach identity, list best practices
 - `modern-apis.md` — Modern API replacements
 - `animation-basics.md` — Core animation concepts, timing
@@ -175,3 +175,8 @@ This guide contains SwiftUI best practices, modern API usage, view composition r
 - `image-optimization.md` — AsyncImage, downsampling
 - `layout-best-practices.md` — Layout patterns, testability
 - `liquid-glass.md` — iOS 26+ Liquid Glass API
+- `toolbars-ios26.md` — iOS 26 toolbar changes (spacers, shared backgrounds, search placement, subtitles)
+- `webkit-integration.md` — `WebView` and `WebPage` (iOS 26)
+- `styled-text-editing.md` — Rich text editing with `AttributedString` in `TextEditor` (iOS 26)
+- `charts.md` — Swift Charts, including 3D charts (iOS 26)
+- `accessibility-patterns.md` — VoiceOver, Dynamic Type, traits, grouping, reduced motion, contrast, WCAG

@@ -102,12 +102,7 @@ array.indices      // 0..<3
 // Accessing elements
 let firstElement = array[0]  // 1
 
-// Iteration
-for element in array {
-    print(element)
-}
-
-// Using indices
+// Iteration: go through indices (InlineArray is not a Sequence in Swift 6.2)
 for i in array.indices {
     print(array[i])
 }

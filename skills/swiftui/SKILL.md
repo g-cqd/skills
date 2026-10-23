@@ -304,15 +304,15 @@ environment vs preferences, type erasure, Observation), `state-management.md`, `
 `performance-patterns.md`, `list-patterns.md`, `modern-apis.md`, `animation-basics.md`,
 `animation-transitions.md`, `animation-advanced.md`, `sheet-navigation-patterns.md`,
 `scroll-patterns.md`, `text-formatting.md`, `image-optimization.md`, `layout-best-practices.md`,
-`liquid-glass.md`, `accessibility-patterns.md`, `charts.md`, `macos-scenes.md`,
-`macos-window-styling.md`
+`liquid-glass.md`, `accessibility-patterns.md` (also WCAG, reduced motion, contrast), `charts.md` (including 3D),
+`toolbars-ios26.md`, `webkit-integration.md`, `styled-text-editing.md`, `macos-scenes.md`, `macos-window-styling.md`
 
 **Idiom** — `swiftui-specialist/references/`: `structure.md`, `dataflow.md`, `environment.md`, `modifiers.md`,
 `foreach.md`, `animations.md` (custom `Animatable`), `localization.md`, `soft-deprecation.md`,
 `soft-deprecated-apis.md`
 
-**Design** — `references/design/`: `_guide.md`, `typography.md`, `accessibility.md`,
-`design-tokens.md`, `layout-responsive.md`, `previews.md`, `performance-audit.md`
+**Design** — `references/design/`: `_guide.md`, `typography.md`, `design-tokens.md`, `layout-responsive.md`,
+`previews.md`
 
 **SDK 27** — `swiftui-whats-new-27/references/`: `state-macro.md`, `reorderable.md`, `async-image.md`,
 `toolbar.md`, `item-binding.md`, `swipe-actions.md`, `content-builder.md`; and `references/sdk-27-deprecations.md` here
