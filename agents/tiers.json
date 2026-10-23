@@ -111,7 +111,7 @@
     }
   },
   "frontier": {
-    "_use": "where a miss is the costliest outcome and the work runs long: a security audit, orchestrating a multi-agent job. Claude's documentation puts Fable 5.1 here: demanding reasoning and long-horizon agentic work, at 2.5 times Opus 5.5's price.",
+    "_use": "On demand only: no agent defaults to this tier, and build.py refuses it in agents/src. When the user asks for the strongest model for one task, select it for that run in the harness (Claude Code /model, Codex --model) or run the agent with it there.",
     "claude": {
       "models": ["fable", "claude-fable-5-1", "opus", "claude-opus-5-5", "claude-opus-4-8", "claude-opus-4-7"],
       "effort": "high"

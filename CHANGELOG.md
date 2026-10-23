@@ -17,6 +17,16 @@ All notable changes to this repository. Dates are commit dates.
 - `CONTRIBUTING.md`, `SECURITY.md`, this changelog, and a CI workflow.
 
 ### Changed
+- Alignment review (decisions recorded with their evidence): one owner per topic.
+  - Apple's Xcode skill pack is reference material under the skills that own it, not ten more skills; `xcode`,
+    `testing`, and `apple-platforms` route to Apple's procedures instead of repeating them.
+  - `apple-platforms` keeps its frameworks; its SwiftUI notes move to `swiftui`, its Swift 6.2 notes to `swift`, and
+    duplicates are merged. Merged references were checked against Apple's documentation, which removed APIs that do
+    not exist (`Glass.prominent`, `scrollExtensionMode`, `InlineArray.append`).
+  - `AGENTS.md` gives rules for any language and ends with a Swift and Apple platforms section; the Codex model
+    preference reaches Codex alone (`instructions/codex.md`).
+  - No agent defaults to the frontier tier: `orchestrator` and `security-auditor` run on `reasoning`, and `build.py`
+    refuses `frontier` in an agent source. Frontier is for a run the user asks for.
 - REA's `reverse-engineer-anything` skill is a git submodule (`third_party/rea`, pinned to the `rea-agents` release
   the MCP server runs, sparse checkout). `install.sh` fetches and links it.
 - `secure-coding` now does full audits as well as reviews: a review and an audit mode, a finding gate with six named

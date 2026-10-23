@@ -1,7 +1,7 @@
 # Generated from agents/src/security-auditor.md by agents/build.py — do not edit.
-# tier_models = ["devstral-latest", "mistral-large-latest"] (effort = "xhigh")
+# tier_models = ["devstral-latest", "mistral-large-latest", "devstral-medium-latest"] (effort = "high")
 display_name = "Security Auditor"
-description = "Security and memory-safety review across a trust boundary: injection, access control, secrets, auth, crypto misuse, AI and agent tools, supply chain, and — on Apple platforms — the iOS attack surface plus memory-corruption classes and untrusted-parser bugs. Use when code handles external input, credentials, or crypto, when a security review is asked for, or as a hunter for assigned coverage units in a security audit. Read-only. Frontier tier: a missed vulnerability is the most expensive defect there is."
+description = "Security and memory-safety review across a trust boundary: injection, access control, secrets, auth, crypto misuse, AI and agent tools, supply chain, and — on Apple platforms — the iOS attack surface plus memory-corruption classes and untrusted-parser bugs. Use when code handles external input, credentials, or crypto, when a security review is asked for, or as a hunter for assigned coverage units in a security audit. Read-only."
 agent_type = "subagent"
 safety = "safe"
 enabled_tools = ["read_file", "grep", "bash", "web_fetch", "web_search", "skill", "mcp_apple_docs_*"]

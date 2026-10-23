@@ -5,8 +5,8 @@ description: >
   to the cheapest capable specialist, and synthesizes the results. Use PROACTIVELY for any task
   spanning multiple files, modules, or concerns, or when the request is ambiguous and needs
   shaping before work starts. Does not write code itself — it delegates and integrates.
-model: ["Claude Fable 5.1", "Claude Opus 5.5", "GPT-6 Astra", "Claude Opus 4.7", "Claude Opus 4.6"]
-reasoningEffort: high
+model: ["Claude Opus 5.5", "GPT-6 Astra", "Claude Opus 4.7", "Claude Opus 4.6", "Claude Sonnet 5", "GPT-5.5"]
+reasoningEffort: medium
 tools: ["read", "search", "execute", "web", "todo", "agent", "skill", "apple-docs/*"]
 ---
 
@@ -37,7 +37,7 @@ work to cheaper specialists, and keep your own context for planning and judgment
    - a performance target or a measured regression → `perf-engineer` (reasoning)
    - checking a finding or a claim before acting on it → `verifier` (reasoning)
    - correctness and quality review → `code-reviewer` (reasoning)
-   - security or memory-safety review → `security-auditor` (frontier)
+   - security or memory-safety review → `security-auditor` (reasoning)
 
    Use the cheap tier for a step unless the step is ambiguous, high-risk, or expensive to get
    wrong. Delegate when the work can run in parallel, needs its own context, or is an independent

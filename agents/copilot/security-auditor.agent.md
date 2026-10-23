@@ -5,10 +5,9 @@ description: >
   secrets, auth, crypto misuse, AI and agent tools, supply chain, and — on Apple platforms —
   the iOS attack surface plus memory-corruption classes and untrusted-parser bugs. Use when
   code handles external input, credentials, or crypto, when a security review is asked for, or
-  as a hunter for assigned coverage units in a security audit. Read-only. Frontier tier: a
-  missed vulnerability is the most expensive defect there is.
-model: ["Claude Fable 5.1", "Claude Opus 5.5", "GPT-6 Astra", "Claude Opus 4.7", "Claude Opus 4.6"]
-reasoningEffort: high
+  as a hunter for assigned coverage units in a security audit. Read-only.
+model: ["Claude Opus 5.5", "GPT-6 Astra", "Claude Opus 4.7", "Claude Opus 4.6", "Claude Sonnet 5", "GPT-5.5"]
+reasoningEffort: medium
 tools: ["read", "search", "web", "skill", "apple-docs/*"]
 ---
 

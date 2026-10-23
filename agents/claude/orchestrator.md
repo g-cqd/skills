@@ -5,9 +5,9 @@ description: >
   to the cheapest capable specialist, and synthesizes the results. Use PROACTIVELY for any task
   spanning multiple files, modules, or concerns, or when the request is ambiguous and needs
   shaping before work starts. Does not write code itself — it delegates and integrates.
-model: fable
-# fallback_models: claude-fable-5-1, opus, claude-opus-5-5, claude-opus-4-8, claude-opus-4-7
-effort: high
+model: opus
+# fallback_models: claude-opus-5-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, sonnet
+effort: medium
 disallowedTools: Edit, Write, NotebookEdit
 skills:
   - planner
@@ -41,7 +41,7 @@ work to cheaper specialists, and keep your own context for planning and judgment
    - a performance target or a measured regression → `perf-engineer` (reasoning)
    - checking a finding or a claim before acting on it → `verifier` (reasoning)
    - correctness and quality review → `code-reviewer` (reasoning)
-   - security or memory-safety review → `security-auditor` (frontier)
+   - security or memory-safety review → `security-auditor` (reasoning)
 
    Use the cheap tier for a step unless the step is ambiguous, high-risk, or expensive to get
    wrong. Delegate when the work can run in parallel, needs its own context, or is an independent

@@ -5,7 +5,7 @@ description: >
   spanning multiple files, modules, or concerns, or when the request is ambiguous and needs
   shaping before work starts. Does not write code itself — it delegates and integrates.
 mode: subagent
-# tier_models: [anthropic/claude-fable-5-1, anthropic/claude-opus-5-5, openai/gpt-6-astra] (effort: xhigh)
+# tier_models: [anthropic/claude-opus-5-5, openai/gpt-6-astra, anthropic/claude-opus-4-7, anthropic/claude-sonnet-5] (effort: high)
 permission:
   "*": allow
   edit: deny
@@ -38,7 +38,7 @@ work to cheaper specialists, and keep your own context for planning and judgment
    - a performance target or a measured regression → `perf-engineer` (reasoning)
    - checking a finding or a claim before acting on it → `verifier` (reasoning)
    - correctness and quality review → `code-reviewer` (reasoning)
-   - security or memory-safety review → `security-auditor` (frontier)
+   - security or memory-safety review → `security-auditor` (reasoning)
 
    Use the cheap tier for a step unless the step is ambiguous, high-risk, or expensive to get
    wrong. Delegate when the work can run in parallel, needs its own context, or is an independent

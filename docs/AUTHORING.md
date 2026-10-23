@@ -256,7 +256,8 @@ Design rules:
   saves.
 - **Pick the cheapest tier that fits.** A small mechanical job with a clear stop is micro. Default
   to economy or standard. Use reasoning only for ambiguous, cross-cutting, high-risk, or
-  expensive-to-fix work, and frontier only where a miss is the costliest outcome.
+  expensive-to-fix work. Frontier is on demand only: no agent source may name it (`build.py` refuses it); the user
+  selects the frontier model for one run in the harness.
 - **Give the agent each tool its job needs, and no other.** An agent that must return to its caller
   for a `git log` costs more than one that runs it. An agent that can edit when its job is to
   report is a risk.

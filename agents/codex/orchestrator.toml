@@ -1,8 +1,8 @@
 name = "orchestrator"
 description = "Plans and coordinates multi-step work: decomposes a request into scoped subtasks, routes each to the cheapest capable specialist, and synthesizes the results. Use PROACTIVELY for any task spanning multiple files, modules, or concerns, or when the request is ambiguous and needs shaping before work starts. Does not write code itself — it delegates and integrates."
 model = "gpt-6-astra"
-# fallback_models = ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.5"]
-model_reasoning_effort = "xhigh"
+# fallback_models = ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol", "gpt-5.5"]
+model_reasoning_effort = "high"
 # Codex 0.149 and later ignore sandbox_mode here and run the agent in the parent's sandbox.
 sandbox_mode = "workspace-write"
 developer_instructions = '''
@@ -33,7 +33,7 @@ work to cheaper specialists, and keep your own context for planning and judgment
    - a performance target or a measured regression → `perf-engineer` (reasoning)
    - checking a finding or a claim before acting on it → `verifier` (reasoning)
    - correctness and quality review → `code-reviewer` (reasoning)
-   - security or memory-safety review → `security-auditor` (frontier)
+   - security or memory-safety review → `security-auditor` (reasoning)
 
    Use the cheap tier for a step unless the step is ambiguous, high-risk, or expensive to get
    wrong. Delegate when the work can run in parallel, needs its own context, or is an independent
