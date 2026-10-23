@@ -12,7 +12,7 @@ Best practices for testing Swift Concurrency with Swift Testing (recommended) an
 
 XCTest patterns are included for legacy codebases.
 
-## Swift Testing Basics
+## Async tests in Swift Testing
 
 ### Simple async test
 
@@ -25,12 +25,6 @@ func emptyQuery() async {
     #expect(searcher.results == ArticleSearcher.allArticles)
 }
 ```
-
-**Key differences from XCTest**:
-- `@Test` macro instead of `XCTestCase`
-- `#expect` instead of `XCTAssert`
-- Structs preferred over classes
-- No `test` prefix required
 
 ### Testing with actors
 
@@ -105,78 +99,9 @@ func searchTriggersObservation() async {
 
 ## Setup and Teardown
 
-### Using init/deinit
-
-```swift
-@MainActor
-final class DatabaseTests {
-    let database: Database
-    
-    init() async throws {
-        database = Database()
-        await database.prepare()
-    }
-    
-    deinit {
-        // Synchronous cleanup only
-    }
-    
-    @Test
-    func `inserts an item into the database`() async throws {
-        try await database.insert(item)
-        #expect(await database.count() == 1)
-    }
-}
-```
-
-**Limitation**: `deinit` cannot call async methods.
-
-### Test Scoping Traits
-
-For async teardown:
-
-```swift
-@MainActor
-struct DatabaseTrait: SuiteTrait, TestTrait, TestScoping {
-    func provideScope(
-        for test: Test,
-        testCase: Test.Case?,
-        performing function: () async throws -> Void
-    ) async throws {
-        let database = Database()
-        
-        try await Environment.$database.withValue(database) {
-            await database.prepare()
-            try await function()
-            await database.cleanup() // Async teardown
-        }
-    }
-}
-
-// Environment for task-local storage
-@MainActor
-struct Environment {
-    @TaskLocal static var database = Database()
-}
-
-// Apply to suite
-@Suite(DatabaseTrait())
-@MainActor
-final class DatabaseTests {
-    @Test
-    func `inserts an item through the environment database`() async throws {
-        try await Environment.database.insert(item)
-    }
-}
-
-// Or apply to individual test
-@Test(DatabaseTrait())
-func `runs with a fresh database`() async throws {
-    // Test code
-}
-```
-
-**Use when**: Need async cleanup after each test.
+`deinit` cannot await, so async teardown needs a scoping trait (`TestScoping`). The pattern, with `init` setup and a
+task-local environment, is in the `testing` skill: `references/swift-testing.md`, "Setup, teardown, and scoping
+traits".
 
 ## Handling Flaky Tests
 
@@ -456,60 +381,8 @@ func `long-running task does not retain its manager`() async {
 
 ## Migration from XCTest
 
-### XCTest → Swift Testing
-
-```swift
-// XCTest
-final class MyTests: XCTestCase {
-    func testExample() async {
-        XCTAssertEqual(value, expected)
-    }
-}
-
-// Swift Testing
-@Suite
-struct MyTests {
-    @Test
-    func `value matches the expectation`() async {
-        #expect(value == expected)
-    }
-}
-```
-
-### Expectations → Confirmations
-
-```swift
-// XCTest
-let expectation = expectation(description: "Done")
-doWork { expectation.fulfill() }
-await fulfillment(of: [expectation])
-
-// Swift Testing
-await confirmation { confirm in
-    await doWork { confirm() }
-}
-```
-
-### Setup/Teardown → Traits
-
-```swift
-// XCTest
-override func setUp() async throws {
-    await prepare()
-}
-
-// Swift Testing
-struct SetupTrait: TestTrait, TestScoping {
-    func provideScope(
-        for test: Test,
-        testCase: Test.Case?,
-        performing function: () async throws -> Void
-    ) async throws {
-        await prepare()
-        try await function()
-    }
-}
-```
+Moving a suite from XCTest to Swift Testing (expectations to confirmations, `setUp` to traits) is `testing` §9.2. The
+concurrency-specific part, keeping one serial executor for tests that need it, is under "Handling Flaky Tests" above.
 
 ## Troubleshooting
 
