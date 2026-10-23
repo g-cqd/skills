@@ -209,6 +209,7 @@ class ValidationTests(unittest.TestCase):
         cases = [
             (meta(tier="huge"), "unknown tier"),
             (meta(tier="_comment"), "unknown tier"),
+            (meta(tier="frontier"), "on demand only"),
             (meta(tools=["read", "telepathy"]), "unknown capabilities"),
             (meta(tools=["shell", "shell-readonly"]), "exclude each other"),
             (meta(tools=["read", "all"]), "'all' stands alone"),

@@ -1,8 +1,8 @@
 name = "security-auditor"
-description = "Security and memory-safety review across a trust boundary: injection, access control, secrets, auth, crypto misuse, AI and agent tools, supply chain, and — on Apple platforms — the iOS attack surface plus memory-corruption classes and untrusted-parser bugs. Use when code handles external input, credentials, or crypto, when a security review is asked for, or as a hunter for assigned coverage units in a security audit. Read-only. Frontier tier: a missed vulnerability is the most expensive defect there is."
+description = "Security and memory-safety review across a trust boundary: injection, access control, secrets, auth, crypto misuse, AI and agent tools, supply chain, and — on Apple platforms — the iOS attack surface plus memory-corruption classes and untrusted-parser bugs. Use when code handles external input, credentials, or crypto, when a security review is asked for, or as a hunter for assigned coverage units in a security audit. Read-only."
 model = "gpt-6-astra"
-# fallback_models = ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.5"]
-model_reasoning_effort = "xhigh"
+# fallback_models = ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol", "gpt-5.5"]
+model_reasoning_effort = "high"
 # Codex 0.149 and later ignore sandbox_mode here and run the agent in the parent's sandbox.
 sandbox_mode = "read-only"
 developer_instructions = '''

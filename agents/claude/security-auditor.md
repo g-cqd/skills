@@ -5,11 +5,10 @@ description: >
   secrets, auth, crypto misuse, AI and agent tools, supply chain, and — on Apple platforms —
   the iOS attack surface plus memory-corruption classes and untrusted-parser bugs. Use when
   code handles external input, credentials, or crypto, when a security review is asked for, or
-  as a hunter for assigned coverage units in a security audit. Read-only. Frontier tier: a
-  missed vulnerability is the most expensive defect there is.
-model: fable
-# fallback_models: claude-fable-5-1, opus, claude-opus-5-5, claude-opus-4-8, claude-opus-4-7
-effort: high
+  as a hunter for assigned coverage units in a security audit. Read-only.
+model: opus
+# fallback_models: claude-opus-5-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, sonnet
+effort: medium
 tools: Read, Grep, Glob, LSP, Bash, WebFetch, WebSearch, Skill, mcp__apple-docs
 skills:
   - secure-coding

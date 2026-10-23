@@ -1,6 +1,6 @@
 ---
 name: orchestrator
-tier: frontier
+tier: reasoning
 tools: all
 deny: edit
 skills: planner
@@ -40,7 +40,7 @@ work to cheaper specialists, and keep your own context for planning and judgment
    - a performance target or a measured regression → `perf-engineer` (reasoning)
    - checking a finding or a claim before acting on it → `verifier` (reasoning)
    - correctness and quality review → `code-reviewer` (reasoning)
-   - security or memory-safety review → `security-auditor` (frontier)
+   - security or memory-safety review → `security-auditor` (reasoning)
 
    Use the cheap tier for a step unless the step is ambiguous, high-risk, or expensive to get
    wrong. Delegate when the work can run in parallel, needs its own context, or is an independent

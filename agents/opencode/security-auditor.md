@@ -4,10 +4,9 @@ description: >
   secrets, auth, crypto misuse, AI and agent tools, supply chain, and — on Apple platforms —
   the iOS attack surface plus memory-corruption classes and untrusted-parser bugs. Use when
   code handles external input, credentials, or crypto, when a security review is asked for, or
-  as a hunter for assigned coverage units in a security audit. Read-only. Frontier tier: a
-  missed vulnerability is the most expensive defect there is.
+  as a hunter for assigned coverage units in a security audit. Read-only.
 mode: subagent
-# tier_models: [anthropic/claude-fable-5-1, anthropic/claude-opus-5-5, openai/gpt-6-astra] (effort: xhigh)
+# tier_models: [anthropic/claude-opus-5-5, openai/gpt-6-astra, anthropic/claude-opus-4-7, anthropic/claude-sonnet-5] (effort: high)
 permission:
   "*": deny
   read: allow

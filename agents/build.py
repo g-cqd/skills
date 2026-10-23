@@ -39,6 +39,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 SRC = HERE / "src"
 SKILLS = HERE.parent / "skills"
 TIERS = json.loads((HERE / "tiers.json").read_text())
+# Tiers that tiers.json defines for a run the user asks for, but that no agent may default to.
+ON_DEMAND_TIERS = {"frontier"}
 
 # Capability -> (Claude Code tools, Copilot tool aliases). Codex has no per-agent tool list: its agents inherit the
 # parent's tools and sandbox, so a capability there shows only in the sandbox_mode hint and the prompt.
@@ -167,6 +169,9 @@ def validate(meta, source, names):
             raise ValueError(f"{source}: missing '{key}'")
     if meta["tier"] not in TIERS or meta["tier"].startswith("_"):
         raise ValueError(f"{source}: unknown tier {meta['tier']!r}")
+    if meta["tier"] in ON_DEMAND_TIERS:
+        raise ValueError(f"{source}: tier {meta['tier']!r} is on demand only; use reasoning, and select the frontier "
+                         "model for one run in the harness when the user asks for it")
     if meta["tools"] == ["all"]:
         unknown = [tool for tool in meta.get("deny", []) if tool not in CAPABILITIES]
     elif "all" in meta["tools"] or "deny" in meta:

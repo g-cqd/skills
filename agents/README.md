@@ -38,8 +38,8 @@ The roster follows three rules:
 | `perf-engineer` | reasoning | read, search, shell, edit, lsp, web, todo, agents | — | Baseline, profile, change, re-measure; before and after with units | `performance-engineering` |
 | `verifier` | reasoning | read, search, shell, lsp | 60 turns | Reproduce a claim; CONFIRMED, REFUTED, or INCONCLUSIVE with evidence | — |
 | `code-reviewer` | reasoning | read, search, read-only shell, lsp, web, apple-docs | — | Correctness, architecture, simplification review, adversarial | `code-review` |
-| `security-auditor` | frontier | read, search, read-only shell, lsp, web, apple-docs | — | Trust boundaries, memory safety, the iOS attack surface | `secure-coding`, `memory-safety` |
-| `orchestrator` | frontier | everything but edit | — | Decompose, route to the cheapest capable specialist, synthesize | `planner` |
+| `security-auditor` | reasoning | read, search, read-only shell, lsp, web, apple-docs | — | Trust boundaries, memory safety, the iOS attack surface | `secure-coding`, `memory-safety` |
+| `orchestrator` | reasoning | everything but edit | — | Decompose, route to the cheapest capable specialist, synthesize | `planner` |
 
 Every agent also gets the `skills` capability, so it can load any other skill. The agents that
 delegate have an allowlist: `implementer` may start `scout`, `test-runner`, and `patcher`;
@@ -80,11 +80,11 @@ the only place cost is tuned:
 
 | Tier | Claude Code (`models`) | Codex (`models`) | Copilot (`model: [...]`) | Vibe / OpenCode / AGY | For |
 |---|---|---|---|---|---|
-| micro | `sonnet` → `haiku` (low) | `gpt-6-luna` → `gpt-6-sol` → `gpt-5.6-luna` → `gpt-5.4-mini` (low) | `Claude Sonnet 5` → `Claude Sonnet 4.6` → `GPT-5.4 mini` → `Claude Haiku 4.5` (low) | `devstral-small` / `fast` / `flash` (low) | one small mechanical job with a clear stop |
-| economy | `sonnet` → `haiku` (medium) | `gpt-6-sol` → `gpt-6-luna` → `gpt-5.6-sol` → `gpt-5.4-mini` (low) | `Claude Sonnet 5` → `Claude Sonnet 4.6` → `GPT-5.4 mini` (medium) | `devstral-2` / `balanced` / `flash` (low) | mechanical, high-volume, cheap to retry |
-| standard | `sonnet` → `opus` → `haiku` (high) | `gpt-6-sol` → `gpt-6.1-sol` → `gpt-5.6-sol` → `gpt-5.4` (medium) | `Claude Sonnet 5` → `Claude Sonnet 4.6` → `GPT-5.4` (high) | `devstral-2` / `balanced` / `inherit` (medium) | clear-scope reasoning; tests catch mistakes |
-| reasoning | `opus` → `fable` → `sonnet` (medium) | `gpt-6-astra` → `gpt-6.1-sol` → `gpt-6-sol` → `gpt-5.6-terra` → `gpt-5.4` (high) | `Claude Opus 5.5` → `Claude Opus 4.6` → `Claude Sonnet 5` → `GPT-5.4` (medium) | `devstral-2` / `deep` / `pro` (high) | ambiguous, high-risk, expensive to fix |
-| frontier | `fable` → `opus` → `sonnet` (high) | `gpt-6-astra` → `gpt-6.1-sol` → `gpt-6-sol` → `gpt-5.6-terra` → `gpt-5.4` (xhigh) | `Claude Fable 5.1` → `Claude Opus 5.5` → `Claude Opus 4.6` → `GPT-5.4` (high) | `devstral-2` / `deep` / `pro` (xhigh) | the costliest miss, the longest runs |
+| micro | `sonnet` → `claude-sonnet-5-5` → `claude-sonnet-5` → `claude-sonnet-4-6` → `haiku` → `claude-haiku-4-5` (low) | `gpt-6-luna` → `gpt-5.6-luna` → `gpt-6.1-sol` → `gpt-6-sol` → `gpt-5.5` (low) | `Claude Sonnet 5` → `GPT-6 Luna` → `Claude Sonnet 4.6` → `Claude Haiku 4.5` → `GPT-5.4-mini` (low) | `devstral-small-latest` / `anthropic/claude-sonnet-5` / `flash_lite` (low) | one small mechanical job with a clear stop |
+| economy | `sonnet` → `claude-sonnet-5-5` → `claude-sonnet-5` → `claude-sonnet-4-6` → `haiku` (medium) | `gpt-6-sol` → `gpt-6.1-sol` → `gpt-5.6-sol` → `gpt-6-luna` → `gpt-5.5` (low) | `Claude Sonnet 5` → `GPT-6.1 Sol` → `GPT-6 Sol` → `Claude Sonnet 4.6` → `Claude Haiku 4.5` (medium) | `devstral-small-latest` / `anthropic/claude-sonnet-5` / `flash` (medium) | mechanical, high-volume, cheap to retry |
+| standard | `sonnet` → `claude-sonnet-5-5` → `claude-sonnet-5` → `opus` → `claude-opus-5-5` → `claude-sonnet-4-6` (high) | `gpt-6-sol` → `gpt-6.1-sol` → `gpt-5.6-sol` → `gpt-5.5` (medium) | `Claude Sonnet 5` → `GPT-6.1 Sol` → `GPT-6 Sol` → `Claude Sonnet 4.6` → `GPT-5.5` (high) | `devstral-medium-latest` / `anthropic/claude-sonnet-5` / `inherit` (high) | clear-scope reasoning; tests catch mistakes |
+| reasoning | `opus` → `claude-opus-5-5` → `claude-opus-4-8` → `claude-opus-4-7` → `claude-opus-4-6` → `sonnet` (medium) | `gpt-6-astra` → `gpt-6.1-sol` → `gpt-6-sol` → `gpt-5.6-sol` → `gpt-5.5` (high) | `Claude Opus 5.5` → `GPT-6 Astra` → `Claude Opus 4.7` → `Claude Opus 4.6` → `Claude Sonnet 5` → `GPT-5.5` (medium) | `devstral-latest` / `anthropic/claude-opus-5-5` / `pro` (high) | ambiguous, high-risk, expensive to fix |
+| frontier | `fable` → `claude-fable-5-1` → `opus` → `claude-opus-5-5` → `claude-opus-4-8` → `claude-opus-4-7` (high) | `gpt-6-astra` → `gpt-6.1-sol` → `gpt-6-sol` → `gpt-5.5` (xhigh) | `Claude Fable 5.1` → `Claude Opus 5.5` → `GPT-6 Astra` → `Claude Opus 4.7` → `Claude Opus 4.6` (high) | `devstral-latest` / `anthropic/claude-fable-5-1` / `pro` (xhigh) | on demand only: no agent defaults to it |
 
 An agent's own `effort` replaces its tier's effort on every harness. **Re-audit this map every
 three months:** the best-value model in each class changes, and a stale map costs more for the same

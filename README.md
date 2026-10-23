@@ -105,18 +105,18 @@ cheap model; the top model is used only where a wrong answer is expensive to det
 | `perf-engineer` | reasoning | Baseline, profile, change, re-measure |
 | `verifier` | reasoning | Reproduce a claim before anyone acts on it |
 | `code-reviewer` | reasoning | Correctness / architecture review, adversarial |
-| `security-auditor` | frontier | Trust-boundary, memory-safety, iOS attack surface |
-| `orchestrator` | frontier | Decompose, route to the cheapest capable specialist, synthesize |
+| `security-auditor` | reasoning | Trust-boundary, memory-safety, iOS attack surface |
+| `orchestrator` | reasoning | Decompose, route to the cheapest capable specialist, synthesize |
 
 **`agents/tiers.json`** maps the five tiers to each harness's ordered `models` fallback list and
 effort. It is the only place where cost and model fallbacks are tuned (Claude Code / Codex shown):
 
 ```
-micro      sonnet -> haiku (low)          / gpt-6-luna -> gpt-6-sol -> gpt-5.6-luna (low)     one small mechanical job with a clear stop
-economy    sonnet -> haiku (medium)       / gpt-6-sol -> gpt-6-luna -> gpt-5.6-sol (low)      mechanical, high-volume, cheap to retry
-standard   sonnet -> opus -> haiku (high) / gpt-6-sol -> gpt-6.1-sol -> gpt-5.6-sol (medium)  clear-scope reasoning, tests catch mistakes
-reasoning  opus -> fable -> sonnet (med)  / gpt-6-astra -> gpt-6.1-sol -> gpt-6-sol (high)    ambiguous, high-risk, expensive to fix
-frontier   fable -> opus -> sonnet (high) / gpt-6-astra -> gpt-6.1-sol -> gpt-6-sol (xhigh)   the costliest miss, the longest runs
+micro      sonnet -> haiku (low)            / gpt-6-luna -> gpt-5.6-luna -> gpt-6.1-sol (low) one small mechanical job with a clear stop
+economy    sonnet -> haiku (medium)         / gpt-6-sol -> gpt-6.1-sol -> gpt-5.6-sol (low) mechanical, high-volume, cheap to retry
+standard   sonnet -> opus (high)            / gpt-6-sol -> gpt-6.1-sol -> gpt-5.6-sol (medium) clear-scope reasoning, tests catch mistakes
+reasoning  opus -> sonnet (medium)          / gpt-6-astra -> gpt-6.1-sol -> gpt-6-sol (high) ambiguous, high-risk, expensive to fix
+frontier   fable -> opus (high)             / gpt-6-astra -> gpt-6.1-sol -> gpt-6-sol (xhigh) on demand only: no agent defaults to it
 ```
 
 Re-audit the map every three months: the best-value model in each class changes. To change it,
