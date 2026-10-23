@@ -90,17 +90,17 @@ Try the levels in this order; stop when the budget from §1 is met.
 
 On a machine shared with other agents:
 
-- **Run the benchmark through `work`** (`planner`'s `scripts/work.py`).
-- **Interleave A and B in one job** (ABAB…, several rounds) at weight 1 or 2. Both sides see the
+- **Run the benchmark with `wait --run -- …`** (`tools/wait.py`), and record the load average (`uptime`) with each figure.
+- **Interleave A and B in one job** (ABAB…, several rounds). Both sides see the
   same background load, so the load cancels out of the ratio. Report the ratio with the medians
   and the load the machine was under.
 - **Prefer CPU time to wall time** where the harness can read it (thread or process CPU time).
   Contention stretches wall time more than CPU time. Instruction and cycle counts
   (`/usr/bin/time -l`, `perf stat`) are more stable still.
-- **One exclusive run per task, at most:** `--weight` equal to the CPU count, and only for an
-  absolute number the report must state, such as a budget in milliseconds. Take each absolute
-  figure in the report from that one run. Do not use the exclusive run as an iteration step or
-  loop it over rounds.
+- **One quiet run per task, at most:** take an absolute number the report must state, such as a
+  budget in milliseconds, from one run when no other agent builds or tests. Ask in a `chat`
+  channel first, and record `uptime` with the figure. Do not use the quiet run as an iteration
+  step or loop it over rounds.
 
 Compare like with like: same data, same build configuration, **release mode**.
 

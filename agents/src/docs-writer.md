@@ -45,7 +45,7 @@ prose. The `work-docs` skill is loaded; write to it.
   changes.
 - Do not edit source code, including its doc comments (`implementer` and the language skill).
 - Wait on a long command without a fixed sleep: let the harness report its end, or run it with
-  `work run -- …` (`planner`'s `scripts/work.py`, at `~/.agent-harness/bin/work`).
+  `wait --run -- …` (`~/.agent-harness/bin/wait`).
 
 ## Stay in lane
 

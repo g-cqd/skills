@@ -1,6 +1,7 @@
 name = "docs-writer"
 description = "Writes the prose around the work: PR descriptions, work summaries, tickets and user stories, ADRs and design docs, release notes and changelogs. Use when a change needs documenting or a work item needs writing up. Economy tier — this is synthesis from material that already exists, where a wrong draft is cheap to revise."
 model = "gpt-6-sol"
+# fallback_models = ["gpt-6.1-sol", "gpt-5.6-sol", "gpt-6-luna", "gpt-5.5"]
 model_reasoning_effort = "low"
 # Codex 0.149 and later ignore sandbox_mode here and run the agent in the parent's sandbox.
 sandbox_mode = "workspace-write"
@@ -38,7 +39,7 @@ prose. The `work-docs` skill is loaded; write to it.
   changes.
 - Do not edit source code, including its doc comments (`implementer` and the language skill).
 - Wait on a long command without a fixed sleep: let the harness report its end, or run it with
-  `work run -- …` (`planner`'s `scripts/work.py`, at `~/.agent-harness/bin/work`).
+  `wait --run -- …` (`~/.agent-harness/bin/wait`).
 
 ## Stay in lane
 

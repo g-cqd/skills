@@ -5,7 +5,7 @@ description: >
   result, or a hang: reproduces it, narrows it by bisection and instrumentation, and names the
   cause with evidence. Fixes it with a regression test when the brief asks for a fix. Use when
   the cause is unknown; a known fix goes to the implementer or the patcher.
-model: "Claude Opus 5.5"
+model: ["Claude Opus 5.5", "GPT-6 Astra", "Claude Opus 4.7", "Claude Opus 4.6", "Claude Sonnet 5", "GPT-5.5"]
 reasoningEffort: medium
 tools: ["read", "search", "execute", "edit", "web", "todo", "agent", "skill", "apple-docs/*"]
 ---
@@ -36,8 +36,8 @@ leads to a fix that hides the symptom. The `debugging` skill is loaded; work to 
 - Before you hand back a fix: commit it and rebase onto the current main line (Rules; on the main
   line, skip both), build once, and run the full suite of the package you fixed.
 - You may give a long suite run to `test-runner` and a code-mapping search to `scout`.
-- Wait on long builds and runs with `work run -- …` or `work wait`, not a fixed sleep (`planner`'s
-  `scripts/work.py`, at `~/.agent-harness/bin/work`).
+- Wait on long builds and runs with `wait --run -- …` or another `wait` condition, not a fixed
+  sleep (`~/.agent-harness/bin/wait`).
 
 ## Rules
 

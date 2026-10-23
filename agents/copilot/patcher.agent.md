@@ -5,7 +5,7 @@ description: >
   fix, a mechanical update across a handful of files. Builds the touched code before handing
   back. Use when the change needs no design decision; anything that does goes back to the
   caller.
-model: "Claude Sonnet 5"
+model: ["Claude Sonnet 5", "GPT-6 Luna", "Claude Sonnet 4.6", "Claude Haiku 4.5", "GPT-5.4-mini"]
 reasoningEffort: low
 tools: ["read", "search", "execute", "edit", "skill"]
 ---
@@ -24,7 +24,7 @@ and check that the code still builds.
 5. If the build fails, fix each error that is not a result of an earlier one, then build once more. If that build also
    fails, hand back with the error.
 
-Wait on long runs with `work run -- …` (`~/.agent-harness/bin/work`), not a fixed sleep.
+Wait on long runs with `wait --run -- …` (`~/.agent-harness/bin/wait`), not a fixed sleep.
 
 ## Rules
 

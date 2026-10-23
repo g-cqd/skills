@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Render the neutral agent sources in src/ into per-harness variants.
 
-One source of truth, src/<name>.md (frontmatter and a prompt body), becomes three outputs, because each harness reads
+One source of truth, src/<name>.md (frontmatter and a prompt body), becomes six outputs, because each harness reads
 a different format and tunes a different set of fields:
 
   claude/<name>.md          Markdown + YAML: model, effort, tools, maxTurns, skills, color, background, hooks
   copilot/<name>.agent.md   Markdown + YAML: model (a display name), reasoningEffort, tools (aliases)
   codex/<name>.toml         TOML: model, model_reasoning_effort, sandbox_mode, developer_instructions
+  vibe/<name>.toml          TOML: display_name, description, agent_type, safety, enabled_tools/disabled_tools, instructions
+  opencode/<name>.md        Markdown + YAML: description, mode, steps, permission map
+  agy/<name>/agent.md       Markdown + YAML: name, description, subagent, tools, inheritCustomizations, inheritMcp
 
 Frontmatter of src/<name>.md; the first four are required:
 
@@ -16,7 +19,7 @@ Frontmatter of src/<name>.md; the first four are required:
   tools         the capabilities it gets, comma-separated, from CAPABILITIES below; or `all`
   deny          with `tools: all`, the capabilities it does not get
   effort        replaces the tier's effort on every harness
-  max_turns     a turn budget: Claude's maxTurns, and a Budget section in the prompt on every harness
+  max_turns     a turn budget: Claude's maxTurns, OpenCode's steps, and a Budget section in the prompt on every harness
   skills        skills Claude loads into the agent's context at start, comma-separated
   spawns        the agents it may start, comma-separated; needs the `agents` capability
   color         the agent's color in Claude's transcript
@@ -24,7 +27,7 @@ Frontmatter of src/<name>.md; the first four are required:
 
 The tier -> model mapping in tiers.json is the cost dial.
 
-Run:  python3 build.py            write claude/, copilot/ and codex/
+Run:  python3 build.py            write claude/, copilot/, codex/, vibe/, opencode/, and agy/
       python3 build.py --check    change nothing; exit 1 when a generated file is missing, stale, or extra
 """
 import json
@@ -55,6 +58,49 @@ CAPABILITIES = {
     "apple-docs": (["mcp__apple-docs"], ["apple-docs/*"]),
 }
 
+VIBE_TOOLS = {
+    "read": ["read_file"],
+    "search": ["grep"],
+    "lsp": [],
+    "shell": ["bash"],
+    "shell-readonly": ["bash"],
+    "edit": ["edit", "write_file"],
+    "web": ["web_fetch", "web_search"],
+    "todo": ["todo"],
+    "agents": ["task"],
+    "skills": ["skill"],
+    "apple-docs": ["mcp_apple_docs_*"],
+}
+
+OPENCODE_PERMISSIONS = {
+    "read": ["read"],
+    "search": ["grep", "glob"],
+    "lsp": ["lsp"],
+    "shell": ["bash"],
+    # OpenCode has no per-agent read-only shell hook, so read-only shell agents do not get bash permission.
+    "shell-readonly": [],
+    "edit": ["edit"],
+    "web": ["webfetch", "websearch"],
+    "todo": ["todowrite"],
+    "agents": ["task"],
+    "skills": ["skill"],
+    "apple-docs": ["apple-docs_*"],
+}
+
+AGY_TOOLS = {
+    "read": ["view_file", "view_file_outline", "view_code_item"],
+    "search": ["grep_search", "find_by_name"],
+    "lsp": [],
+    "shell": ["run_command", "manage_task"],
+    "shell-readonly": ["run_command", "manage_task"],
+    "edit": ["replace_file_content", "multi_replace_file_content", "write_to_file"],
+    "web": ["read_url_content", "search_web"],
+    "todo": [],
+    "agents": ["invoke_subagent", "manage_subagents", "define_subagent"],
+    "skills": [],
+    "apple-docs": ["call_mcp_tool", "list_resources", "read_resource"],
+}
+
 # Refuses every Bash command that could change state, for an agent whose shell is read-only.
 READONLY_HOOK = (
     "hooks:\n"
@@ -68,6 +114,11 @@ READONLY_HOOK = (
 CODEX_READONLY_NOTE = (
     "Codex runs you in your parent's sandbox, so nothing but you enforces this role's read-only rule: never edit a "
     "file, and run only commands that read.\n\n"
+)
+
+UNHOOKED_SHELL_READONLY_NOTE = (
+    "Your shell tool is unguarded on this harness, so you must enforce this role's read-only rule yourself: never "
+    "edit, write, or delete a file, and run only commands that read.\n\n"
 )
 
 COLORS = {"red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"}
@@ -157,10 +208,17 @@ def is_readonly(meta):
     return "edit" not in granted and "shell" not in granted
 
 
-def model_and_effort(meta, harness):
-    """The harness's model and effort for this agent: its tier's, with the agent's own effort on top."""
+def models_and_effort(meta, harness):
+    """The harness's ordered model fallback list and effort for this agent."""
     tier = TIERS[meta["tier"]][harness]
-    return tier["model"], meta.get("effort", tier["effort"])
+    models = tier["models"] if "models" in tier else [tier["model"]]
+    return models, meta.get("effort", tier["effort"])
+
+
+def model_and_effort(meta, harness):
+    """The harness's primary model and effort for this agent."""
+    models, effort = models_and_effort(meta, harness)
+    return models[0], effort
 
 
 def prompt(meta, body):
@@ -230,9 +288,36 @@ def copilot_tools(meta):
     return tools
 
 
+def vibe_tools(meta):
+    """Mistral Vibe's enabled_tools list, in CAPABILITIES order, without duplicates."""
+    granted = capabilities(meta)
+    tools = []
+    for capability, names in VIBE_TOOLS.items():
+        if capability in granted or capability == "skills":
+            tools.extend(name for name in names if name not in tools)
+    return tools
+
+
+def agy_tools(meta):
+    """Google Antigravity's tool allowlist, always starting with send_message."""
+    granted = capabilities(meta)
+    tools = ["send_message"]
+    for capability, names in AGY_TOOLS.items():
+        if capability in granted:
+            tools.extend(name for name in names if name not in tools)
+    if meta["tools"] == ["all"]:
+        for name in ("call_mcp_tool", "list_resources", "read_resource"):
+            if name not in tools:
+                tools.append(name)
+    return tools
+
+
 def render_claude(meta, body):
-    model, effort = model_and_effort(meta, "claude")
-    fm = [f"name: {meta['name']}", yaml_desc(meta["description"]), f"model: {model}", f"effort: {effort}"]
+    models, effort = models_and_effort(meta, "claude")
+    fm = [f"name: {meta['name']}", yaml_desc(meta["description"]), f"model: {models[0]}"]
+    if len(models) > 1:
+        fm.append(f"# fallback_models: {', '.join(models[1:])}")
+    fm.append(f"effort: {effort}")
     tools = claude_tools(meta)
     if tools is not None:
         fm.append(f"tools: {', '.join(tools)}")
@@ -253,33 +338,119 @@ def render_claude(meta, body):
 
 
 def render_copilot(meta, body):
-    model, effort = model_and_effort(meta, "copilot")
-    fm = [f"name: {meta['name']}", yaml_desc(meta["description"]), f"model: {yaml_str(model)}"]
+    models, effort = models_and_effort(meta, "copilot")
+    model_val = (
+        yaml_str(models[0]) if len(models) == 1 else "[" + ", ".join(yaml_str(m) for m in models) + "]"
+    )
+    fm = [f"name: {meta['name']}", yaml_desc(meta["description"]), f"model: {model_val}"]
     fm.append(f"reasoningEffort: {effort}")
     fm.append("tools: [" + ", ".join(yaml_str(tool) for tool in copilot_tools(meta)) + "]")
     return "---\n" + "\n".join(fm) + "\n---\n\n" + prompt(meta, body)
 
 
 def render_codex(meta, body):
-    model, effort = model_and_effort(meta, "codex")
+    models, effort = models_and_effort(meta, "codex")
     readonly = is_readonly(meta)
     instructions = (CODEX_READONLY_NOTE if readonly else "") + prompt(meta, body)
     out = [
         f"name = {toml_str(meta['name'])}",
         f"description = {toml_str(meta['description'])}",
-        f"model = {toml_str(model)}",
-        f"model_reasoning_effort = {toml_str(effort)}",
-        "# Codex 0.149 and later ignore sandbox_mode here and run the agent in the parent's sandbox.",
-        f"sandbox_mode = {toml_str('read-only' if readonly else 'workspace-write')}",
-        f"developer_instructions = {toml_block(instructions)}",
+        f"model = {toml_str(models[0])}",
     ]
+    if len(models) > 1:
+        out.append("# fallback_models = [" + ", ".join(toml_str(m) for m in models[1:]) + "]")
+    out.extend(
+        [
+            f"model_reasoning_effort = {toml_str(effort)}",
+            "# Codex 0.149 and later ignore sandbox_mode here and run the agent in the parent's sandbox.",
+            f"sandbox_mode = {toml_str('read-only' if readonly else 'workspace-write')}",
+            f"developer_instructions = {toml_block(instructions)}",
+        ]
+    )
     return "\n".join(out) + "\n"
 
 
+def render_vibe(meta, body):
+    models, effort = models_and_effort(meta, "vibe")
+    readonly = is_readonly(meta)
+    has_readonly_shell = "shell-readonly" in capabilities(meta)
+    instructions = (UNHOOKED_SHELL_READONLY_NOTE if has_readonly_shell else "") + prompt(meta, body)
+    display_name = meta["name"].replace("-", " ").title()
+    out = [
+        "# Generated from agents/src/" + meta["name"] + ".md by agents/build.py — do not edit.",
+        "# tier_models = [" + ", ".join(toml_str(m) for m in models) + f"] (effort = {toml_str(effort)})",
+        f"display_name = {toml_str(display_name)}",
+        f"description = {toml_str(meta['description'])}",
+        'agent_type = "subagent"',
+        f"safety = {toml_str('safe' if readonly else 'neutral')}",
+    ]
+    if meta["tools"] == ["all"]:
+        denied = []
+        for cap in meta.get("deny", []):
+            denied.extend(name for name in VIBE_TOOLS[cap] if name not in denied)
+        if denied:
+            out.append("disabled_tools = [" + ", ".join(toml_str(t) for t in denied) + "]")
+    else:
+        out.append("enabled_tools = [" + ", ".join(toml_str(t) for t in vibe_tools(meta)) + "]")
+    out.append(f"instructions = {toml_block(instructions)}")
+    return "\n".join(out) + "\n"
+
+
+def render_opencode(meta, body):
+    models, effort = models_and_effort(meta, "opencode")
+    fm = [
+        yaml_desc(meta["description"]),
+        "mode: subagent",
+        f"# tier_models: [{', '.join(models)}] (effort: {effort})",
+    ]
+    if "max_turns" in meta:
+        fm.append(f"steps: {meta['max_turns']}")
+    if meta["tools"] == ["all"]:
+        perms = ['  "*": allow']
+        seen = set()
+        for cap in meta.get("deny", []):
+            for perm in OPENCODE_PERMISSIONS[cap]:
+                if perm not in seen:
+                    seen.add(perm)
+                    perms.append(f"  {perm}: deny")
+    else:
+        perms = ['  "*": deny']
+        seen = set()
+        for cap in capabilities(meta):
+            for perm in OPENCODE_PERMISSIONS[cap]:
+                if perm not in seen:
+                    seen.add(perm)
+                    perms.append(f"  {perm}: allow")
+        if "skill" not in seen:
+            perms.append("  skill: allow")
+    fm.append("permission:\n" + "\n".join(perms))
+    return "---\n" + "\n".join(fm) + "\n---\n\n" + prompt(meta, body)
+
+
+def render_agy(meta, body):
+    models, effort = models_and_effort(meta, "agy")
+    has_readonly_shell = "shell-readonly" in capabilities(meta)
+    instructions = (UNHOOKED_SHELL_READONLY_NOTE if has_readonly_shell else "") + prompt(meta, body)
+    tools_yaml = "\n".join(f"  - {tool}" for tool in agy_tools(meta))
+    fm = [
+        f"name: {meta['name']}",
+        yaml_desc(meta["description"]),
+        "subagent: true",
+        f"# tier_models: [{', '.join(models)}] (effort: {effort})",
+        "tools:\n" + tools_yaml,
+        "inheritCustomizations: false",
+        "inheritMcp: true",
+    ]
+    return "---\n" + "\n".join(fm) + "\n---\n\n" + instructions
+
+
 TARGETS = {
-    "claude": (".md", render_claude),
-    "copilot": (".agent.md", render_copilot),
-    "codex": (".toml", render_codex),
+    "claude": ("{name}.md", "*.md", render_claude),
+    "copilot": ("{name}.agent.md", "*.agent.md", render_copilot),
+    "codex": ("{name}.toml", "*.toml", render_codex),
+    "vibe": ("{name}.toml", "*.toml", render_vibe),
+    "opencode": ("{name}.md", "*.md", render_opencode),
+    "agy": ("{name}/agent.md", "*/agent.md", render_agy),
 }
 
 
@@ -293,8 +464,8 @@ def render_all():
         validate(meta, path.name, names)
         if meta["name"] != path.stem:
             raise ValueError(f"{path.name}: name {meta['name']!r} differs from the file name")
-        for harness, (ext, render) in TARGETS.items():
-            files[f"{harness}/{meta['name']}{ext}"] = render(meta, body)
+        for harness, (pattern, _, render) in TARGETS.items():
+            files[f"{harness}/{pattern.format(name=meta['name'])}"] = render(meta, body)
     return parsed, files
 
 
@@ -302,9 +473,13 @@ def existing_files(root=HERE):
     """The generated files under `root`, as {relative path: text}; hand-written files in subfolders are not among
     them."""
     found = {}
-    for harness, (ext, _) in TARGETS.items():
-        for path in (root / harness).glob(f"*{ext}"):
-            found[f"{harness}/{path.name}"] = path.read_text()
+    for harness, (_, glob_pat, _) in TARGETS.items():
+        base = root / harness
+        if not base.is_dir():
+            continue
+        for path in base.glob(glob_pat):
+            rel = path.relative_to(root).as_posix()
+            found[rel] = path.read_text()
     return found
 
 
@@ -329,18 +504,23 @@ def main(argv):
             print(line)
         print("generated files are current" if not problems else "run python3 build.py to regenerate")
         return 1 if problems else 0
-    for harness, (ext, _) in TARGETS.items():
+    for harness, (_, glob_pat, _) in TARGETS.items():
         directory = HERE / harness
         directory.mkdir(exist_ok=True)
-        for old in directory.glob(f"*{ext}"):
+        for old in directory.glob(glob_pat):
             old.unlink()
+            if old.parent != directory and not any(old.parent.iterdir()):
+                old.parent.rmdir()
     for name, text in files.items():
-        (HERE / name).write_text(text)
+        target = HERE / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
     for _, meta, _ in parsed:
         print(f"  {meta['name']:18s} tier={meta['tier']:9s} tools={','.join(capabilities(meta))}")
-    print(f"\n{len(parsed)} agents -> claude/ copilot/ codex/")
+    print(f"\n{len(parsed)} agents -> " + " ".join(f"{h}/" for h in TARGETS))
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
+

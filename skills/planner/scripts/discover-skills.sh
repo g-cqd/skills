@@ -9,20 +9,30 @@ PROJECT_ROOT="${1:-.}"
 
 # All known skill directories across AI tools and scopes
 SKILL_DIRS=(
-  # Claude Code — user-level
+  # Claude Code — user-level & project-level
   "$HOME/.claude/skills"
-  # Claude Code — project-level
   "$PROJECT_ROOT/.claude/skills"
   # Codex
-  "$HOME/.codex/skills"
+  "${CODEX_HOME:-$HOME/.codex}/skills"
   "$PROJECT_ROOT/.codex/skills"
+  # Mistral Vibe
+  "${VIBE_HOME:-$HOME/.vibe}/skills"
+  "$PROJECT_ROOT/.vibe/skills"
+  # Google Antigravity (agy)
+  "$HOME/.gemini/config/skills"
+  "$HOME/.gemini/skills"
+  "$PROJECT_ROOT/.gemini/skills"
+  # OpenCode
+  "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/skills"
+  "$HOME/.opencode/skills"
+  "$PROJECT_ROOT/.opencode/skills"
+  # Pi coding agent
+  "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills"
+  "$PROJECT_ROOT/.pi/skills"
   # Copilot
   "$HOME/.copilot/skills"
   "$PROJECT_ROOT/.copilot/skills"
-  # OpenCode
-  "$HOME/.opencode/skills"
-  "$PROJECT_ROOT/.opencode/skills"
-  # Agents (generic)
+  # Agents (generic Agent Skills standard)
   "$HOME/.agents/skills"
   "$PROJECT_ROOT/.agents/skills"
   # Additional Claude locations
@@ -51,8 +61,11 @@ for dir in "${SKILL_DIRS[@]}"; do
     */.claude/skills*)   source_tool="claude" ;;
     */.claude/commands*) source_tool="claude-commands" ;;
     */.codex/skills*)    source_tool="codex" ;;
+    */.vibe/skills*)     source_tool="vibe" ;;
+    */.gemini/*skills*)  source_tool="agy" ;;
+    *opencode/skills*)   source_tool="opencode" ;;
+    */.pi/*skills*)      source_tool="pi" ;;
     */.copilot/skills*)  source_tool="copilot" ;;
-    */.opencode/skills*) source_tool="opencode" ;;
     */.agents/skills*)   source_tool="agents" ;;
     *)                   source_tool="unknown" ;;
   esac

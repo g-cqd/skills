@@ -33,9 +33,10 @@ Corpus and tooling: [apple-docs](https://github.com/g-cqd/apple-docs), offline-f
 
 ## 1. Detect what is available
 
-1. **MCP server**: if `mcp__apple-docs__*` tools are in this session (`search_docs`, `read_doc`,
-   `list_frameworks`, `browse`, `list_taxonomy`, `search_sf_symbols`, `render_sf_symbol`, …), use
-   them.
+1. **MCP server**: if `apple-docs` MCP tools are in this session, use them. The tool names are
+   `mcp__apple-docs__*` in Claude Code and Codex, `mcp_apple_docs_*` in Mistral Vibe, and
+   `apple-docs` in Antigravity's `call_mcp_tool`. The tools are `search_docs`, `read_doc`,
+   `list_frameworks`, `browse`, `list_taxonomy`, `search_sf_symbols`, `render_sf_symbol`, …
 2. **CLI**: run `command -v apple-docs`.
 3. **Neither**: propose installation (§4). Until the user installs, use the SDK interfaces (§3
    step 5).
@@ -118,10 +119,23 @@ apple-docs mcp install       # writes local MCP client config
 claude mcp add -s user apple-docs -- apple-docs mcp start
 ```
 
-No-install fallback: a public instance, best-effort with no SLA.
+No-install fallback: the hosted Streamable HTTP instance `https://apple-docs-mcp.everest.mt/mcp`, best-effort with no SLA.
 
 ```bash
+# Claude Code (~/.claude.json):
 claude mcp add -s user --transport http apple-docs https://apple-docs-mcp.everest.mt/mcp
+
+# Codex (~/.codex/config.toml):
+codex mcp add apple-docs --url https://apple-docs-mcp.everest.mt/mcp
+
+# Antigravity (~/.gemini/config/mcp_config.json):
+agy mcp add apple-docs --transport http https://apple-docs-mcp.everest.mt/mcp
+
+# Mistral Vibe (~/.vibe/config.toml):
+# [[mcp_servers]]
+# name = "apple-docs"
+# transport = "streamable-http"
+# url = "https://apple-docs-mcp.everest.mt/mcp"
 ```
 
 For production or team use, recommend self-hosting instead of the public instance.

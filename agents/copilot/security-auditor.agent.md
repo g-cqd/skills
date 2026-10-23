@@ -7,7 +7,7 @@ description: >
   Use when code handles external input, credentials, or crypto, or when a security review is
   asked for. Read-only. Frontier tier: a missed vulnerability is the most expensive defect
   there is.
-model: "Claude Fable 5.1"
+model: ["Claude Fable 5.1", "Claude Opus 5.5", "GPT-6 Astra", "Claude Opus 4.7", "Claude Opus 4.6"]
 reasoningEffort: high
 tools: ["read", "search", "web", "skill", "apple-docs/*"]
 ---

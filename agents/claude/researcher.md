@@ -7,6 +7,7 @@ description: >
   that changes over time, such as model names, tool flags, or platform availability. Read-only;
   never edits.
 model: sonnet
+# fallback_models: claude-sonnet-5-5, claude-sonnet-5, opus, claude-opus-5-5, claude-sonnet-4-6
 effort: high
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch, Skill, mcp__apple-docs
 maxTurns: 60

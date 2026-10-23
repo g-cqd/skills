@@ -8,6 +8,7 @@ description: >
   asked for. Read-only. Frontier tier: a missed vulnerability is the most expensive defect
   there is.
 model: fable
+# fallback_models: claude-fable-5-1, opus, claude-opus-5-5, claude-opus-4-8, claude-opus-4-7
 effort: high
 tools: Read, Grep, Glob, LSP, Bash, WebFetch, WebSearch, Skill, mcp__apple-docs
 skills:

@@ -5,6 +5,7 @@ description: >
   repository's own style, and commits with the configured identity and signing. Use only when
   asked to commit. Never pushes, amends, rebases, or rewrites history unless the brief says so.
 model: sonnet
+# fallback_models: claude-sonnet-5-5, claude-sonnet-5, claude-sonnet-4-6, haiku, claude-haiku-4-5
 effort: low
 tools: Read, Grep, Glob, Bash, Skill
 maxTurns: 15

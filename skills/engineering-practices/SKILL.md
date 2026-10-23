@@ -3,7 +3,8 @@ name: engineering-practices
 description: >-
   Language-agnostic: refactoring, small reviewable changes, dependency hygiene, delivery
   flow, and verification before completion. Use when organizing commits or PRs, choosing
-  branch and release practices, upgrading dependencies, or changing legacy code. For code
+  branch and release practices, upgrading dependencies, changing legacy code, or waiting on a
+  long build, test run, or process with `wait`. For code
   review, use `code-review`; for test design, use `testing`; for task decomposition, use
   `planner`.
 allowed-tools:
@@ -33,7 +34,7 @@ one is `planner`.
           1 config while-developing ¬matrix · release ×1 per-task ∋ A∧B in-one-binary ·
           rerun ⇒ ¬rebuild · budget ≈4 per-task · report ∋ builds-by-kind
 §HANDBACK rebase-on-main ⇒ final build ⇒ full-suite ∀touched-packages ⇒ receiver ¬rebuilds
-§WAIT     long-work ⇒ harness-notify | work run|wait (planner) ⇒ ¬fixed-sleep
+§WAIT     long-work ⇒ harness-notify | wait (tools/wait.py) ⇒ ¬fixed-sleep
 §DEPS     add-dependency ∷ architectural-decision ¬convenience
 §BAN      big-bang-rewrite · drive-by-churn · flag ∅removal-ticket ·
           "tests pass" as done-evidence
@@ -157,31 +158,32 @@ time or checks too early. Wait on the event:
 1. **Let the harness notify you.** When the harness runs a command in the background and reports
    its end (Claude Code does this for background commands and subagents), start the command that
    way. Then continue with other work, or end the turn.
-2. **Otherwise run it with `work`.** `work` is `planner`'s `scripts/work.py`, installed at
-   `~/.agent-harness/bin/work`; it needs no setup. `work run` starts the command when the machine
-   has capacity (`--weight N` for the cores it uses) and returns when the command ends, with the
-   command's status. It stops waiting at a limit below the tool call's own limit (570 s by
-   default). `work wait` waits the same way on work that `work` did not start:
+2. **Otherwise run it with `wait`.** `wait` is `tools/wait.py`, installed at `~/.agent-harness/bin/wait`; it
+   needs no setup and keeps no state. It checks its conditions and returns when they hold, or with 124 when its limit
+   passes (570 s by default, below the tool call's own limit):
    ```sh
-   work run --weight 4 -- swift test --parallel      # start it, then wait for it
-   work wait job-7                                   # exited 124, still running: wait again
-   work wait --pid 4242                              # a process you started elsewhere
-   work wait --file tests.status                     # a status file; one holding a number exits with it
-   work wait --log build.log 'Build complete'        # a line in a log (an extended regular expression)
-   work wait --gone P2.lock                          # a lock file its phase deletes
+   wait --run -- swift test --parallel               # start it as a job, wait, exit with its status
+   wait --job 19a2b3c4d5e-3f2a                       # a job still running after a 124: keep waiting
+   wait --pid 4242                                   # a process you started elsewhere
+   wait --file tests.status                          # a status file; one holding a number exits with it
+   wait --log build.log --match 'Build complete'     # a line in a log (a Python regular expression)
+   wait --gone P2.lock                               # a lock file its phase deletes
+   wait --until "test -f out/report.json"            # done when the command exits 0: your own definition of done
    ```
-   Both exit with the command's own status, or 124 when the limit passes first. On 124, call
-   `work wait` again; do not use a longer sleep. After 3 timeouts with no new log output, check
-   `work status`, and stop and report if the job is stalled.
+   On 124 a job keeps running: continue with `wait --job ID` (the id is on the first line `wait`
+   prints), not with a second `--run`, which would start the command again. Other conditions:
+   run the same command again. Do not use a longer sleep. `wait --stop ID` stops a job. After 3 timeouts with no new log
+   output, stop and report that the job is stalled.
 3. **Keep the output complete and the status true.** Do not pipe a command into `tail`, `head`, or
    `grep` when you need its result: the pipe reports the last command's status, so a failed build
-   reads as success, and the cut output hides the result lines. Use `work run` instead: it keeps the
-   full output in its log, prints the last lines (`--tail N`), and exits with the command's own
-   status (127 when the command is missing, 128 plus the signal number when a signal killed it). If
-   the command must be a pipeline, run it as `bash -c 'set -o pipefail; …'`.
+   reads as success, and the cut output hides the result lines. Use `wait --run` instead: it passes
+   the output through and exits with the command's own status (127 when the command is missing, 126
+   when it cannot run, 128 plus the signal number when a signal killed it). To keep all the output,
+   send it to a file, check the exit status, then read the part you need. If the command must be a
+   pipeline, run it as `bash -c 'set -o pipefail; …'`.
 4. **Take the result from the exit status and from the tool's own report, not from the log.**
    - Output sent to a file is buffered in blocks (Swift's test runner included), so a `--log` wait
-     can lag the work. `work run` and `--pid` wait on the process itself.
+     can lag the work. `wait --run` and `--pid` wait on the process itself.
    - A run that hangs or is killed loses its last log lines, summary included, so the log does not
      show the test that did not finish.
    - Use the report the tool writes: `swift test --xunit-output FILE`, `xcodebuild
@@ -189,8 +191,7 @@ time or checks too early. Wait on the event:
    - Treat a missing summary as a run that did not finish, not as a pass.
    - To watch a long run live, run it under a pseudo-terminal, which buffers by line:
      `script -q /dev/null swift test`.
-5. **Report the time the work took** from the line `work` prints. That line separates the wait
-   for capacity from the run time. Do not report the time you waited.
+5. **Report the time the work took** from the line `wait` prints on its last line of standard error.
 
 ## 7. Rationalizations
 

@@ -46,10 +46,9 @@ You are the perf-engineer. You improve a measured number and prove the improveme
 - Build release once per task where you can, and rerun benchmarks from that build. Do not build a
   matrix of configurations.
 - Wait on long builds and benchmark runs without a fixed sleep. Run a benchmark with
-  `work run --weight <cores> -- …` (`planner`'s `scripts/work.py`, at
-  `~/.agent-harness/bin/work`).
-- Use an exclusive run (weight equal to the CPU count) only for the final absolute numbers: at
-  most one per task, holding each figure the report states.
+  `wait --run -- …` (`~/.agent-harness/bin/wait`).
+- Take the final absolute numbers when no other agent builds or tests: ask in a `chat` channel,
+  and record the load average (`uptime`) with each figure the report states.
 
 ## Rules
 

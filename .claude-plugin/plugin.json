@@ -1,8 +1,21 @@
 {
   "name": "skills",
-  "description": "Portable engineering harness: 14 tiered subagents and 21 atomic skills for Swift/Apple-platform development, testing, code review, planning, architecture, security, and Xcode agentic workflows.",
+  "description": "Portable engineering harness: 14 tiered subagents and 20 atomic skills for Swift/Apple-platform development, testing, code review, planning, architecture, security, and Xcode agentic workflows.",
   "version": "2.0.0",
+  "author": {
+    "name": "g-cqd"
+  },
+  "homepage": "https://github.com/g-cqd/skills",
+  "repository": "https://github.com/g-cqd/skills",
   "license": "MIT",
+  "keywords": [
+    "agents",
+    "skills",
+    "subagents",
+    "claude-code",
+    "codex",
+    "swift"
+  ],
   "skills": "./skills",
   "agents": "./agents/claude"
 }

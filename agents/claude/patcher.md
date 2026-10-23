@@ -6,6 +6,7 @@ description: >
   back. Use when the change needs no design decision; anything that does goes back to the
   caller.
 model: sonnet
+# fallback_models: claude-sonnet-5-5, claude-sonnet-5, claude-sonnet-4-6, haiku, claude-haiku-4-5
 effort: low
 tools: Read, Grep, Glob, LSP, Bash, Edit, Write, Skill
 maxTurns: 25
@@ -26,7 +27,7 @@ and check that the code still builds.
 5. If the build fails, fix each error that is not a result of an earlier one, then build once more. If that build also
    fails, hand back with the error.
 
-Wait on long runs with `work run -- …` (`~/.agent-harness/bin/work`), not a fixed sleep.
+Wait on long runs with `wait --run -- …` (`~/.agent-harness/bin/wait`), not a fixed sleep.
 
 ## Rules
 

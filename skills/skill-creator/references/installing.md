@@ -36,11 +36,20 @@ git clone https://github.com/owner/repo /tmp/skill-source
 cp -r /tmp/skill-source/path/to/skill ~/.agent-harness/skills/skill-name  # or your harness's skills dir
 ```
 
-### For Claude Code
-Place in `~/.claude/skills/<name>/SKILL.md` (personal) or `.claude/skills/<name>/SKILL.md` (project).
+### Per-Harness Skill Directories
 
-### For Codex
-Place in `~/.codex/skills/<name>/SKILL.md`. Installs into `$CODEX_HOME/skills/`.
+| Harness | User-level Skills Path | Project-level Skills Path |
+|---|---|---|
+| Claude Code | `~/.claude/skills/<name>/SKILL.md` | `.claude/skills/<name>/SKILL.md` |
+| Codex | `${CODEX_HOME:-~/.codex}/skills/<name>/SKILL.md` | `.codex/skills/<name>/SKILL.md` |
+| Mistral Vibe | `${VIBE_HOME:-~/.vibe}/skills/<name>/SKILL.md` | `.vibe/skills/<name>/SKILL.md` |
+| Antigravity (`agy`) | `~/.gemini/config/skills/<name>/SKILL.md` | `.gemini/skills/<name>/SKILL.md` |
+| OpenCode | `~/.config/opencode/skills/<name>/SKILL.md` | `.opencode/skills/<name>/SKILL.md` |
+| Pi | `${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills/<name>/SKILL.md` | `.pi/skills/<name>/SKILL.md` |
+| Copilot | `~/.copilot/skills/<name>/SKILL.md` | `.copilot/skills/<name>/SKILL.md` |
+| Shared Agent Skills | `~/.agents/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` |
+
+Run `./install.sh` at the repository root to link `~/.agent-harness/skills` into all detected harnesses at once.
 
 ## Distribution
 

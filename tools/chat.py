@@ -46,6 +46,7 @@ import os
 import re
 import secrets
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -60,7 +61,13 @@ PRUNE_AFTER = 24 * 3600
 HARNESSES = (
     "claude", "codex", "vibe", "agy", "antigravity", "opencode", "pi", "copilot", "cursor", "gemini", "aider", "goose",
 )
-SHELLS = ("sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh", "login", "env", "sudo", "nohup", "timeout")
+SHELLS = ("sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh", "env", "sudo", "nohup", "timeout", "xargs", "nice", "time")
+# Processes shared by many sessions: a terminal, a multiplexer, a login service, or init. The search for a session's
+# anchor stops at the first of these, so two terminal tabs never share an agent id.
+NOT_ANCHORS = (
+    "launchd", "init", "systemd", "login", "sshd", "sshd-session", "tmux", "screen", "zellij", "kitty", "alacritty",
+    "wezterm", "wezterm-gui", "iterm2", "terminal", "ghostty", "konsole", "gnome-terminal-server", "xterm", "code helper",
+)
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 STATE_RE = re.compile(r"^[a-z][a-z-]{0,15}$")
 
@@ -69,11 +76,26 @@ class ChatError(Exception):
     """A usage or state error: printed without a traceback, exit status 1."""
 
 
+def private_directory(path: str) -> None:
+    """Create path as a directory only this user can use, or check that it is one. A symlink or a directory owned by
+    someone else is refused; a directory that others can enter is narrowed to 0700."""
+    try:
+        os.mkdir(path, 0o700)
+    except FileExistsError:
+        pass
+    info = os.lstat(path)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        raise ChatError(f"{path} is not a directory owned by this user; refusing to use it")
+    if info.st_mode & 0o077:
+        os.chmod(path, 0o700)
+
+
 def home() -> str:
-    path = os.path.expanduser(os.environ.get("CHAT_HOME", "~/.agent-chat"))
-    for sub in ("", "channels", "agents", "cursors"):
-        directory = os.path.join(path, sub)
-        os.makedirs(directory, mode=0o700, exist_ok=True)
+    path = os.path.abspath(os.path.expanduser(os.environ.get("CHAT_HOME", "~/.agent-chat"))).rstrip(os.sep) or os.sep
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    private_directory(path)
+    for sub in ("channels", "agents", "cursors"):
+        private_directory(os.path.join(path, sub))
     return path
 
 
@@ -125,6 +147,8 @@ def find_anchor() -> Tuple[int, str, str]:
         lowered = name.lower().lstrip("-")
         if any(lowered == h or lowered.startswith(h + "-") or lowered.startswith(h + ".") for h in HARNESSES):
             return pid, start, slug(lowered, 12)
+        if lowered in NOT_ANCHORS or lowered.startswith("tmux"):
+            break
         if fallback is None and lowered not in SHELLS and not lowered.startswith("python"):
             fallback = (pid, start, slug(lowered, 12))
         if parent <= 1:
@@ -137,7 +161,9 @@ def find_anchor() -> Tuple[int, str, str]:
 
 def anchor_alive(record: Dict[str, Any]) -> bool:
     """True while the recorded process runs with the recorded start time, so a reused pid does not count."""
-    info = process_info(int(record["anchor"]["pid"]))
+    if not valid_record(record) or record["anchor"]["pid"] <= 1:
+        return False
+    info = process_info(record["anchor"]["pid"])
     return info is not None and info[1] == record["anchor"]["start"]
 
 
@@ -153,15 +179,20 @@ class Store:
     # --- atomic JSON files
     def read_json(self, *parts: str) -> Optional[Dict[str, Any]]:
         try:
-            with open(self.path(*parts), "r", encoding="utf-8") as handle:
-                return json.load(handle)
+            fd = os.open(self.path(*parts), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except OSError:
+            return None
+        try:
+            with os.fdopen(fd, "rb") as handle:
+                data = json.loads(handle.read(MAX_LINE * 4))
         except (OSError, ValueError):
             return None
+        return data if isinstance(data, dict) else None
 
     def write_json(self, data: Dict[str, Any], *parts: str) -> None:
         target = self.path(*parts)
         temp = f"{target}.{os.getpid()}.{secrets.token_hex(2)}.tmp"
-        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(data, handle, ensure_ascii=False, sort_keys=True)
         os.replace(temp, target)
@@ -172,24 +203,39 @@ class Store:
         for name in sorted(os.listdir(self.path("agents"))):
             if name.endswith(".json"):
                 record = self.read_json("agents", name)
-                if record and "id" in record and "anchor" in record:
+                if record and valid_record(record) and record["id"] + ".json" == name:
                     found.append(record)
         return found
 
     def me(self) -> Dict[str, Any]:
-        """This session's record, created on first use."""
-        forced = os.environ.get("CHAT_ID")
+        """This session's record, created on first use. Registration holds a lock, so two first calls from one
+        session at once still make one id."""
         pid, start, harness = find_anchor()
+        lock = os.open(self.path("agents", ".register.lock"), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            return self._me(pid, start, harness)
+        finally:
+            os.close(lock)
+
+    def _me(self, pid: int, start: str, harness: str) -> Dict[str, Any]:
+        forced = os.environ.get("CHAT_ID")
         if forced:
             if not NAME_RE.match(forced):
                 raise ChatError("CHAT_ID must be lowercase letters, digits and `-`, at most 40 characters")
             record = self.read_json("agents", forced + ".json")
+            if record is not None and not valid_record(record):
+                record = None
             if record is not None and (record["anchor"]["pid"], record["anchor"]["start"]) == (pid, start):
                 return record
+            if record is not None and anchor_alive(record):
+                raise ChatError(f"CHAT_ID {forced} belongs to another live session; choose another id")
             return self.register(forced, pid, start, harness)
         for record in self.agents():
             if record["anchor"]["pid"] == pid and record["anchor"]["start"] == start:
                 return record
+        # Test hook: widen the window between the lookup above and the registration below.
+        time.sleep(float(os.environ.get("CHAT_TEST_REGISTER_PAUSE", "0") or 0))
         folder = slug(os.path.basename(os.getcwd()), 16)
         for _ in range(20):
             candidate = f"{harness}-{folder}-{secrets.token_hex(2)}"
@@ -216,7 +262,7 @@ class Store:
         return {k: int(v) for k, v in (data or {}).items()}
 
     def update_cursors(self, agent_id: str, change) -> Dict[str, int]:  # type: ignore[no-untyped-def]
-        lock = os.open(self.path("cursors", agent_id + ".lock"), os.O_RDWR | os.O_CREAT, 0o600)
+        lock = os.open(self.path("cursors", agent_id + ".lock"), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         try:
             fcntl.flock(lock, fcntl.LOCK_EX)
             data = self.cursors(agent_id)
@@ -256,16 +302,24 @@ def append_record(path: str, record: Dict[str, Any], create: bool = False) -> No
     line = (json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
     if len(line) > MAX_LINE:
         raise ChatError(f"a message is at most {MAX_LINE} bytes; write the rest to a file and name the path")
-    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | (os.O_EXCL if create else 0)
-    fd = os.open(path, flags, 0o600)
+    flags = os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW | ((os.O_CREAT | os.O_EXCL) if create else 0)
     try:
+        fd = os.open(path, flags, 0o600)
+    except FileNotFoundError:
+        raise ChatError(f"channel file {os.path.basename(path)} is gone")
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ChatError(f"{os.path.basename(path)} is not a regular file")
         fcntl.flock(fd, fcntl.LOCK_EX)
         size = os.fstat(fd).st_size
         if size > 0:
-            with open(path, "rb") as check:
-                check.seek(size - 1)
-                if check.read(1) != b"\n":
+            reader = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                os.lseek(reader, size - 1, os.SEEK_SET)
+                if os.read(reader, 1) != b"\n":
                     line = b"\n" + line
+            finally:
+                os.close(reader)
         view = memoryview(line)
         while view:
             view = view[os.write(fd, view) :]
@@ -277,52 +331,104 @@ def read_records(path: str, start: int = 0) -> Iterator[Tuple[int, int, Dict[str
     """(offset, end offset, record) for each complete line from `start`. A last line without a newline is skipped,
     as is a line that is not a JSON object."""
     try:
-        with open(path, "rb") as handle:
-            handle.seek(start)
-            offset = start
-            for raw in handle:
-                end = offset + len(raw)
-                if raw.endswith(b"\n"):
-                    try:
-                        record = json.loads(raw)
-                    except ValueError:
-                        record = None
-                    if isinstance(record, dict):
-                        yield offset, end, record
-                offset = end
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError:
         return
+    with os.fdopen(fd, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            return
+        handle.seek(start)
+        offset = start
+        while True:
+            raw = handle.readline(MAX_LINE + 1)
+            if not raw:
+                return
+            oversized = False
+            while not raw.endswith(b"\n") and len(raw) > MAX_LINE:
+                oversized = True
+                more = handle.readline(MAX_LINE + 1)
+                if not more:
+                    return
+                offset += len(raw)
+                raw = more
+            end = offset + len(raw)
+            if raw.endswith(b"\n") and not oversized:
+                try:
+                    record = json.loads(raw)
+                except ValueError:
+                    record = None
+                if isinstance(record, dict):
+                    yield offset, end, record
+            offset = end
 
 
 def channel_header(path: str) -> Dict[str, Any]:
     for _, _, record in read_records(path):
-        return record if record.get("kind") == "open" else {}
+        if record.get("kind") != "open":
+            return {}
+        recipients = record.get("to")
+        return {"title": text_field(record, "title", 200), "by": text_field(record, "by", 80),
+                "to": [r for r in recipients if isinstance(r, str)] if isinstance(recipients, list) else []}
     return {}
 
 
+def text_field(record: Dict[str, Any], key: str, limit: int = MAX_LINE) -> str:
+    value = record.get(key)
+    return value[:limit] if isinstance(value, str) else ""
+
+
 def view_of(path: str) -> Dict[str, Any]:
-    """The whole channel folded: messages by id, reactions per message, retracted ids."""
+    """The whole channel folded: messages by id, reactions per message, retracted ids. Each field is normalised as it
+    is read, because any local process can write any line: a field of the wrong type counts as absent."""
     messages: Dict[str, Dict[str, Any]] = {}
     order: List[str] = []
     reactions: Dict[str, Dict[str, set]] = {}
     retracted = set()
     for offset, end, record in read_records(path):
         kind = record.get("kind")
-        if kind == "msg" and record.get("id"):
-            record["_offset"], record["_end"] = offset, end
-            messages[record["id"]] = record
-            order.append(record["id"])
-        elif kind in ("react", "unreact") and record.get("re"):
-            emoji = reactions.setdefault(record["re"], {}).setdefault(record.get("emoji", ""), set())
-            (emoji.add if kind == "react" else emoji.discard)(record.get("from", ""))
-        elif kind == "retract" and record.get("re"):
-            retracted.add((record["re"], record.get("from")))
-    hidden = {mid for mid, author in retracted if mid in messages and messages[mid].get("from") == author}
+        author = text_field(record, "from", 80)
+        target = text_field(record, "re", 64)
+        if kind == "msg" and MESSAGE_ID_RE.match(text_field(record, "id", 65)):
+            message = {"id": record["id"], "from": author, "re": target or None, "text": text_field(record, "text"),
+                       "ts": record["ts"] if isinstance(record.get("ts"), int) else 0, "kind": "msg",
+                       "_offset": offset, "_end": end}
+            if record["id"] not in messages:
+                order.append(record["id"])
+            messages[record["id"]] = message
+        elif kind in ("react", "unreact") and target:
+            emoji = reactions.setdefault(target, {}).setdefault(text_field(record, "emoji", 32), set())
+            (emoji.add if kind == "react" else emoji.discard)(author)
+        elif kind == "retract" and target:
+            retracted.add((target, author))
+    hidden = {mid for mid, who in retracted if mid in messages and messages[mid]["from"] == who}
     return {"messages": messages, "order": order, "reactions": reactions, "hidden": hidden}
 
 
+CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029\u202a-\u202e\u2066-\u2069]")
+FRAME_RE = re.compile(r"<(/?)(untrusted-message)", re.IGNORECASE)
+ATTR_RE = re.compile(r"[^A-Za-z0-9._:@+-]")
+MESSAGE_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
+
+
 def frame(text: str) -> str:
-    return text.replace("</untrusted-message", "<\\/untrusted-message")
+    """Message text as data: no control characters or terminal escapes, and no tag that opens or closes a frame."""
+    return FRAME_RE.sub(lambda m: "&lt;" + m.group(1) + m.group(2), CONTROL_RE.sub("", text))
+
+
+def attr(value: object) -> str:
+    """A value safe inside a double-quoted attribute: letters, digits and . _ : @ + - only, at most 80 characters."""
+    return ATTR_RE.sub("_", str(value))[:80]
+
+
+def line(value: object, limit: int = 200) -> str:
+    """Untrusted text shown on one line: control characters, newlines and frame tags removed."""
+    return frame(" ".join(str(value).split()))[:limit]
+
+
+def valid_record(record: Dict[str, Any]) -> bool:
+    anchor = record.get("anchor")
+    return (isinstance(record.get("id"), str) and NAME_RE.match(record["id"]) is not None
+            and isinstance(anchor, dict) and isinstance(anchor.get("pid"), int) and isinstance(anchor.get("start"), str))
 
 
 def clock(ts: int) -> str:
@@ -335,28 +441,36 @@ def render(channel: str, view: Dict[str, Any], ids: List[str]) -> str:
         message = view["messages"][mid]
         parent = message.get("re")
         indent = "  ↳ " if parent else ""
-        tags = f'from="{message.get("from")}" id="{mid}" channel="{channel}" time="{clock(message.get("ts", 0))}"'
+        stamp = message.get("ts") if isinstance(message.get("ts"), int) else 0
+        tags = f'from="{attr(message.get("from"))}" id="{attr(mid)}" channel="{attr(channel)}" time="{clock(stamp)}"'
         if parent:
-            tags += f' re="{parent}"'
+            tags += f' re="{attr(parent)}"'
         text = frame(str(message.get("text", "")))
         out.append(f"{indent}<untrusted-message {tags}>\n{text}\n</untrusted-message>")
         marks = view["reactions"].get(mid, {})
-        line = " ".join(f"{e}×{len(who)}" for e, who in sorted(marks.items()) if who)
-        if line:
-            out.append(f"    reactions: {line}")
+        summary = " ".join(f"{line(e, 16)}×{len(who)}" for e, who in sorted(marks.items()) if who)
+        if summary:
+            out.append(f"    reactions: {summary}")
     return "\n".join(out)
 
 
 # MARK: - Unread
 
 
-def followed(store: Store, me: Dict[str, Any]) -> List[str]:
-    """Channels this agent follows: those in its cursor file, and direct messages that name it."""
+def followed(store: Store, me: Dict[str, Any], headers: Optional[Dict[str, Dict[str, Any]]] = None) -> List[str]:
+    """Channels this agent follows: those in its cursor file, and direct messages that name it. A header never
+    changes, so a caller that asks again may pass a cache."""
     cursors = store.cursors(me["id"])
     found = set(c for c in cursors if os.path.exists(store.channel_path(c)))
     for channel in store.channel_ids():
-        header = channel_header(store.channel_path(channel))
-        if me["id"] in header.get("to", []):
+        if headers is not None and channel in headers:
+            header = headers[channel]
+        else:
+            header = channel_header(store.channel_path(channel))
+            if headers is not None:
+                headers[channel] = header
+        recipients = header.get("to")
+        if isinstance(recipients, list) and me["id"] in recipients:
             found.add(channel)
     return sorted(found)
 
@@ -388,7 +502,7 @@ def print_unread(found: List[Tuple[str, Dict[str, Any], List[str]]]) -> None:
     for channel, view, ids in found:
         print(f"#{channel}: {len(ids)} unread")
         print(render(channel, view, ids))
-        print(f"  handled? chat ack {channel} --through {ids[-1]}")
+        print(f"  handled? chat ack {attr(channel)} --through {attr(ids[-1])}")
 
 
 # MARK: - Commands
@@ -443,15 +557,15 @@ def cmd_channels(store: Store, args: argparse.Namespace) -> int:
         header = channel_header(store.channel_path(channel))
         mark = f"{unread_count(store, me, channel)} unread" if channel in mine else "not followed"
         kind = "dm" if header.get("to") else "channel"
-        title = f" - {header['title']}" if header.get("title") else ""
-        print(f"{channel}  [{kind}, {mark}]{title}")
+        title = f" - {line(header['title'], 120)}" if header.get("title") else ""
+        print(f"{line(channel, 100)}  [{kind}, {mark}]{title}")
     return 0
 
 
 def cmd_say(store: Store, args: argparse.Namespace) -> int:
     me = store.me()
     channel = store.resolve(args.channel)
-    text = sys.stdin.read() if args.text == "-" else args.text
+    text = sys.stdin.read(MAX_LINE + 1) if args.text == "-" else args.text
     if not text.strip():
         raise ChatError("a message is not empty")
     if args.re:
@@ -573,10 +687,21 @@ def cmd_wait(store: Store, args: argparse.Namespace) -> int:
     started = time.monotonic()
     deadline = started + args.timeout if args.timeout else None
     pause = FIRST_PAUSE
+    headers: Dict[str, Dict[str, Any]] = {}
+    scanned: Dict[str, int] = {}
     try:
         while True:
-            channels = [store.resolve(c) for c in args.channels] if args.channels else followed(store, me)
-            found = collect_unread(store, me, channels)
+            channels = [store.resolve(c) for c in args.channels] if args.channels else followed(store, me, headers)
+            changed = []
+            for channel in channels:
+                try:
+                    size = os.path.getsize(store.channel_path(channel))
+                except OSError:
+                    continue
+                if scanned.get(channel) != size:
+                    scanned[channel] = size
+                    changed.append(channel)
+            found = collect_unread(store, me, changed)
             if found:
                 print_unread(found)
                 return 0
@@ -640,9 +765,11 @@ def cmd_who(store: Store, args: argparse.Namespace) -> int:
         if not online and not args.all:
             continue
         level = "listening" if online and is_listening(store, record["id"]) else "online" if online else "offline"
-        matter = f" - {record['matter']}" if record.get("matter") else ""
+        matter = f" - {line(record['matter'])}" if record.get("matter") else ""
         you = " (you)" if record["id"] == me["id"] else ""
-        print(f"{record['id']}{you}  {level}  {record.get('state', '')}{matter}  [{record['harness']}, {record['folder']}, updated {age(record['updated'])} ago]")
+        updated = record.get("updated") if isinstance(record.get("updated"), int) else 0
+        print(f"{record['id']}{you}  {level}  {line(record.get('state', ''), 16)}{matter}  "
+              f"[{line(record.get('harness', ''), 16)}, {line(record.get('folder', ''), 160)}, updated {age(updated)} ago]")
     return 0
 
 

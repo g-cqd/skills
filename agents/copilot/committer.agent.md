@@ -4,7 +4,7 @@ description: >
   Commits a finished change: stages exactly the files it is given, writes the message in the
   repository's own style, and commits with the configured identity and signing. Use only when
   asked to commit. Never pushes, amends, rebases, or rewrites history unless the brief says so.
-model: "Claude Sonnet 5"
+model: ["Claude Sonnet 5", "GPT-6 Luna", "Claude Sonnet 4.6", "Claude Haiku 4.5", "GPT-5.4-mini"]
 reasoningEffort: low
 tools: ["read", "search", "execute", "skill"]
 ---

@@ -7,6 +7,7 @@ description: >
   it does not edit. Reasoning tier: review quality is the expensive judgment the cheap tiers
   cannot provide.
 model: opus
+# fallback_models: claude-opus-5-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, sonnet
 effort: medium
 tools: Read, Grep, Glob, LSP, Bash, WebFetch, WebSearch, Skill, mcp__apple-docs
 skills:

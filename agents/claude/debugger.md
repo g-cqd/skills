@@ -6,6 +6,7 @@ description: >
   cause with evidence. Fixes it with a regression test when the brief asks for a fix. Use when
   the cause is unknown; a known fix goes to the implementer or the patcher.
 model: opus
+# fallback_models: claude-opus-5-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, sonnet
 effort: medium
 tools: Read, Grep, Glob, LSP, Bash, Edit, Write, WebFetch, WebSearch, TodoWrite, Agent(scout, test-runner), Skill, mcp__apple-docs
 skills:
@@ -39,8 +40,8 @@ leads to a fix that hides the symptom. The `debugging` skill is loaded; work to 
 - Before you hand back a fix: commit it and rebase onto the current main line (Rules; on the main
   line, skip both), build once, and run the full suite of the package you fixed.
 - You may give a long suite run to `test-runner` and a code-mapping search to `scout`.
-- Wait on long builds and runs with `work run -- …` or `work wait`, not a fixed sleep (`planner`'s
-  `scripts/work.py`, at `~/.agent-harness/bin/work`).
+- Wait on long builds and runs with `wait --run -- …` or another `wait` condition, not a fixed
+  sleep (`~/.agent-harness/bin/wait`).
 
 ## Rules
 
