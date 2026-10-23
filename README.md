@@ -13,7 +13,8 @@ Pi, and GitHub Copilot. One source, linked into each harness installed on the ma
 ## Requirements
 
 - macOS or Linux, with `bash` and Python 3.9 or later. Nothing else: the tools, the install script, and the build
-  script use only the Python standard library. The tests of `agents/build.py` need Python 3.11 or later (`tomllib`).
+  script use only the Python standard library. The tests of `agents/build.py` need Python 3.11 or later (`tomllib`), and the skill validator
+  (`skills/skill-creator/scripts/quick_validate.py`) needs PyYAML.
 - At least one supported harness. `install.sh` links into each one it finds.
 - `git`, to fetch the two submodule skills. A download without git skips them and says so.
 - For the Xcode skill pack: a Mac with Xcode 27.1 or later. Elsewhere `install.sh` skips the pack and says so.

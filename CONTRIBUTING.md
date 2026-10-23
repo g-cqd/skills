@@ -16,7 +16,8 @@ tools. A change is good when an agent that follows the new text does the right t
 1. Edit `skills/<name>/SKILL.md`. Keep it under 500 lines: put long catalogs in `references/`.
 2. Add or update `skills/<name>/evals/evals.json`: a prompt, the expected output, and the expectations a grader can
    check. Cover the main trigger and a near miss.
-3. Run `python3 skills/skill-creator/scripts/quick_validate.py skills/<name>`.
+3. Run `python3 skills/skill-creator/scripts/quick_validate.py skills/<name>` (it needs PyYAML:
+   `python3 -m pip install pyyaml`).
 
 ## Change an agent
 

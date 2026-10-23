@@ -33,6 +33,7 @@ jobs:
         run: python3 -m unittest discover -s skills/secure-coding/scripts/tests
       - name: Skill validation
         run: |
+          python3 -m pip install --quiet pyyaml
           for skill in skills/*; do
             python3 skills/skill-creator/scripts/quick_validate.py "$skill" || exit 1
           done
