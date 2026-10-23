@@ -165,8 +165,27 @@ if [[ -f "$SRC/third_party/SKILLS" && $SKIP_SUBMODULES -eq 0 ]]; then
   done < "$SRC/third_party/SKILLS"
 fi
 
+# run_bounded SECONDS COMMAND...: run COMMAND, and stop it (TERM, then KILL) when it outlasts SECONDS. Returns its
+# status, or 124 when it was stopped. macOS has no `timeout` command, so this is done with a background job.
+run_bounded() {
+  local limit="$1"; shift
+  "$@" &
+  local pid=$! ticks=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( ticks >= limit * 10 )); then
+      kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null
+      wait "$pid" 2>/dev/null
+      return 124
+    fi
+    sleep 0.1; ticks=$((ticks + 1))
+  done
+  wait "$pid"
+}
+
 # Apple's Xcode skill pack is not shipped here. Xcode 27.1 or later exports it, and each exported skill is linked.
 # AGENT_HARNESS_XCODE_EXPORT replaces the exporter command; it is called with --output-dir DIR --replace-existing.
+# The exporter starts Xcode when it is not running and can wait on a dialog that nobody sees (over SSH, on a first
+# launch), so it gets AGENT_HARNESS_XCODE_TIMEOUT seconds (default 120).
 install_xcode_skills() {
   [[ $SKIP_XCODE -eq 1 ]] && return 0
   step "Exporting the Xcode skill pack"
@@ -180,9 +199,17 @@ install_xcode_skills() {
   # Export into a fresh directory and swap it in, so a skill that left the pack disappears and its link is pruned.
   local fresh="$dest.new"
   rm -rf "$fresh"; mkdir -p "$fresh"
-  if ! "${command_words[@]}" --output-dir "$fresh" --replace-existing >/dev/null 2>&1; then
+  local exported=0
+  run_bounded "${AGENT_HARNESS_XCODE_TIMEOUT:-120}" "${command_words[@]}" --output-dir "$fresh" --replace-existing \
+    >/dev/null 2>&1 || exported=$?
+  if [[ $exported -ne 0 ]]; then
     rm -rf "$fresh"
-    skip "Xcode skills: the export failed (Xcode 27.1 or later is needed); kept the previous export"; return 0
+    if [[ $exported -eq 124 ]]; then
+      skip "Xcode skills: the export did not finish in ${AGENT_HARNESS_XCODE_TIMEOUT:-120} s (Xcode may be waiting on a dialog: open Xcode, answer it, and run install.sh again); kept the previous export"
+    else
+      skip "Xcode skills: the export failed (Xcode 27.1 or later is needed); kept the previous export"
+    fi
+    return 0
   fi
   rm -rf "$dest"; mv "$fresh" "$dest"
   local d name count=0
