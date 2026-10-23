@@ -3,6 +3,7 @@ exits 0 when it succeeds, changes nothing in a dry run, moves a real file in its
 leaves every skill it does not own alone, and uninstalls only its own links. Each test runs it against a temporary
 home and root, never the real ones. Run: python3 -m unittest discover -s tests"""
 
+import json
 import os
 import pathlib
 import subprocess
@@ -194,6 +195,11 @@ mkdir -p "$out"
 for name in $FAKE_XCODE_SKILLS; do
   mkdir -p "$out/$name"; printf -- '---\nname: %s\ndescription: x\n---\n' "$name" > "$out/$name/SKILL.md"
 done
+for name in $FAKE_XCODE_LONG; do
+  mkdir -p "$out/$name"
+  long=$(printf 'Use for topic %s. ' $(seq 1 120))
+  printf -- '---\ndescription: "%s"\nname: %s\n---\nBody stays.\n' "$long" "$name" > "$out/$name/SKILL.md"
+done
 """
 
 
@@ -235,6 +241,19 @@ class ThirdPartySkillTests(InstallCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("the export failed", result.stdout)
         self.assertFalse((self.root / "skills" / "swiftui-specialist").exists())
+
+    def test_an_over_long_description_is_shortened_in_the_export_only(self):
+        result = self.run_xcode("device-interaction", FAKE_XCODE_LONG="app-intents-specialist")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("description shortened", result.stdout)
+        text = (self.root / "skills" / "app-intents-specialist" / "SKILL.md").read_text()
+        line = next(l for l in text.splitlines() if l.startswith("description: "))
+        description = json.loads(line[len("description: "):])
+        self.assertLessEqual(len(description), 1024)
+        self.assertTrue(description.startswith("Use for topic 1. Use for topic 2."))
+        self.assertTrue(description.endswith("The skill body lists the rest."))
+        self.assertIn("name: app-intents-specialist", text)
+        self.assertTrue(text.endswith("Body stays.\n"))
 
     def test_a_hanging_export_is_stopped_and_the_previous_one_kept(self):
         self.run_xcode("device-interaction")

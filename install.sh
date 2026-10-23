@@ -214,6 +214,13 @@ install_xcode_skills() {
   else
     rm -rf "$dest"; mv "$fresh" "$dest"
   fi
+  # The format limits a description to 1,024 characters and some harnesses (Pi) refuse a longer one; Apple's pack has
+  # descriptions above it, so the local export gets them shortened at a sentence boundary.
+  if command -v python3 >/dev/null 2>&1; then
+    python3 "$SRC/tools/install/shorten_descriptions.py" "$dest"
+  else
+    skip "python3 not found: Xcode skill descriptions over 1,024 characters are left as they are"
+  fi
   local d name count=0
   for d in "$dest"/*/; do
     name="$(basename "$d")"

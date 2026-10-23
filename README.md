@@ -153,7 +153,8 @@ standard, the skills, the agents, and `bin/wait` and `bin/chat`. Besides the ski
    submodules are pinned to a commit. Pin `rea` to the `rea-agents-<version>` tag of the REA server that your MCP
    configuration runs, so the skill matches the server's tools. To update one: `git -C third_party/<name> fetch --depth 1 origin main`, `git -C third_party/<name> checkout FETCH_HEAD`, then commit the changed pointer.
 2. **Xcode skill pack.** It runs `xcrun mcpbridge run-agent skills export` into `~/.agent-harness/xcode-skills/` and
-   links each exported skill. A skill of this repository with the same name wins. A skill that leaves the pack, or
+   links each exported skill. A description longer than the format's 1,024 characters (Pi refuses those) is
+   shortened at a sentence boundary in the local export. A skill of this repository with the same name wins. A skill that leaves the pack, or
    that leaves this repository, loses its link on the next install.
 
 A real directory that is in the way of a skill link moves to `~/.agent-harness/backups/`, not into the skills

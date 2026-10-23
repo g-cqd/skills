@@ -30,6 +30,8 @@ All notable changes to this repository. Dates are commit dates.
   script). `install.sh` exports it from Xcode 27.1 or later and links each skill. The skills here that used its files
   now name the pack skill and the file (`swiftui-specialist/references/foreach.md`), and `xcode` has a section that
   maps the pack to its owning skills.
+- `install.sh` shortens an exported Xcode skill description over 1,024 characters (Pi refuses those) at a sentence
+  boundary, limits the export to 120 s, and falls back to the previous export when a new one fails.
 - `install.sh` moves a real directory that is in the way of a skill link to `~/.agent-harness/backups/`, drops links to
   skills that no longer exist, and takes `--skip-submodules`, `--skip-xcode`, and `--skip-third-party`.
 - Skills, agent definitions, and `AGENTS.md` are rewritten in plain, literal-safe language (`docs/AUTHORING.md`
