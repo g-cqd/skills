@@ -5,6 +5,13 @@ description: >-
   tools. Use to turn a workflow into a skill, improve descriptions, fix missed or
   excessive triggering, or resolve overlapping skills. For routing requests to existing
   skills, use `planner`; for project documentation, use `work-docs`.
+allowed-tools:
+  - Read
+  - Glob
+  - Grep
+  - Bash
+  - Edit
+  - Write
 ---
 
 # Skill Creator

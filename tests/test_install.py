@@ -75,7 +75,7 @@ class InstallTests(InstallCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertLinks(self.home / ".codex" / "skills", self.root / "skills")
         self.assertLinks(self.home / ".codex" / "agents", self.root / "agents" / "codex")
-        self.assertLinks(self.home / ".codex" / "AGENTS.md", self.root / "AGENTS.md")
+        self.assertLinks(self.home / ".codex" / "AGENTS.md", self.root / "AGENTS.codex.md")
         self.assertLinks(self.home / ".vibe" / "skills", self.root / "skills")
         self.assertLinks(self.home / ".vibe" / "agents", self.root / "agents" / "vibe")
         self.assertLinks(self.home / ".vibe" / "AGENTS.md", self.root / "AGENTS.md")
@@ -97,6 +97,15 @@ class InstallTests(InstallCase):
         self.assertFalse((self.home / ".gemini" / "config" / "agents").exists())
         self.assertFalse((self.home / ".vibe" / "agents").exists())
         self.assertFalse((self.home / ".agents" / "skills").exists())
+
+    def test_codex_reads_the_standard_and_its_own_additions_and_no_other_harness_does(self):
+        (self.home / ".codex").mkdir()
+        self.assertEqual(self.install().returncode, 0)
+        codex = (self.home / ".codex" / "AGENTS.md").read_text()
+        self.assertTrue(codex.startswith((REPO / "AGENTS.md").read_text()))
+        self.assertIn((REPO / "instructions" / "codex.md").read_text().strip(), codex)
+        self.assertNotIn("CODEX MODEL PREFERENCE", (self.home / ".claude" / "CLAUDE.md").read_text())
+        self.assertNotIn("CODEX MODEL PREFERENCE", (REPO / "AGENTS.md").read_text())
 
     def test_wait_and_chat_are_linked_at_a_stable_path_and_run_from_it(self):
         self.assertEqual(self.install().returncode, 0)

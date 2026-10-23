@@ -7,6 +7,11 @@ description: >-
   execution contracts, agent-to-agent messages, or uncertain architecture decisions. For
   implementation practices, use `engineering-practices`; for code review, use `code-review`.
   Skip routine edits and direct questions.
+allowed-tools:
+  - Read
+  - Glob
+  - Grep
+  - Bash
 ---
 
 # Planner
