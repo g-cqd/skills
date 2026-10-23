@@ -205,13 +205,15 @@ install_xcode_skills() {
   if [[ $exported -ne 0 ]]; then
     rm -rf "$fresh"
     if [[ $exported -eq 124 ]]; then
-      skip "Xcode skills: the export did not finish in ${AGENT_HARNESS_XCODE_TIMEOUT:-120} s (Xcode may be waiting on a dialog: open Xcode, answer it, and run install.sh again); kept the previous export"
+      skip "Xcode skills: the export did not finish in ${AGENT_HARNESS_XCODE_TIMEOUT:-120} s (Xcode may be waiting on a dialog: open Xcode, answer it, and run install.sh again)"
     else
-      skip "Xcode skills: the export failed (Xcode 27.1 or later is needed); kept the previous export"
+      skip "Xcode skills: the export failed (Xcode 27.1 or later is needed)"
     fi
-    return 0
+    [[ -d "$dest" ]] || return 0
+    say "  using the previous export in $dest"
+  else
+    rm -rf "$dest"; mv "$fresh" "$dest"
   fi
-  rm -rf "$dest"; mv "$fresh" "$dest"
   local d name count=0
   for d in "$dest"/*/; do
     name="$(basename "$d")"
