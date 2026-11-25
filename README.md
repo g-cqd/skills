@@ -23,9 +23,10 @@ Pi, and GitHub Copilot. One source, linked into each harness installed on the ma
 
 ```bash
 git clone git@github.com:g-cqd/skills.git && cd skills
-./install.sh --dry-run     # show what it would fetch, export, and link; change nothing
-./install.sh               # fetch the submodule skills, export the Xcode pack, link into every detected harness
-./install.sh --uninstall   # remove only the links it created
+./install.sh --dry-run          # show what it would fetch, export, and link; change nothing
+./install.sh                    # default full setup: link all skills + submodules + Xcode pack
+./install.sh --profile minimal  # minimal high-signal setup (6 core skills from profiles/minimal.txt)
+./install.sh --uninstall        # remove only the links it created
 ```
 
 `--skip-submodules`, `--skip-xcode`, and `--skip-third-party` leave out the submodule skills, the Xcode pack, or both.
