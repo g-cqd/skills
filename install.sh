@@ -23,11 +23,12 @@
 #     <AGENTS.md|CLAUDE.md>-> the file that harness reads
 #
 # Usage:
-#   ./install.sh                 detect harnesses, link everything
-#   ./install.sh --dry-run       print what would happen, change nothing
-#   ./install.sh --uninstall     remove only the symlinks this script created
-#   ./install.sh --skip-submodules   do not fetch or link the submodule skills (third_party/SKILLS)
-#   ./install.sh --skip-xcode        do not export or link the Xcode skill pack
+#   ./install.sh                   detect harnesses, link everything (default full profile)
+#   ./install.sh --profile NAME    link only skills listed in profiles/NAME.txt (e.g. --profile minimal)
+#   ./install.sh --dry-run         print what would happen, change nothing
+#   ./install.sh --uninstall       remove only the symlinks this script created
+#   ./install.sh --skip-submodules do not fetch or link the submodule skills (third_party/SKILLS)
+#   ./install.sh --skip-xcode      do not export or link the Xcode skill pack
 #   ./install.sh --skip-third-party  both of the above
 #   AGENT_HARNESS_ROOT=~/x ./install.sh   override the canonical root
 #
@@ -35,18 +36,45 @@ set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${AGENT_HARNESS_ROOT:-$HOME/.agent-harness}"
-DRY=0; MODE=install; SKIP_SUBMODULES=0; SKIP_XCODE=0
-for a in "$@"; do
-  case "$a" in
-    --dry-run) DRY=1 ;;
-    --uninstall) MODE=uninstall ;;
-    --skip-submodules) SKIP_SUBMODULES=1 ;;
-    --skip-xcode) SKIP_XCODE=1 ;;
-    --skip-third-party) SKIP_SUBMODULES=1; SKIP_XCODE=1 ;;
-    -h|--help) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) printf 'unknown option: %s\n' "$a" >&2; exit 2 ;;
+DRY=0; MODE=install; SKIP_SUBMODULES=0; SKIP_XCODE=0; PROFILE="default"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) DRY=1; shift ;;
+    --uninstall) MODE=uninstall; shift ;;
+    --skip-submodules) SKIP_SUBMODULES=1; shift ;;
+    --skip-xcode) SKIP_XCODE=1; shift ;;
+    --skip-third-party) SKIP_SUBMODULES=1; SKIP_XCODE=1; shift ;;
+    --profile)
+      [[ $# -ge 2 ]] || { printf '--profile requires a name\n' >&2; exit 2; }
+      PROFILE="$2"; shift 2 ;;
+    --profile=*)
+      PROFILE="${1#--profile=}"; shift ;;
+    -h|--help) sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
+
+PROFILE_FILE=""
+PROFILE_SKILLS=()
+if [[ "$PROFILE" != "default" && "$PROFILE" != "full" ]]; then
+  PROFILE_FILE="$SRC/profiles/$PROFILE.txt"
+  [[ -f "$PROFILE_FILE" ]] || { printf 'unknown profile: %s (expected %s)\n' "$PROFILE" "$PROFILE_FILE" >&2; exit 2; }
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="$(printf '%s' "$line" | tr -d '[:space:]')"
+    [[ -n "$line" ]] && PROFILE_SKILLS+=("$line")
+  done < "$PROFILE_FILE"
+fi
+
+skill_selected() {
+  local name="$1"
+  [[ -z "$PROFILE_FILE" ]] && return 0
+  local wanted
+  for wanted in "${PROFILE_SKILLS[@]}"; do
+    [[ "$wanted" == "$name" ]] && return 0
+  done
+  return 1
+}
 
 c_bold=$'\033[1m'; c_dim=$'\033[2m'; c_grn=$'\033[32m'; c_ylw=$'\033[33m'; c_off=$'\033[0m'
 say()  { printf '%s\n' "$*"; }
@@ -126,17 +154,32 @@ link "$SRC/AGENTS.md" "$ROOT/AGENTS.md"
 [[ $DRY -eq 1 ]] || ln -sf AGENTS.md "$ROOT/CLAUDE.md"
 ok "$ROOT/CLAUDE.md" "AGENTS.md"
 
-# Every directory under skills/ holding a SKILL.md is one skill, linked by name.
+# Every directory under skills/ holding a SKILL.md is one skill, linked by name (filtered by --profile if set).
 skill_count=0
 if [[ -d "$SRC/skills" ]]; then
   for d in "$SRC/skills"/*/; do
     name="$(basename "$d")"
     [[ -f "$d/SKILL.md" ]] || continue
+    skill_selected "$name" || continue
     link "$d" "$ROOT/skills/$name"
     skill_count=$((skill_count + 1))
   done
 fi
-say "  ${skill_count} skills"
+say "  ${skill_count} skills (profile: ${PROFILE})"
+
+# When using a named profile, prune repo-owned skill links that are not in the profile.
+if [[ $DRY -eq 0 && -n "$PROFILE_FILE" && -d "$ROOT/skills" ]]; then
+  for existing in "$ROOT/skills"/*; do
+    [[ -L "$existing" ]] || continue
+    name="$(basename "$existing")"
+    target="$(readlink "$existing")"
+    if [[ "$target" == "$SRC"/skills/* || "$target" == "$SRC"/third_party/* ]]; then
+      if ! skill_selected "$name"; then
+        rm -f "$existing"; printf '  pruned %s (not in profile %s)\n' "$existing" "$PROFILE"
+      fi
+    fi
+  done
+fi
 
 # Skills from git submodules (third_party/SKILLS lists them): fetch each one shallow, check out only its skill
 # directory, and link it. A checkout without git, or without network, keeps what it already has.
@@ -159,6 +202,7 @@ if [[ -f "$SRC/third_party/SKILLS" && $SKIP_SUBMODULES -eq 0 ]]; then
   step "Linking skills from submodules"
   while IFS='|' read -r mod sub; do
     [[ -z "${mod// /}" || "$mod" == \#* ]] && continue
+    skill_selected "$(basename "$sub")" || continue
     fetch_submodule "$mod" "$sub" || continue
     if [[ $DRY -eq 1 || -f "$SRC/$mod/$sub/SKILL.md" ]]; then
       link "$SRC/$mod/$sub" "$ROOT/skills/$(basename "$sub")"

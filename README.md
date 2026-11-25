@@ -43,7 +43,8 @@ Re-run `./install.sh` after `git pull`. Check the install:
 |---|---|
 | `AGENTS.md` | The engineering standard: general rules for any language, then a section for Swift and Apple platforms. Project-specific values are left as a `CONFIGURATION` block to fill in. `CLAUDE.md` is an alias. |
 | `instructions/` | Additions for one harness, appended to `AGENTS.md` for that harness only (`codex.md`: the Codex model preference). |
-| `skills/` | 20 skills. The catalog is below. |
+| `skills/` | 22 skills (including unified `software-engineering`). The catalog is below. |
+| `profiles/` | Named install subsets (`profiles/minimal.txt`, installed with `./install.sh --profile minimal`) alongside the default full catalog. |
 | `agents/` | 14 subagents, each with a model tier, its own tools, and a turn budget where the job is small. One neutral source renders for six harness formats. |
 | `tools/` | `wait` and `chat`: single Python files, linked to `~/.agent-harness/bin`. See `docs/tools.md`. |
 | `third_party/` | Git submodule: the REA `reverse-engineer-anything` skill. `third_party/SKILLS` lists the skill directory in each submodule. |
@@ -54,12 +55,15 @@ Re-run `./install.sh` after `git pull`. Check the install:
 
 | Group | Skills |
 |---|---|
+| Unified A-to-Z | `software-engineering` (standalone end-to-end engineering standard: framing, design, Swift/Apple, testing, debugging, review, simplification, performance/memory/energy, security hardening, CI/CD, releases) |
 | Plan and deliver | `planner` (plans, task lists, orchestration, second opinions, agent messaging with `chat`), `engineering-practices` (small changes, delivery, waiting with `wait`), `project-conventions`, `simplification`, `work-docs` |
 | Review and verify | `code-review`, `debugging`, `testing`, `performance-engineering`, `algorithms` |
-| Security and memory | `secure-coding` (reviews, and full audits with a coverage ledger and independent verification), `memory-safety` |
-| Swift and Apple platforms | `swift`, `swiftui`, `apple-platforms`, `apple-docs`, `xcode` |
+| Security and memory | `secure-coding` (reviews, and full audits with a coverage ledger and independent verification), `memory-safety`, `pentest` |
+| Swift and Apple platforms | `swift`, `swiftui`, `apple-platforms`, `apple-docs` (MCP + CLI + SDK interfaces), `xcode` |
 | Systems and graphics | `system-architect`, `graphics` |
 | Authoring | `skill-creator` |
+
+**Minimal high-signal profile (`./install.sh --profile minimal`):** installs only the 6 substantial, non-overlapping skills listed in `profiles/minimal.txt` (`software-engineering`, `apple-docs`, `project-conventions`, `xcode`, `work-docs`, `skill-creator`) instead of the full 22-skill set, while leaving the default full install untouched.
 
 Two more sets arrive at install time and are not stored in this repository:
 

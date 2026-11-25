@@ -342,6 +342,27 @@ class ThirdPartySkillTests(InstallCase):
         self.assertIn("not a git checkout", result.stdout)
         self.assertLinks(self.root / "skills" / "demo", clone / "skills" / "demo")
 
+    def test_profile_minimal_links_only_selected_skills_and_prunes_others(self):
+        # First install default (full), then switch to --profile minimal and verify pruning.
+        full = self.install()
+        self.assertEqual(full.returncode, 0, full.stdout + full.stderr)
+        self.assertTrue((self.root / "skills" / "algorithms").is_symlink())
+
+        minimal = self.install("--profile", "minimal")
+        self.assertEqual(minimal.returncode, 0, minimal.stdout + minimal.stderr)
+        expected = [
+            line.split("#", 1)[0].strip()
+            for line in (REPO / "profiles" / "minimal.txt").read_text().splitlines()
+            if line.split("#", 1)[0].strip()
+        ]
+        for name in expected:
+            self.assertLinks(self.root / "skills" / name, REPO / "skills" / name)
+        self.assertFalse((self.root / "skills" / "algorithms").exists(), "non-profile skills must be pruned")
+
+    def test_unknown_profile_exits_2(self):
+        result = self.install("--profile", "does-not-exist")
+        self.assertEqual(result.returncode, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

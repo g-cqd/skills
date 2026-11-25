@@ -1,0 +1,19 @@
+# Minimal high-signal skill profile (install via: ./install.sh --profile minimal)
+#
+# Replaces the fine-grained generic skills with 6 high-signal, non-overlapping skills:
+#   - software-engineering : A-to-Z engineering doctrine (framing, design, Swift/Apple, coding,
+#                            testing, debugging, review, simplification, performance/memory/energy,
+#                            security hardening, CI/CD, and release delivery)
+#   - apple-docs           : offline-first MCP + CLI + Xcode SDK verification for Apple APIs,
+#                            HIG, App Store Review Guidelines, Swift Evolution, WWDC, SF Symbols, fonts
+#   - project-conventions  : repository convention detection & precedence (branches, commits, PRs,
+#                            linters, modules, test doubles)
+#   - xcode                : Xcode builds, simulators, devices, MCP bridge, signing & diagnostics
+#   - work-docs            : PR bodies, tickets, ADRs, RFCs, release notes, user-facing docs
+#   - skill-creator        : authoring and validating agent skills
+software-engineering
+apple-docs
+project-conventions
+xcode
+work-docs
+skill-creator

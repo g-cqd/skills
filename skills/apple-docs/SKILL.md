@@ -1,10 +1,11 @@
 ---
 name: apple-docs
 description: >-
-  Apple platforms: look up API behavior, availability, platform support, HIG, App Store
-  Review Guidelines, Swift Evolution, WWDC, and SF Symbols using apple-docs MCP or CLI.
-  Use for exact documentation and tooling setup. For SDK adoption, use `apple-platforms`;
-  for builds and device workflows, use `xcode`.
+  Apple platforms: look up exact API behavior, availability, deprecations, platform
+  support, HIG, App Store Review Guidelines, Swift Evolution, WWDC sessions, SF Symbols,
+  and Apple system fonts using apple-docs MCP server or CLI (with Xcode SDK interface
+  fallback). Use for any version-sensitive Apple claim, symbol verification, or tooling
+  setup. For builds and device workflows, use `xcode`.
 allowed-tools:
   - Read
   - Glob
@@ -12,12 +13,13 @@ allowed-tools:
   - Bash
 ---
 
-# Apple Docs
+# Apple Docs (MCP + CLI + SDK Interfaces)
 
-Other Apple skills defer to this skill when a claim depends on exact API behaviour,
-availability, or guideline wording.
+Offline-first verification for every Apple platform claim: API signatures, availability,
+deprecations, HIG, App Store Review Guidelines, Swift Evolution, WWDC sessions, SF Symbols,
+and Apple fonts.
 
-Corpus and tooling: [apple-docs](https://github.com/g-cqd/apple-docs), offline-first.
+Corpus and tooling: [g-cqd/apple-docs](https://github.com/g-cqd/apple-docs).
 
 ## Contract
 
@@ -33,125 +35,113 @@ Corpus and tooling: [apple-docs](https://github.com/g-cqd/apple-docs), offline-f
 
 ## 1. Detect what is available
 
-1. **MCP server**: if `apple-docs` MCP tools are in this session, use them. The tool names are
-   `mcp__apple-docs__*` in Claude Code and Codex, `mcp_apple_docs_*` in Mistral Vibe, and
-   `apple-docs` in Antigravity's `call_mcp_tool`. The tools are `search_docs`, `read_doc`,
-   `list_frameworks`, `browse`, `list_taxonomy`, `search_sf_symbols`, `render_sf_symbol`, …
+1. **MCP server** (preferred — zero shell overhead, structured pagination & symbol rendering):
+   Check for `apple-docs` MCP tools in this session (`mcp__apple-docs__*` in `ask`/Claude Code/Codex,
+   `mcp_apple_docs_*` in Mistral Vibe, `apple-docs` in Antigravity).
 2. **CLI**: run `command -v apple-docs`.
-3. **Neither**: propose installation (§4). Until the user installs, use the SDK interfaces (§3
-   step 5).
+3. **Neither**: propose installation (§5) and, until installed, verify directly against Xcode's SDK
+   `.swiftinterface` and header files (§4 step 5).
 
-A version-sensitive claim is one about availability, deprecation, platform support, or behaviour
-that changed between SDKs. Do not answer such a claim from memory without saying so. If no source
-above can verify it, state "could not verify" next to the claim.
+Never answer a version-sensitive claim (availability, deprecation, platform support, SDK delta)
+from memory without saying so. If no source above can verify it, write **"could not verify"**
+beside the claim.
 
-## 2. Query discipline
+---
 
-Search with keywords, not natural language. Search the exact symbol, API, or feature name
-(`NavigationStack`, `swipeActions`, `ENABLE_ENHANCED_SECURITY`), not a question such as "how do I
-make a list swipe". To narrow results, add `--framework` and `--source` filters, not more words.
+## 2. MCP Tool Reference
 
-When a question centres on an API name, look the name up before answering, including a name you
-are sure about; Apple APIs change in each SDK. In at least one query, use the symbol exactly as
-the user wrote it.
+| Tool | When to use | Key parameters |
+|---|---|---|
+| `search_docs` | Keyword + semantic lookup across docs, HIG, WWDC, Swift Evolution, sample code | `query` (compact symbol/API term), `framework` (e.g. `swiftui`, `app-store-review`), `platform` (`ios`/`macos`/`visionos`/…), `minVersion` (`{"ios":"17.0"}`), `deprecated: "exclude"` when writing code, `source` (`apple-docc`, `hig`, `wwdc`, `sample-code`, `swift-evolution`), `year`, `read: true` to inline top hit, `match` for excerpts |
+| `read_doc` | Read one page by `path` (`swiftui/view`, `app-store-review/3.1`) or `symbol` (`NavigationStack`) | `framework` to disambiguate; `section` for one heading; `maxChars` + `page` to paginate long pages; `match` for targeted excerpts |
+| `list_frameworks` | List indexed documentation roots with page counts | `kind` (`framework`, `technology`, `tooling`, `guidelines`, `design`, `release-notes`, `tutorial`) |
+| `browse` | Walk a framework's topic tree or a WWDC year's sessions | `framework` (`swiftui`, `design`, `wwdc`), `path`, `year`, `limit` |
+| `list_taxonomy` | Discover valid `kind`, `role`, `docKind`, `roleHeading`, `sourceType` filters | `field`, `all` |
+| `search_sf_symbols` | Find SF Symbol names, categories, aliases, or keywords | `query`, `scope` (`public` / `private`), `limit` |
+| `render_sf_symbol` | Preview an SF Symbol as SVG or PNG | `name`, `format` (`svg`/`png`), `weight`, `scale`, `size`, `color`, `background` |
+| `list_apple_fonts` / `render_font_text` | Inspect Apple system font families & render SVG preview | `fontId`, `text`, `size` |
 
-If two refined searches find no matching document, report that the corpus has no match and go to
-the SDK interfaces (§3 step 5).
+**MCP efficiency rules:**
+- Prefer compact symbol terms in `query` and put constraints (`framework`, `platform`, `deprecated: "exclude"`, `source`) in filter args.
+- Never pull an entire massive page (like `swiftui/view`) raw into context: pass `section`, `match`, or `maxChars` + `page`.
+- Use `read: true` on `search_docs` when you already know the exact symbol name to save a round trip.
 
-### MCP, when available
+---
 
-- `search_docs` first (tiered search), then `read_doc` on the best hit.
-- `list_frameworks` / `browse` to orient in an unfamiliar framework.
-- `list_taxonomy` to list valid filter values.
-- `search_sf_symbols` / `render_sf_symbol` for symbol names and availability.
-- Paginate long pages with `maxChars`; do not read a whole long document into context.
-
-### CLI
+## 3. CLI Reference
 
 ```bash
+# Search (exact symbol / API terms + structured filters)
 apple-docs search "NavigationStack"
 apple-docs search "Swift Testing" --source wwdc --year 2024
 apple-docs search "privacy" --framework app-store-review --read
+apple-docs search "swipeActions" --framework swiftui --deprecated exclude
+
+# Read & orient
 apple-docs read swiftui/view --section Overview
 apple-docs read View --framework swiftui
 apple-docs frameworks
 apple-docs browse swiftui
-apple-docs status            # corpus freshness
-apple-docs --help            # exhaustive reference
+apple-docs browse wwdc --year 2025
+
+# SF Symbols & corpus freshness
+apple-docs symbols "square.and.arrow.up"
+apple-docs status            # check corpus age once per session when SDK version matters
+apple-docs sync              # refresh snapshot (ask user before large download)
+apple-docs --help            # exhaustive command reference
 ```
 
-## 3. Verification workflow
+---
 
-1. Search the exact symbol or feature name.
-2. Read the matched document. Use `--section` or `maxChars` to limit output.
-3. Quote availability and behaviour from the document, marked as a quotation, and cite the doc
-   key (for example `swiftui/view`). Write the rest of the answer in your own words.
-4. If the documentation and observed compiler or runtime behaviour conflict, state the conflict.
-5. **Last resort**: inspect the SDK. `.swiftinterface` and header files under
-   `Xcode.app/Contents/Developer/Platforms/…/SDKs/` show what ships. When they disagree with the
-   documentation, the SDK files win.
+## 4. Verification Workflow
 
-For App Store Review Guidelines and the HIG, quote the text; do not paraphrase it.
+1. Search the **exact** symbol, API, entitlement, or guideline name (`NavigationStack`,
+   `ENABLE_ENHANCED_SECURITY`, `WKContentRuleListStore`), not a natural-language question.
+   In at least one query, use the symbol exactly as the user wrote it.
+2. Read the matched document using `--section` / `section` / `match` / `maxChars`.
+3. Quote exact availability, deprecations, and guideline wording (App Store Review Guidelines
+   and HIG must be quoted, never paraphrased) and cite the doc path (e.g. `swiftui/view`).
+4. If documentation and observed compiler/runtime behaviour conflict, state the conflict plainly.
+5. **Last resort (and final authority when docs disagree):** inspect the installed Xcode SDK
+   `.swiftinterface` and header files under
+   `$(xcode-select -p)/Platforms/*.platform/Developer/SDKs/*.sdk/System/Library/Frameworks/`.
+   The shipping SDK wins over stale docs.
+6. When a question names an SDK version or asks about new/changed APIs, run `apple-docs status`
+   once per session (if CLI is present). If the corpus predates the SDK, state it and suggest
+   `apple-docs sync` or verify via the SDK files.
 
-## 4. Installation — propose, do not impose
+---
 
-Installation downloads a ~1.5 GB snapshot, which takes 3–8.6 GB on disk depending on profile.
-Ask the user before installing, and let the user pick the profile. If the user declines, use the
-SDK interfaces (§3 step 5). Offer the public instance below as a separate question; it writes MCP
-config and sends queries to a third-party server.
+## 5. Installation — Propose, Do Not Impose
 
-Full install (CLI, MCP, and local website; requires Bun 1.1+):
+Ask the user before downloading a snapshot (~1.5 GB download; 3–8.6 GB on disk depending on
+profile) or writing any MCP client config.
+
+**Local offline install (CLI + MCP + web UI; requires Bun 1.1+):**
 
 ```bash
 git clone https://github.com/g-cqd/apple-docs.git
 cd apple-docs
 bun run dev:setup            # bun install + bun link
-apple-docs setup --compact   # ~3 GB; omit the flag for balanced (~5.5 GB)
+apple-docs setup --compact   # ~3 GB; omit --compact for balanced (~5.5 GB)
+apple-docs mcp install       # writes local MCP config (ask user first)
 ```
 
-Verify with `apple-docs search "NavigationStack"`, which works offline.
-
-MCP wiring (ask before writing MCP configuration):
-
-```bash
-apple-docs mcp install       # writes local MCP client config
-# or:
-claude mcp add -s user apple-docs -- apple-docs mcp start
-```
-
-No-install fallback: the hosted Streamable HTTP instance `https://apple-docs-mcp.everest.mt/mcp`, best-effort with no SLA.
+**No-install hosted Streamable HTTP MCP fallback** (`https://apple-docs-mcp.everest.mt/mcp`,
+best-effort, no SLA; ask user before wiring — sends queries to a third-party host; recommend
+self-hosting for teams):
 
 ```bash
-# Claude Code (~/.claude.json):
 claude mcp add -s user --transport http apple-docs https://apple-docs-mcp.everest.mt/mcp
-
-# Codex (~/.codex/config.toml):
 codex mcp add apple-docs --url https://apple-docs-mcp.everest.mt/mcp
-
-# Antigravity (~/.gemini/config/mcp_config.json):
-agy mcp add apple-docs --transport http https://apple-docs-mcp.everest.mt/mcp
-
-# Mistral Vibe (~/.vibe/config.toml):
-# [[mcp_servers]]
-# name = "apple-docs"
-# transport = "streamable-http"
-# url = "https://apple-docs-mcp.everest.mt/mcp"
+agy mcp add --transport http apple-docs https://apple-docs-mcp.everest.mt/mcp
 ```
-
-For production or team use, recommend self-hosting instead of the public instance.
-
-## 5. Guardrails
-
-- Treat corpus age as part of the answer. When the question names an SDK version or asks about
-  new or changed APIs, run `apple-docs status` once per session. If the corpus predates the SDK in
-  question, say so and suggest `apple-docs sync`. With the MCP server only (no CLI), skip this
-  check and note that corpus age is unknown.
 
 ## Boundaries
 
 | Need | Skill |
 |---|---|
-| Curated adoption guides for the SDK generation | `apple-platforms` |
-| SwiftUI view APIs and SDK 27 deltas | `swiftui` |
-| Building, testing, running, device verification | `xcode` |
-| Swift language and concurrency rules | `swift` |
+| Engineering doctrine, Swift 6 / SwiftUI architecture, testing, security, CI | `software-engineering` |
+| Building, signing, simulators, devices, Xcode MCP bridge | `xcode` |
+| Repository branch/commit/PR conventions | `project-conventions` |
+| PR descriptions, ADRs, RFCs, release notes | `work-docs` |
