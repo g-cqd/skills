@@ -16,8 +16,9 @@
       <area name="io" include="disk-reads,network-calls,serialization,database-queries" />
       <area name="startup" include="launch-time,pre-main,post-main,first-frame" />
       <area name="concurrency" include="thread-contention,lock-wait,actor-reentrancy,main-thread-blocking" />
+      <area name="energy" include="idle-wakeups,timer-coalescing,polling-loops,qos-ecore-vs-pcore,power-assertions,low-power-thermal" />
     </areas>
-    <tools suggest="instruments,os-signpost,time-profiler,allocations,system-trace" />
+    <tools suggest="instruments,os-signpost,time-profiler,allocations,system-trace,footprint,leaks,top-csw-idlew,pmset-assertions,perf-stat,time-l" />
   </profiling>
 
   <analysis>
@@ -27,6 +28,7 @@
   </analysis>
 
   <execution>
+    <rounds order="1:latency-throughput,2:memory-footprint,3:energy-wakeups,4:dynamic-verification-isolated" source="performance-engineering/references/audit-methodology.md" />
     <order strategy="profile-first,analyze-second,optimize-third" />
     <validation require="before-after-measurement" cadence="per-optimization" />
     <constraint policy="no-behavior-change" />

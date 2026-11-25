@@ -1,10 +1,11 @@
 ---
 name: performance-engineering
 description: >-
-  Language-agnostic: profile and benchmark CPU, memory, latency, throughput, caching, data
-  layout, atomics, and scheduling. Use when code is slow, latency spikes, parallel speedup
-  disappoints, the UI hangs with idle CPU, or a change claims better performance. For
-  algorithm selection, use `algorithms`; for SwiftUI rendering, use `swiftui`; for GPU
+  Language-agnostic: profile, benchmark, and audit CPU latency, throughput, memory footprint,
+  and energy efficiency (idle wakeups, polling, QoS, thermal/battery impact). Use when code
+  is slow, memory grows unbounded, battery drains, latency spikes, parallel speedup
+  disappoints, the UI hangs with idle CPU, or for a full performance, memory, or energy audit.
+  For algorithm selection, use `algorithms`; for SwiftUI rendering, use `swiftui`; for GPU
   work, use `graphics`.
 allowed-tools:
   - Read
@@ -54,7 +55,12 @@ behaviour that the method measures.
 - Triage with **USE** per resource (Utilization, Saturation, Errors, across CPU, memory, disk,
   network) and **RED** per service (Rate, Errors, Duration).
 - Locate the bottleneck with a profile, not by reading code: CPU profile and flame graph,
-  allocation profile, I/O and query traces.
+  allocation / physical-footprint profile (`footprint`, `Max RSS`), I/O and syscall traces,
+  and wakeup/energy traces (`top` `CSW`/`IDLEW`, `pmset -g assertions`, `perf stat`).
+- **Full performance audits** cover four rounds — Latency/Throughput, Memory Footprint,
+  Energy/Wakeups, and Dynamic Verification on isolated copies — anchored to LMAX Mechanical
+  Sympathy, Gil Tene tail-latency discipline, Brendan Gregg USE, NASA JPL bounded complexity,
+  and Apple Platform/Energy guides. See `references/audit-methodology.md`.
 
 ## 3. Fix — the order of attack
 
@@ -187,6 +193,8 @@ complexity. Use a well-tested mutex until measurement shows it is the bottleneck
 | Random latency spikes under load | Oversubscription, priority issues | Scheduler or System Trace |
 | UI hangs while CPU is idle | Priority inversion, blocked pool | Wait-state trace, lock-holder stacks |
 | Fast single-threaded, slow multi-threaded | Contended atomic or lock line ping-pong | Contention profiler |
+| Memory grows across iterations / idle RSS high | Unbounded cache, retained AST/bitmap, CoW copy | `footprint`, `leaks`, Allocations, Max RSS |
+| High idle battery / fan spin with ~0% work | Uncoalesced timer, high-Hz poll, unpaused render, wrong QoS | `top` (`CSW`/`IDLEW`), `pmset -g assertions`, Energy Log |
 
 ---
 
@@ -203,3 +211,7 @@ complexity. Use a well-tested mutex until measurement shows it is the bottleneck
 | Performance-audit execution contract | `planner` |
 | Constant-time comparison and side-channel handling | `secure-coding` |
 | Benchmarks as tests, CI baselines | `testing` |
+
+## References
+
+- `references/audit-methodology.md`: the four-round audit rubric (Latency/Throughput, Memory Footprint, Energy/Wakeups, Dynamic Verification) and reference authorities (LMAX, Gil Tene, Brendan Gregg USE, NASA JPL bounded complexity, Apple Platform/Energy guides, W3C RAIL / ISO 25010 / SCI).

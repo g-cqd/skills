@@ -469,6 +469,9 @@ the callback to `true` regardless of the real result.
 
 - `references/audit-workflow.md`: audit mode, the six phases, the coverage ledger, hunter and verifier prompts,
   profiles and budgets, prior runs, and the reports.
+- `references/standards-and-baselines.md`: high-assurance and compliance baselines (NIST SP 800-53 / 800-63B / 800-132,
+  CNSA 2.0 / ANSSI RGS, NCSC/MI5 endpoint hardening, OWASP ASVS 5.0 / MASVS, SLSA L3, ISO 27001 software-approval
+  criteria) and sandboxed dynamic-verification tooling.
 - `references/attack-classes.md`: the core attack classes and the domain map.
 - `references/domains/*.md`: one file per domain in §4.3, each with its discipline, classes, and validation rules.
 - `references/findings-format.md`: the JSON formats of `findings.json` and `coverage-ledger.json`.
