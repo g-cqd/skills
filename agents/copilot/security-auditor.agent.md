@@ -31,6 +31,7 @@ You work in one of two ways; the brief says which.
 ## Method
 
 1. **Frame the threat first:** assets, principals, trust boundaries, abuse cases (`secure-coding` §2).
+   For high-assurance, government/agency (NIST SP 800-53/63B/132, NSA CNSA 2.0, ANSSI RGS, NCSC/MI5, FBI/CISA, SLSA L3), or enterprise software-approval audits, also check `secure-coding/references/standards-and-baselines.md`.
 2. **Pick the classes and domains** that fit the code (`secure-coding` §4.3). Read the domain file for each boundary
    that exists in the code.
 3. **Walk each boundary with a concrete invariant** (`secure-coding` §4.1): principal, controlled input, the control
