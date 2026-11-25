@@ -66,6 +66,18 @@ exfiltration.
 values that grant access, and user-influenced output can expose them. Revealing generic instructions is not a
 finding.
 
+**Shell approval-classifier bypasses.** Allowing a session grant to match commands by program name or subcommand fails
+when leading environment assignments (`PATH=.`, `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.fsmonitor ...`, `BASH_ENV`),
+bash 4.4+ expansions without literal `$(` (`${x@P}` / ANSI-C `$'\x24(...)'`), redirections (`>`, `<`), or
+code-executing tool flags (`rg --pre`, `tar --to-command`, `zip -TT`, `find -exec`, `git -c`) slip past the classifier.
+Make command classifiers conservative by construction, scrub hijack env vars (`GIT_CONFIG_*`, `GIT_*_COMMAND`,
+`BASH_ENV`, `ENV`, `LESSOPEN`, `DYLD_*`), and never apply session grants when OS sandboxing is disabled.
+
+**Browser extension & OAuth local-bridge trust.** Verify every installable extension package cryptographically (CRX3
+RSA/ECDSA + `crxID`, and PKCS#7/COSE or strict official-host enforcement for `.xpi`) rather than accepting raw ZIPs;
+bind local OAuth callback listeners strictly to loopback (`127.0.0.1` / `::1`) with RFC 7636 PKCE (`S256`), escaped
+HTML responses, and Keychain-backed client secrets (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`).
+
 ## Moves
 
 - Draw four maps: each execution identity, each capability, each writable context or memory source, each output

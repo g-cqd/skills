@@ -54,6 +54,16 @@ channel, target path, expiry, or rollback state, or mixes metadata and payload f
 **Plugin trust expansion.** A plugin gains host authority beyond its declared scope, a publisher can replace another
 publisher's identity, or install hooks run before authenticity and capability checks.
 
+**Dynamic secrets overprovisioning & self-hosted runner reuse.** Expressions like `${{ secrets[matrix.key] }}` or
+`secrets: inherit` provision the entire secrets context to a runner job. Self-hosted runners that run both PR checks
+and release signing (or share persistent caches like `DerivedData` / `swiftpm` across trust zones) allow PR code to
+steal signing keys or poison release builds. Lint every workflow with `zizmor` and `actionlint`; separate PR and
+release runner pools; materialize signing keys into ephemeral `$RUNNER_TEMP` files with `0600` cleanup.
+
+**Missing SLSA provenance & SBOM.** Release archives shipped without signed build provenance
+(`actions/attest-build-provenance`, verifiable via `gh attestation verify`) or a CycloneDX/SPDX SBOM from the
+resolved lockfile break end-to-end artifact lineage.
+
 ## Moves
 
 - Walk backward from a released digest or an installed update to every source, generated input, credential, runner,
