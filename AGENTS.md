@@ -12,7 +12,7 @@ If a filled-in item disagrees with the repository, follow the repository and tel
 - version floor: `<language version, platform version, toolchain version>`
 - concurrency settings: `<strict concurrency mode, and any opt-in features>`
 - UI architecture: `<the type that holds view logic, and its name>`
-- file length limit: `<lines>`
+- file length limit: `300` (override per project if needed)
 - test double mechanism: `<macro, generator, or hand-written location>`
 - benchmark harness: `<package>`
 - allocation profiler: `<tool>`
@@ -46,12 +46,11 @@ Do not decrease completeness, correctness, or safety to increase speed.
 For each other exchange between goals, tell the user the reason and the cost.
 The rules in STEP 8 rank below these goals.
 
-# STEP 1. REFINE THE REQUEST
-The request sets the scope, and the scope is the deliverable. Do not narrow, widen, or replace it.
-Make each routine decision yourself, and write it in your answer as an assumption.
-Ask a question only if two readings of the request lead to materially different work. Before you ask, do all of the work that does not depend on the answer.
-If no user can answer during the task, choose a reading, state it as an assumption, and put the question in your answer.
-If you see a problem with the request, state it in one or two sentences, then continue under a stated assumption. If the user hears the problem and repeats the request, do the full request.
+# STEP 1. REFINE THE REQUEST (ZERO SILENT ASSUMPTIONS)
+The request sets the scope, and the scope is the deliverable. Do not narrow, widen, or add unrequested features, flags, or UI hints.
+Check ground truth first in the codebase, sibling repositories (backend, specs/RFCs, other client platforms), trackers, git history, and primary platform docs.
+Do not make silent assumptions: whenever requirements, UX behavior, naming, or trade-offs admit more than one plausible reading that code and docs do not settle, batch the questions into the harness's structured `question` tool with concrete options and trade-offs.
+Once a plan or task list is agreed, execute it end-to-end without pausing to ask whether to continue, checking user notes between steps.
 
 # STEP 2. WRITE THE PLAN
 Plan the implementation in atomic steps, grouped in phases. Change the code only after you write the plan.
@@ -189,11 +188,11 @@ Write a loop. Exception: if the data is a tree and an explicit work list is clea
 ## Edit with precision
 Change only the lines that the task needs. Rewrite a whole file only if it has fewer than 50 lines or more than half of its lines change; a rewrite hides the real change in the diff.
 
-## Organize the files
-- One primary type per file. A supporting type gets its own file.
-- An extension gets a file scoped to one conformance or one function.
-- Keep each file within the limit that the repository already follows. If the repository follows none, use the file length limit in CONFIGURATION.
-- A coherent group of tests may share one file.
+## Organize the files (300-line ceiling)
+- Keep each file at or below **300 lines** (code + comments) unless explicitly justified (such as keeping `private` invariants encapsulated or an irreducible data table).
+- Put one primary top-level type per file, named after the type; keep only tiny `private` supporting types in the same file.
+- Tight access control outranks file splitting: never widen `private` to `internal`, `package`, or `public` solely to split a file. Split independent concerns into `TypeName+Concern` files or a narrow helper type.
+- Maintain a short module/file map in the project's `AGENTS.md` when layout is non-obvious. A coherent group of tests may share one file.
 
 ## Keep business logic out of Views
 Put the business logic, the I/O, and the side effects in a testable type that the View observes. The project decides the name and the shape of that type (CONFIGURATION: UI architecture).
@@ -216,7 +215,7 @@ Write new tests with the project's current test framework. Migrate tests from a 
 - Do not wait with a sleep or a yield in a test; wait on the event.
 
 Write tests that attack the code, for each of these subjects that applies: edge cases, malformed input, race conditions, boundary values, the behavior when a resource becomes empty, state corruption, and incorrect assumptions.
-Each test must be necessary, different from all other tests, and examine meaningful behavior.
+Each test must be necessary, different from all other tests, and examine meaningful behavior. Do not write trivial tests for compiler-synthesized conformances (`Codable`, `Equatable`), plain getters/setters, or framework behavior.
 
 Size the tests to the task:
 - Write a permanent test where the task asks for one, or where the repository already keeps tests for this kind of change.
@@ -246,12 +245,12 @@ If you find a pre-existing issue while you build, run, or test:
 - Otherwise, do not repair it in this change. Report it as a follow-up with its location and reason. An unrequested repair makes the change harder to review.
 If a linter or a third-party event changed the files, ask the user what happened. Do not revert the changes.
 
-# STEP 12. BRANCH AND COMMIT
+# STEP 12. BRANCH, COMMIT, AND PR
 Before you write a branch name or a commit, detect the repository's convention (`project-conventions`, Part 1): read `git log --oneline -30`, `git branch -a`, and CONTRIBUTING.md and the pull-request template if they exist. Then:
-- Match the observed form exactly: the same segments, separator, and case.
-- If the repository uses a ticket identifier, take it from the current branch name or ask the user. Do not invent one.
-- If the repository follows no convention, use the form in CONFIGURATION. If CONFIGURATION gives none, do not introduce one. Write a short explicit title.
-- Keep the commit message short and explicit. Put one coherent, precisely scoped change in each commit.
+- On solo or unreviewed repositories, commit directly to `main` (do not open PRs when working alone) and rework unpushed commits so later commits never fix up earlier ones.
+- On reviewed repositories, match the observed branch/commit form, split large changes into ~15-minute stacked PRs, fill the PR template concisely (1–3 lines/bullets, keep unticked checkboxes, omit unrequested follow-up lists), and after human review push incremental fix commits rather than force-pushing unless asked.
+- Work in the primary checkout by default; create a `git worktree` only when another session or active WIP shares the checkout, and remove it immediately after merge.
+- Keep commit messages short and direct. Put one coherent, precisely scoped change in each commit.
 
 # STEP 13. SUGGEST IMPROVEMENTS
 For each stage below, suggest a check that the project does not already have:
@@ -285,12 +284,9 @@ This style applies to your answer, to each doc comment, and to each code comment
 - Read a file before you make a statement about its code. Recognizing a name is not knowing what the file contains now.
 
 ## Documentation and comments
-- Write a doc comment for each public declaration that you add or change, and for a private declaration only if its behavior is not obvious.
-- Write the contract, not the implementation steps. The contract gives each of these that applies: parameters, return value, errors, preconditions, invariants, complexity, thread safety, and cancellation behavior.
-- Use the documentation fields of the language's tooling for parameters, return value, errors, complexity, and preconditions. Give the complexity when the operation is not constant in time.
-- Do not repeat the signature.
-- In a function body, comment only the reason. The code shows the operation.
-- Keep each comment short. Write only what you can prove from the code. Do not describe a function that does not exist yet.
+- Keep inline comments scarce: comment only non-obvious reasons, invariants, or safety/performance subtleties in one short sentence. Never narrate what the code already says.
+- Write a concise doc comment for public declarations (and non-obvious internals): one-line summary plus non-obvious contracts, preconditions, isolation, or super-linear complexity. Do not add parameter/return/throws boilerplate that restates the signature, and do not document one parameter while sibling parameters stay undocumented unless it carries a unique constraint.
+- Keep `README.md` lean (~1–2 screens) and move detailed guides into `docs/`. Never store roadmaps or working diaries in repository docs.
 - Change a doc comment in the same change as its code. An incorrect comment is worse than no comment.
 
 # WORK ORDER
@@ -305,12 +301,12 @@ Do not wait for a command, a build, a test run, or another agent with a fixed sl
 - Start long commands, servers, and watchers with the harness's background job tools, do independent work while they run, wait on their completion events, and stop background jobs once they are no longer needed.
 - Do not pipe a command into tail, head, or grep when you need its result: the pipe returns the status of its last command. Send the output to a file, check the exit status, then read the part you need.
 
-# BUILD LESS
-A build takes minutes of every core; a test run from an existing build takes seconds. Details: `engineering-practices` §5 ("Builds", "Hand-back"), and `planner` ("Worktrees and Landing") for worktrees.
-- Build once per complete step (the code and its tests), not per edit. When a build fails, fix each error that is not a result of an earlier one, then build again.
-- While you work, build only the debug build of the package that you changed. Build release once per task, for the final numbers. Use about four builds per task, report them by kind, and give the reason if you use more.
-- Run tests from the existing build. Rebase on the main branch before the final build, then run the full suite once; the receiver does not build again.
-- Make no worktree for work that only reads.
+# BUILD AND TEST PROPORTIONATELY
+Local checks catch compilation and targeted logic errors fast; CI owns exhaustive suites and matrices. Details: `software-engineering` (`references/execution-and-conventions.md`).
+- Batch edits across the full logical slice before building. If a code change has not been built yet, run one debug build + formatter/linter before pushing.
+- On trivial, nit, doc, comment, or rebase tweaks to code that already built, run formatter/linter only, skip rebuilds (`--no-verify` when git hooks rebuild), and push.
+- Run only narrow filtered unit tests locally (`≤ 30 s` total, `--skip-build --filter …`) when touching non-trivial logic or fixing a bug. Leave full suites, static-analysis gates, and simulator matrices to CI (run full suite locally only when no CI exists or when asked).
+- At the end of an interactive macOS or iOS app task, build and install the app once so the user can test it immediately—without stealing window focus or cursor control.
 
 # FORBIDDEN
 - Do not crash on an operation that can fail: no forced unwrap, forced cast, or forced try.
@@ -336,7 +332,7 @@ The task is complete only if each condition below is true:
 - The code does each requirement in the specification.
 - No TODO, FIXME, or stub remains in the code in scope.
 - The code compiles with no error, and the change adds no warning.
-- The tests pass, or you explain each failure that remains.
+- Targeted local checks pass (and CI owns full suites, or the full suite passed locally when no CI exists).
 - Each new behavior has a test.
 - Each performance statement has a measurement.
 - Each regression that you found is repaired, or, if it costs only performance, is in the work queue.
@@ -398,7 +394,7 @@ func `parses each valid date`(input: String) throws {
 ```
 
 ## Documentation
-Use the DocC fields - Parameter, - Returns, - Throws, - Complexity, - Precondition, and - Note. Write - Complexity when the operation is not constant in time. `swift` §5 has an example.
+Keep DocC comments concise: summary + non-obvious contracts or `- Complexity` when super-linear; omit `- Parameter`/`- Returns`/`- Throws` boilerplate that restates the signature.
 
 ## Forbidden in Swift
 - Do not use DispatchQueue, except to pass a queue where a framework API requires one as a parameter. Use Task, TaskGroup, and AsyncStream instead.

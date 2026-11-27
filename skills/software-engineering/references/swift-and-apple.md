@@ -50,7 +50,7 @@ Keep pure domain, parser, model, and layout modules free of `AppKit`, `UIKit`, `
 ### Enforced source-shape & hygiene rules
 - **Zero crashes on fallible operations:** no `!` force unwrap, `try!`, `as!`, or implicitly unwrapped optionals (in `Sources`, `Tests`, and tools). Use `precondition(condition, "clear contract message")` only for broken internal programmer invariants, never for untrusted input.
 - **No `unowned` captures** (use `weak` to break retain cycles safely); every `fatalError` carries a diagnostic message.
-- **Bounded file & type shape:** one primary top-level type per file named after it; extensions in `Type+Feature.swift`; target function body ≤ 60 lines (hard error 80), type body ≤ 200 lines (hard error 400), file ≤ 250–300 code lines (hard error 500), cyclomatic complexity ≤ 10 (hard error 15), tuples ≤ 3 members, parameters ≤ 6, nesting ≤ 3.
+- **300-line file ceiling & layout:** file **≤ 300 lines** (code + comments) unless explicitly justified; one primary top-level type per file (`TypeName.swift`) with only tiny `private` helpers alongside. Tight `private` access control outranks file splitting—never widen `private` to `internal`/`public` just to split a file; split independent concerns into `TypeName+Concern.swift` or a narrow helper type. Keep function bodies ≤ 50–60 lines, cyclomatic complexity ≤ 10, tuples ≤ 3 members, parameters ≤ 4–6, and nesting ≤ 3.
 - **Deterministic runtime seams:** forbid raw `Date()` / system clock reads and raw unstructured `Task {}` in core code; route through an injected `Clock` / `Runtime` abstraction so tests control time and task lifetime.
 - **Static analyzer gates:** run strict formatting (`swift-format lint --strict`), metric linting (`swiftlint`), and static analyzers for ARC retain cycles, unreachable/dead code, code-duplication ratchets, resource-leak/durable-write obligations, and formal concurrency/state models where present. Every inline lint suppression requires a concrete reason on the same line.
 
@@ -64,7 +64,7 @@ Keep pure domain, parser, model, and layout modules free of `AppKit`, `UIKit`, `
 - **Typed errors:** prefer `throws(DomainError)` for closed failure domains; use `Result` only when storing or passing across non-throwing callbacks. Never write empty `catch {}` blocks; never return a fake default value that disguises failure as success.
 - **No `Any` or `[String: Any]`:** convert framework dictionaries (`userInfo`, XPC/WebKit messages) into strict typed structs at the boundary immediately.
 - **Access control & visibility:** start `private`, widen to `internal` / `package` / `public` only on concrete need; use `fileprivate` as last resort; use `@testable import` rather than widening access for tests.
-- **DocC contracts:** document every public API (and non-obvious internals) with `- Parameter`, `- Returns`, `- Throws`, `- Precondition`, `- Complexity` (whenever ≠ O(1)), and isolation/cancellation behavior. Update comments in the same commit as code.
+- **Scarce comments & minimal docstrings:** keep inline comments to non-obvious "why", invariants, or `SAFETY:` proofs in one sentence. Keep doc comments to a concise summary + non-obvious contracts or `- Complexity` (when super-linear); never add `- Parameter`/`- Returns`/`- Throws` boilerplate that restates the signature or document one parameter while leaving sibling parameters undocumented. Update comments in the same commit as code.
 
 ---
 

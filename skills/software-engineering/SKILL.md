@@ -24,14 +24,15 @@ Standalone, team- and language-agnostic engineering doctrine for high-assurance 
 §CURRENT   always target newest stable language mode · SDK API · compiler check · crypto · standard
            supported by the project floor · verify against live docs/SDKs at implementation time ·
            every threshold here is a floor ¬a ceiling · pin ∧ actively update (¬pin-and-forget)
-§FRAME     restate problem · invariants · non-goals · unknowns BEFORE designing or coding
-§SIMPLEST  simplest correct design wins · delete ≻ inline ≻ flatten ≻ extract · rule of three
+§FRAME     check ground truth in code/docs/sibling repos FIRST · 0 silent assumptions ⇒ batch `question` tool
+§LAYOUT    file ≤ 300 lines · 1 primary top-level type/file · tight `private` access control ≻ file split
+§SIMPLEST  simplest correct design wins · delete ≻ inline ≻ flatten ≻ extract · promote reuse only on ≥2–3 users
+§PROSE     scarce 'why'-only comments · minimal consistent docstrings · lean README · concise commits/PRs
 §EVIDENCE  claim ⇒ executable proof (test | measurement | tool output) · ¬guess · ¬unmeasured perf claim
-§BOUNDARY  every external input ∷ hostile · canonicalize → validate · allowlist ≻ denylist · fail closed
-§ORDER     red test → minimal general green → refactor/simplify → security & perf gate → verify
-§BUILD     whole step ⇒ 1 debug build (never edit-build loop) · release ×1 for final numbers · rerun ¬rebuild
-§WAIT      long command ⇒ harness background/wait tool · never fixed sleep · never swallow exit code in pipe
-§DONE      every requirement met · tests green · diff reviewed & simplified · scratch deleted · limits stated
+§BOUNDARY  every external input ∷ hostile · canonicalize → validate · allowlist ≻ denylist · 0 cross-scope leaks
+§BUILD     batch slice ⇒ 1 debug build + lint · narrow unit test ≤ 30 s · skip rebuild on nit · CI owns full suites
+§WAIT      long command ⇒ harness background job tools · never fixed sleep · never steal focus · clean scratch
+§DONE      0 warnings · 0 stubs · app built & installed at hand-off · agreed plan run end-to-end without nagging
 ```
 
 Legend: `§` rule · `!` must · `?` check · `¬` not · `∅` none · `∀` for each · `∈` in · `∷` is · `∧` and · `∨` or · `⇒` then · `≻` outranks · `→` becomes.
@@ -49,7 +50,7 @@ Never start coding on an ambiguous or solution-loaded prompt. Rephrase the reque
    - **Goal:** observable behavior or metric change.
    - **Invariants:** what must remain true (compatibility, security boundaries, data integrity, deployment floor).
    - **Non-goals:** what is explicitly out of scope so scope does not creep.
-   - **Assumptions & unknowns:** state routine assumptions plainly; ask the user only when competing readings change files, contracts, or destructive/outward actions.
+   - **Zero silent assumptions:** verify ground truth in code, sibling repositories (backend, specs/RFCs, other platforms), trackers, and primary vendor docs (`apple-docs`) first. Whenever any remaining ambiguity admits multiple plausible readings, batch questions in the structured `question` tool with concrete options and trade-offs. Never invent unrequested features, flags, or UI hints; once a plan is agreed, execute it end-to-end without "should I continue?" prompts.
 5. **Challenge the request when warranted.** Name contradictions, outdated assumptions, hidden blast radius, overengineering, or violated constraints before writing code.
 
 ---
@@ -70,7 +71,7 @@ Match ceremony to task size. Skip formal plans for trivial single-file edits; us
 - **Queue & regression discipline.** Maintain one work queue (FIFO within priority tier):
   - Correctness, safety, security, or data regressions **block landing** and are repaired first.
   - Pure performance regressions land only if queued immediately with location and measured baseline.
-- **Parallelism & worktrees.** Size parallel builders to `cores ÷ build-cores`. Use long-lived area worktrees (never per-task throwaways; zero worktrees for read-only work). Rebase on main and run the full suite once before hand-back so the receiver never rebuilds.
+- **Worktrees, branches & PRs.** Work in the primary checkout by default; create a `git worktree` only when another session or active WIP shares the checkout, and delete it right after merge. Commit directly to `main` on solo/unreviewed repos (reworking unpushed commits cleanly so later commits never patch earlier ones). On reviewed repos, use small atomic commits and stacked PRs (~15 min review), follow the repo PR template concisely (1–3 lines, keep unticked checkboxes), and after human review push incremental fix commits rather than force-pushing unless asked.
 
 See [references/planning-and-design.md](references/planning-and-design.md) when designing complex roadmaps, ADRs, system/UI architectures, or public APIs.
 
@@ -82,7 +83,7 @@ See [references/planning-and-design.md](references/planning-and-design.md) when 
 - **One source of truth.** Compute derived state; never store duplicate fields that can drift.
 - **Cohesion, boundaries, and seams.** Keep core logic pure and free of UI/OS frameworks so it runs identically in unit tests, CLI tools, and cross-platform builds. Inject external effects (clock, RNG, filesystem, network, process spawner) at the module boundary via narrow protocols or closures.
 - **Design for failure.** State invariants, error taxonomy, cancellation semantics, idempotency, and transactional rollback (no partial writes on failure; write temp file `O_EXCL | O_NOFOLLOW`, `fsync`, atomic rename).
-- **UI & interaction design.** Keep Views thin and pure (zero business logic, I/O, or sorting in render paths). Use design tokens, semantic controls (native buttons, keyboard navigation, VoiceOver/accessibility labels, Dynamic Type, contrast, reduced motion), and explicit empty/loading/error/offline states. Every destructive action requires confirmation or undo; every long operation shows determinate or clear indeterminate progress and supports cancellation.
+- **UI & interaction design.** Keep Views thin and pure (zero business logic, I/O, or sorting in render paths). Align elements optically (to visible glyph/icon bounds rather than raw frames), verify contrast in both light and dark appearances without clipping blurs or faking chrome, prefer native controls with `⌥` / `⌥⇧` progressive disclosure for power actions, back configurable behavior with strongly typed settings and sensible defaults, and handle `loading`/`empty`/`error`/`offline` states explicitly.
 - **Dependency & toolchain currency.** Adding a dependency is an architectural decision: prefer stdlib and OS frameworks, audit maintenance/license/transitives/privacy, pin by exact version or commit SHA, commit the lockfile, and wrap third-party types behind an internal boundary. Pinning is for reproducibility, never stagnation: keep toolchains, SDKs, dependencies, and CI actions continuously updated to their latest vetted releases in small, reviewed upgrades.
 
 ---
@@ -115,8 +116,8 @@ See [references/planning-and-design.md](references/planning-and-design.md) when 
 
 **Testing contract:**
 1. **Red → Green → Refactor.** Write a failing test first, confirm it fails for the right reason, write the minimum *general* code to pass (never special-case test inputs), then simplify.
-2. **One behavior, one reason to fail.** Assert observable contracts, never private implementation details. Use parameterized tests for input tables; use property-based tests for invariants (keep shrunk counterexamples as regression tests); use contract tests across module/service boundaries.
-3. **Deterministic by construction.** Zero `sleep`, `Task.yield`, wall-clock assertions, or unseeded RNGs in tests. Inject controllable clocks, seeded PRNGs, and event-driven waiters (`confirmation`, async signals).
+2. **High-signal behavior & regressions only.** Test business logic, state transitions, invariants, and bug regressions; must not write trivial tests for compiler-synthesized conformances (`Codable`, `Equatable`), plain getters/setters, or framework behavior, and must not loop benchmarks unrequested.
+3. **Deterministic & bounded.** Zero `sleep`, `Task.yield`, wall-clock assertions, or unseeded RNGs in tests; inject controllable clocks/PRNGs, put explicit time limits on process-spawning tests, and run experiments only against isolated temp directories (never real user profiles/data).
 4. **Hostile & edge-case battery.** Always test empty/boundary inputs, malformed/oversized/hostile bytes, cancellation mid-flight, resource exhaustion, partial-failure rollback, and concurrency races.
 5. **Mutation & fuzzing.** Treat surviving mutants on critical/security code as missing assertions. Keep fuzz targets + checked-in corpora for every untrusted parser; run mutation testing in PR/background loops, not inner edit loops.
 6. **Legacy code.** Pin current behavior with characterization tests, introduce the smallest seam (sprout, wrap, extract interface), then change behavior.
@@ -139,12 +140,12 @@ See [references/testing-and-debugging.md](references/testing-and-debugging.md) f
 - Read surrounding call sites and the repo's version floor before commenting.
 - Every finding states: **severity (`blocking` / `suggestion` / `nit`), file:line, cause, and concrete fix** (never vague "could be cleaner"). Batch repeated nits.
 - Never relax access control (`internal` → `public`) solely for tests, never mix refactor commits with behavior commits, and keep PRs reviewable in ~15 minutes.
-- **Pre-completion gate (required before claiming done):**
-  1. Re-read the original request and verify every item.
-  2. Build once per complete step (debug during work; release once for final numbers); run the full test suite and linters/analyzers on all touched packages.
-  3. Exercise the change as a user would (or state explicitly what could not be run).
-  4. Audit your own diff for leftovers, dead code, secrets, and simplification opportunities; delete all scratch files.
-  5. Report what was verified, what was not verified, and any residual risks or pre-existing follow-ups.
+- **Pre-completion & verification budget:**
+  1. Re-read the original request and verify every item (zero unrequested extras).
+  2. Batch edits first; run **one** debug build + formatter/linter, and run only narrow filtered unit tests (`≤ 30 s` total) when touching non-trivial logic or bugs. On nit/doc/comment/rebase tweaks to code that already built, run formatter/linter only (`--no-verify` if hooks rebuild) and push. Leave full suites, static-analysis gates, and simulator matrices to CI (run full suite locally only when no CI exists or when asked).
+  3. At the end of an interactive macOS or iOS app task, build and install the app once (using the project's signing/install flow) without stealing window focus or cursor control.
+  4. Audit your diff for dead code, secrets, cross-scope leaks, and simplification opportunities; delete `/tmp` and scratch artifacts.
+  5. Report concisely what changed, what was verified locally vs. delegated to CI, and any residual risks.
 
 ---
 
@@ -194,11 +195,11 @@ Apply these rules whenever the codebase uses Swift or targets Apple platforms. A
 
 1. **Check the floor and live docs first.** Read `Package.swift` (`swift-tools-version`, `platforms`), Xcode deployment targets, and the CI toolchain matrix; verify API behavior, deprecations, and availability via local Apple documentation tools or SDK `.swiftinterface`/headers inside Xcode — never from memory or unverified web guesses. Where the floor blocks a newer, safer primitive, use the best supported fallback and note what floor unlocks the upgrade.
 2. **Strictest compiler safety supported.** Enable the latest strict concurrency language mode, strict memory safety (`.strictMemorySafety()`), explicit existentials (`ExistentialAny`), strict import visibility (`InternalImportsByDefault`, `MemberImportVisibility`), warnings-as-errors, and any newer compiler safety flags available in the active toolchain. Zero `!`, `try!`, `as!`, IUOs, empty `catch`, `Any`/`[String: Any]` (decode into strict `Codable` at boundaries), or `unowned` captures.
-3. **Types & errors.** Prefer `struct`/`enum` over `class` (`final class` default); `some` over `any`; typed throws over untyped `Result`; `guard let` over nested `if let`; `private` first; DocC contract comments (`- Parameter`, `- Returns`, `- Throws`, `- Complexity` when ≠ O(1)).
+3. **Types, comments & docstrings.** Prefer `struct`/`enum` over `class` (`final class` default); `some` over `any`; typed throws over untyped `Result`; `guard let` over nested `if let`; `private` first. Keep inline comments scarce ("why" and invariants only, one sentence); keep docstrings to a concise summary + non-obvious contracts/complexity—never add `- Parameter`/`- Returns` boilerplate restating types or document one parameter while sibling parameters stay undocumented.
 4. **Concurrency & synchronization.** `@MainActor` for UI state; implicit `Sendable` across boundaries; structured concurrency (`TaskGroup`, `AsyncStream`) over unstructured `Task {}`; **no `DispatchQueue`** except when a framework API requires a queue parameter. Synchronization ladder: `@MainActor` → `Mutex<Value>` / `Atomic<Value>` (weakest correct memory ordering, never `.sequentiallyConsistent` by default) → bare `actor` only across async suspension invariants. Check `Task.checkCancellation()` in long loops.
 5. **Zero-copy memory & containers.** Prefer the newest safe borrowed-view and inline-storage primitives supported by the floor (`Span`, `RawSpan`, `MutableSpan`, `OutputSpan`, `InlineArray`, `ContiguousArray` + `reserveCapacity`); wrap any required `unsafe` operation behind a safe API with a documented `SAFETY:` invariant and bounds test.
 6. **SwiftUI & Apple runtime.** Adopt the newest declarative state and navigation APIs supported by the floor (e.g., `@Observable` over legacy `ObservableObject`); keep `body` and `init` pure; pass narrow view inputs; avoid initializing a `@State` property both at its declaration and again in `init` (macro-backed `@State` storage makes declaration defaults override `init` assignments). Keep core targets free of AppKit/UIKit/SwiftUI so Linux builds stay clean.
-7. **Source shape & tooling discipline.** One primary type per file (`Type+Feature.swift` for extensions), bounded file/type/function length and cyclomatic complexity, Swift Testing (`@Test`, `#expect`, `#require`, `confirmation`) for all non-XCUI tests, and automated formatter, linter, retain-cycle, dead-code, and clone-ratchet gates.
+7. **Source shape & 300-line ceiling.** Files must not exceed **300 lines** unless explicitly justified; one primary top-level type per file (`TypeName.swift`) with only tiny `private` helpers alongside. Tight `private` access control outranks file splitting—never widen `private` to `internal`/`public` just to split a file; split independent concerns via `TypeName+Concern.swift` or a narrow helper type. Keep `README.md` lean (~1–2 screens) and fan depth into `docs/`.
 
 See [references/swift-and-apple.md](references/swift-and-apple.md) for the live floor/fallback ladder, modern Swift concurrency/Span/Metal idioms, macro-backed SwiftUI state rules, and source-structure discipline.
 
@@ -206,6 +207,7 @@ See [references/swift-and-apple.md](references/swift-and-apple.md) for the live 
 
 ## References (Load on Demand)
 
+- [references/execution-and-conventions.md](references/execution-and-conventions.md) — **Working conventions**: zero silent assumptions, continuous pacing, 300-line file & access-control rules, fast local vs. CI test budget, scarce comments/docstrings, solo vs. stacked git flow, reuse/promotion, machine & CI etiquette.
 - [references/planning-and-design.md](references/planning-and-design.md) — Read when framing complex initiatives, writing ADRs/PRs/specs, designing APIs/UIs, or running simplification & code review passes.
 - [references/swift-and-apple.md](references/swift-and-apple.md) — Read when writing or reviewing Swift, SwiftUI, Metal, Keychain/CryptoKit, or Apple platform code.
 - [references/testing-and-debugging.md](references/testing-and-debugging.md) — Read when designing test strategies, Swift Testing suites, fuzzers, sanitizers, mutation testing, or diagnosing flaky/complex bugs.

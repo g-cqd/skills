@@ -24,7 +24,7 @@ Choose the test level by **what can fail**, not by rigid coverage percentages:
 | Critical end-to-end user or security journey | E2E test (< 5%) | Keep few, isolated, and deterministic |
 | Bug fix or security finding | Regression test (mandatory) | Must **fail before the fix** and pass after; link the bug/finding ID |
 
-Measure coverage by **behaviors and security invariants exercised**, not line percentage alone. Delete tests that assert nothing, duplicate another test, or test private implementation trivia.
+Measure coverage by **behaviors and security invariants exercised**, not line percentage alone. Delete or omit trivial tests for compiler-synthesized conformances (`Codable`, `Equatable`, `Hashable`), plain getters/setters, constants, or framework behavior, and never loop benchmarks unrequested.
 
 ---
 
@@ -34,7 +34,7 @@ Measure coverage by **behaviors and security invariants exercised**, not line pe
 1. **Example mapping (multi-rule features):** list Rules, Examples, and Open Questions before coding.
 2. **Red:** write the focused tests for one step together, build once, and confirm they fail **for the expected reason** (a compile error or wrong assertion is not a valid Red).
 3. **Green:** write the minimum **general** production code to pass (never special-case test inputs), build once, and run only the filtered tests (`swift test --skip-build --filter ...`).
-4. **Refactor & simplify:** clean up structure while keeping tests green; run the full touched-package suite once after rebasing on main before hand-back.
+4. **Refactor & hand-off:** clean up structure while keeping the targeted filtered tests (`≤ 30 s` total) and linter green; leave full package/simulator suites and matrices to CI unless the repo has no CI or the user explicitly asks.
 
 ### Legacy untested code
 1. Write **characterization tests** pinning current observable behavior (including quirks).
@@ -94,7 +94,7 @@ Mutation testing proves that tests actually catch logic faults rather than merel
 3. **One falsifiable hypothesis:** write *"X causes Y because Z"* and predict what the next experiment will show if true vs. false.
 4. **Bisect one variable at a time:** `git bisect` commits, halve inputs, or isolate code slices. Revert failed probe edits before trying the next variable.
 5. **State root cause in one sentence, then apply minimal fix:** fix the cause (never mask with a blind null-check or `try?`), verify the reproduction passes, and keep unrelated cleanups out of the fix commit.
-6. **Lock it in:** add a permanent red-first regression test and run the full touched suite.
+6. **Lock it in:** add a permanent red-first regression test, verify the targeted test (`≤ 30 s`) + build/lint locally, and let CI run the full suite.
 
 ### 3-failure escalation gate
 If three fix attempts fail, **stop immediately**. Write two explicit lists — **Proven facts (with evidence)** and **Unverified assumptions** — check the assumptions from scratch, and re-derive or discuss the architecture with the user before attempting a 4th change.

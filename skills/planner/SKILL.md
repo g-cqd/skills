@@ -28,8 +28,8 @@ Classify the request into a mode, then produce that mode's output: skill routing
 §EVIDENCE project-mode claim ⇒ ! citation ∨ ⚑unsupported
 §ORDER    validity ≻ rest · FIFO ∀tier · perf-regression ⇒ queue ¬block · queue ∷ own task list
 §WAIT     ¬fixed-sleep ⇒ harness background job tools · engineering-practices §6
-§LANES    building-agents ≤ cores ÷ build-cores · worktree ∷ per-area ∧ long-lived ¬per-task ·
-          read-only ⇒ ∅worktree · land ⇐ agent's-final-run ⇒ lead ¬rebuilds
+§LANES    building-agents ≤ cores ÷ build-cores · worktree ONLY on active checkout contention ·
+          delete temp worktree on merge · CI owns full suites
 §BAN      engage ∀conversational|trivial-edit · plan ∅classification ·
           synthesize peer-opinions ∅stating-disagreements
 ```

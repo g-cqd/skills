@@ -123,13 +123,13 @@ declaration.
 
 ## 5. Documentation contract
 
-Write a doc comment for each public declaration. Write one for a private declaration only when its
-behaviour is not obvious from its name and signature. Document the **contract**, not the
-implementation: parameters, return value, thrown errors, preconditions, invariants, complexity,
-isolation, and cancellation behaviour.
-
-Use DocC fields: `- Parameter`, `- Returns`, `- Throws`, `- Complexity`, `- Precondition`,
-`- Note`. State `- Complexity` when it is not O(1). Do not restate the signature.
+Keep inline comments scarce ("why", invariants, or `SAFETY:` proofs in one sentence). Write a
+concise doc comment for public declarations (and non-obvious internals): one-line summary plus
+non-obvious preconditions, isolation, cancellation, or `- Complexity` when super-linear. Do not
+add `- Parameter` / `- Returns` / `- Throws` boilerplate that restates the signature, and do not
+document one parameter while sibling parameters stay undocumented unless it carries a unique
+constraint. Keep files **≤ 300 lines** (one primary top-level type per file; tight `private`
+access control outranks file splitting).
 
 ```swift
 /// The display name, from the profile, or the account identifier if the profile has no name.

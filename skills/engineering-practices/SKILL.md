@@ -136,18 +136,15 @@ A build takes minutes of every core; a test run from an existing build takes sec
 
 ### Hand-back
 
-The agent that made a change verifies it. The receiver of the change does not verify it again.
+Keep local verification fast and leave exhaustive matrices to CI:
 
-1. **Catch up first.** Rebase your branch onto the current main line (or merge the main line in,
-   if the repository merges). If you are on the main line, or the change is uncommitted, skip the
-   rebase and say so. Then build once and run the full suite of each package the change
-   touches, and the suites of the packages that use an API you changed. That run verifies the
-   merged state.
-2. **Report what the run covered:** the base commit, each suite with its counts, and the builds
-   by kind.
-3. **The receiver lands the change without rebuilding** when the main line has not moved since, or
-   has moved only in other packages. If the main line changed the same packages, the agent runs
-   step 1 again from its warm build; the receiver does not run it from a cold build.
+1. **Compile, lint, and targeted test.** Run one debug build + formatter/linter (skip rebuilds on
+   nit/doc/comment/rebase tweaks to code that already built) and run narrow filtered unit tests
+   (`≤ 30 s` total) on touched logic/bugs. Leave full suites and heavy analyzers to CI unless the
+   repository has no CI or the user asks.
+2. **App hand-off.** When finishing an interactive desktop or mobile app task, build and install
+   the app once so the user can try it immediately.
+3. **Report concisely** what was verified locally vs. left to CI.
 
 ## 6. Waiting on long-running work
 

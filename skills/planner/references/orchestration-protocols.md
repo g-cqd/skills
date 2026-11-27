@@ -41,14 +41,11 @@ A worktree gives an agent that edits code its own checkout, and with it its own 
 
 With many worktrees, that cost is larger than the work itself.
 
-- **Few and long-lived.** Keep one worktree per package area, not one per task, and no more than
-  the agents that build at once. Pass a worktree from task to task within its area, rebasing it onto
-  the main line between tasks, so its build stays warm.
-- **None where none is needed.** Agents that read, research, review or plan work in the main
-  checkout and write nothing there. A small change that needs no long build is made on the main
-  checkout, one at a time.
-- **One agent per worktree at a time.** Remove a worktree, with its build directory, once its area
-  has no queued work.
+- **Main checkout by default.** Work directly in the primary clone whenever only one writer touches
+  it. Agents that read, research, review, or plan never create a worktree.
+- **Only on active contention.** Create a worktree only when concurrent writers or uncommitted WIP
+  share the checkout, cap concurrent builders to `cores ÷ build-cores`, and remove temporary
+  worktrees immediately after merge.
 
 ## Landing
 

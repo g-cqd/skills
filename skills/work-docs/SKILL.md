@@ -77,10 +77,10 @@ When the request does not show the perspective, ask: "Are you defining what need
 ### Gather First
 Before writing, read:
 1. `git diff` or the staged changes.
-2. When the repository uses ticket IDs, the ticket ID, from the branch name or commit messages (see `project-conventions`). Ask the user only if neither has one; if no one can answer, omit the ID and say so. When the repository does not use ticket IDs, omit the ID.
-3. The test changes: what was tested and how.
+2. `.github/PULL_REQUEST_TEMPLATE.md` (or equivalent) and 3–5 recent PRs by the author (`gh pr list --author @me --limit 5`). When a template exists, follow it concisely (1–3 lines/bullets), **preserve unticked checkboxes** as-is, and omit unrequested follow-up or rejected-alternative sections.
+3. When the repository uses ticket IDs, take the ticket ID from the branch name or commit messages (`project-conventions`) or ask the user; never invent one.
 
-### Structure
+### Fallback Structure (only when the repository has no PR template and external reviewers lack context)
 ```markdown
 ## What
 [1-2 sentence summary]
