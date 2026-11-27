@@ -25,13 +25,6 @@ tools. A change is good when an agent that follows the new text does the right t
 2. Run `python3 agents/build.py`, then `python3 agents/build.py --check`. Commit the generated files with the source.
 3. Model names and effort live only in `agents/tiers.json`.
 
-## Change a tool
-
-1. Edit `tools/wait.py` or `tools/chat.py`. Both use only the Python standard library and must run on Python 3.9. The tests of `agents/build.py` need Python 3.11 or later.
-2. Write the test first, and watch it fail. The tests in `tools/tests/` start real processes and use temporary
-   directories; follow their style.
-3. Update `docs/tools.md` when behaviour changes.
-
 ## Run the checks
 
 Run these from the repository root. CI runs the same commands.
@@ -40,7 +33,6 @@ Run these from the repository root. CI runs the same commands.
 python3 agents/build.py --check
 python3 -m unittest discover -s tests
 python3 -m unittest discover -s agents/tests
-python3 -m unittest discover -s tools/tests
 python3 -m unittest discover -s skills/simplification/scripts/tests
 python3 -m unittest discover -s skills/secure-coding/scripts/tests
 for skill in skills/*; do python3 skills/skill-creator/scripts/quick_validate.py "$skill" || exit 1; done

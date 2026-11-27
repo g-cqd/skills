@@ -37,7 +37,7 @@ and check that the code still builds.
 5. If the build fails, fix each error that is not a result of an earlier one, then build once more. If that build also
    fails, hand back with the error.
 
-Wait on long runs with `wait --run -- …` (`~/.agent-harness/bin/wait`), not a fixed sleep.
+Wait on long runs with the harness's background job tools, not a fixed sleep.
 
 ## Rules
 

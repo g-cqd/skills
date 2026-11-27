@@ -96,7 +96,7 @@ Try the levels in this order; stop when the budget from §1 is met.
 
 On a machine shared with other agents:
 
-- **Run the benchmark with `wait --run -- …`** (`tools/wait.py`), and record the load average (`uptime`) with each figure.
+- **Run the benchmark via the harness's background job runner**, and record the load average (`uptime`) with each figure.
 - **Interleave A and B in one job** (ABAB…, several rounds). Both sides see the
   same background load, so the load cancels out of the ratio. Report the ratio with the medians
   and the load the machine was under.
@@ -104,8 +104,7 @@ On a machine shared with other agents:
   Contention stretches wall time more than CPU time. Instruction and cycle counts
   (`/usr/bin/time -l`, `perf stat`) are more stable still.
 - **One quiet run per task, at most:** take an absolute number the report must state, such as a
-  budget in milliseconds, from one run when no other agent builds or tests. Ask in a `chat`
-  channel first, and record `uptime` with the figure. Do not use the quiet run as an iteration
+  budget in milliseconds, from one run when no other build or test runs on the machine, and record `uptime` with the figure. Do not use the quiet run as an iteration
   step or loop it over rounds.
 
 Compare like with like: same data, same build configuration, **release mode**.

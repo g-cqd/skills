@@ -271,16 +271,3 @@ Design rules:
   the prompt.
 `agents/tiers.json` maps tiers to models and is the cost dial. Re-audit it every three months: the
 best-value model in each class changes.
-
-## Tools
-
-`tools/` holds the tools that agents call: `wait.py` and `chat.py` (reference: `docs/tools.md`). A tool is one Python
-file that uses only the standard library, runs on Python 3.9 or later, and needs no setup. `install.sh` links it to
-`~/.agent-harness/bin/<name>`, so a skill or an agent names the tool by that path and does not depend on `PATH`.
-
-Rules for a tool:
-- It keeps no state that the caller cannot see. `wait` keeps none; `chat` keeps flat files under `$CHAT_HOME`.
-- It exits with a status that means one thing: 0 done, 124 the time ran out, 2 usage error.
-- Its tests start real processes and use temporary directories. Write the test first and watch it fail.
-- A skill that tells an agent to use a tool carries the rule in its `SKILL.md` and the command table in `references/`
-  (`planner` holds `chat`, `engineering-practices` holds `wait`).

@@ -15,7 +15,6 @@
 #     skills/<name>        -> <repo>/third_party/<submodule>/<dir>   (skills from submodules: REA)
 #     xcode-skills/<name>/                                       (Apple's Xcode skill pack, exported from your Xcode;
 #                                                                 reference material for the owning skills, not linked as skills)
-#     bin/wait, bin/chat   -> <repo>/tools/wait.py, <repo>/tools/chat.py   (one path every agent can call)
 #
 #   ~/.claude/  ~/.codex/  ~/.vibe/  ~/.gemini/config/  ~/.config/opencode/  ~/.pi/agent/  ~/.copilot/
 #     skills               -> ~/.agent-harness/skills
@@ -280,15 +279,17 @@ if [[ $DRY -eq 0 && -d "$ROOT/skills" ]]; then
   done
 fi
 
-# The wait and chat tools at paths that never move, so an agent calls ~/.agent-harness/bin/wait without touching PATH.
-for tool in wait chat; do
-  if [[ -f "$SRC/tools/$tool.py" ]]; then
-    link "$SRC/tools/$tool.py" "$ROOT/bin/$tool"
-  fi
-done
-# The earlier work tool is gone; drop its link when it still points into this repository.
-if [[ -L "$ROOT/bin/work" && "$(readlink "$ROOT/bin/work")" == "$SRC/skills/planner/scripts/work.py" && $DRY -eq 0 ]]; then
-  rm -f "$ROOT/bin/work"
+# The earlier wait, chat, and work tools are gone; drop stale links left by previous installs.
+if [[ $DRY -eq 0 && -d "$ROOT/bin" ]]; then
+  for retired in wait chat work; do
+    if [[ -L "$ROOT/bin/$retired" ]]; then
+      target="$(readlink "$ROOT/bin/$retired")"
+      if [[ "$target" == "$SRC"/tools/* || "$target" == "$SRC"/skills/* || "$target" == "$ROOT"/releases/* || ! -e "$ROOT/bin/$retired" ]]; then
+        rm -f "$ROOT/bin/$retired"
+      fi
+    fi
+  done
+  rmdir "$ROOT/bin" 2>/dev/null || true
 fi
 
 # Optional agents/ — each harness reads a different format, so the root holds

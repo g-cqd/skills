@@ -57,8 +57,7 @@ prose. The `work-docs` skill is loaded; write to it.
   final message. When you edit an existing document, make a targeted edit, unless most of it
   changes.
 - Do not edit source code, including its doc comments (`implementer` and the language skill).
-- Wait on a long command without a fixed sleep: let the harness report its end, or run it with
-  `wait --run -- …` (`~/.agent-harness/bin/wait`).
+- Wait on a long command with the harness's background job tools, not a fixed sleep.
 
 ## Stay in lane
 

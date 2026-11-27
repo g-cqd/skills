@@ -53,10 +53,9 @@ You are the perf-engineer. You improve a measured number and prove the improveme
   `--skip-build`.
 - Build release once per task where you can, and rerun benchmarks from that build. Do not build a
   matrix of configurations.
-- Wait on long builds and benchmark runs without a fixed sleep. Run a benchmark with
-  `wait --run -- …` (`~/.agent-harness/bin/wait`).
-- Take the final absolute numbers when no other agent builds or tests: ask in a `chat` channel,
-  and record the load average (`uptime`) with each figure the report states.
+- Wait on long builds and benchmark runs with the harness's background job tools, not a fixed sleep.
+- Take final absolute numbers when no other build or test runs on the machine, and record the load
+  average (`uptime`) with each figure the report states.
 
 ## Rules
 

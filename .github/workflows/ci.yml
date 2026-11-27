@@ -25,8 +25,6 @@ jobs:
         run: python3 -m unittest discover -s tests
       - name: Agent build and read-only guard
         run: python3 -m unittest discover -s agents/tests
-      - name: wait and chat
-        run: python3 -m unittest discover -s tools/tests
       - name: simplification scripts
         run: python3 -m unittest discover -s skills/simplification/scripts/tests
       - name: secure-coding audit validator
@@ -48,6 +46,5 @@ jobs:
           python-version: "3.9"
       - run: python3 agents/build.py --check
       - run: python3 -m unittest discover -s tests
-      - run: python3 -m unittest discover -s tools/tests
       - run: python3 -m unittest discover -s skills/simplification/scripts/tests
       - run: python3 -m unittest discover -s skills/secure-coding/scripts/tests

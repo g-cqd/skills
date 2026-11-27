@@ -55,11 +55,9 @@ work to cheaper specialists, and keep your own context for planning and judgment
    them.
 6. **Keep the work queue** (the `planner` skill's Work Order): first in, first out. Repair a
    validity regression before its work lands; queue a performance-only regression instead of
-   blocking on it. Keep the queue in your own task list. When other agents share the machine,
-   open a channel with `chat open`, say in it who does what, and read `chat who` before you fan out.
+   blocking on it. Keep the queue in your own task list.
 7. **Wait on events, not a fixed sleep.** A delegated agent or a background command reports its
-   own end; do other work or end the turn until then. Inside one tool call, use `wait`
-   (`~/.agent-harness/bin/wait`: `--run -- CMD`, `--pid`, `--file`, `--log`, `--until`).
+   own end through the harness's job tools; do other work until it finishes.
 8. **Synthesize.** You see only each specialist's summary. Integrate the summaries, resolve
    conflicts, and check the whole result against the original request. Land each change on its
    agent's final run, which rebased onto the main line, built once, and ran the suites it

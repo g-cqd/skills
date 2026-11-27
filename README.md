@@ -1,6 +1,6 @@
 # Agent Harness
 
-A vendor-neutral set of **agent skills**, **specialized subagents**, **two small tools**, and one **engineering
+A vendor-neutral set of **agent skills**, **specialized subagents**, and one **engineering
 standard** for AI coding harnesses: Claude Code, OpenAI Codex, Mistral Vibe, Google Antigravity (`agy`), OpenCode,
 Pi, and GitHub Copilot. One source, linked into each harness installed on the machine.
 
@@ -8,11 +8,10 @@ Pi, and GitHub Copilot. One source, linked into each harness installed on the ma
   loads `swiftui`.
 - **Subagents** are scoped workers that the main agent delegates to, each on the cheapest model that can do its job.
 - **`AGENTS.md`** is the engineering standard: how to plan, write, review, test, and ship.
-- **`wait` and `chat`** let agents wait for work to finish and talk to each other on one machine.
 
 ## Requirements
 
-- macOS or Linux, with `bash` and Python 3.9 or later. Nothing else: the tools, the install script, and the build
+- macOS or Linux, with `bash` and Python 3.9 or later. Nothing else: the install script and the build
   script use only the Python standard library. The tests of `agents/build.py` need Python 3.11 or later (`tomllib`), and the skill validator
   (`skills/skill-creator/scripts/quick_validate.py`) needs PyYAML.
 - At least one supported harness. `install.sh` links into each one it finds.
@@ -31,12 +30,7 @@ git clone git@github.com:g-cqd/skills.git && cd skills
 
 `--skip-submodules`, `--skip-xcode`, and `--skip-third-party` leave out the submodule skills, the Xcode pack, or both.
 
-Re-run `./install.sh` after `git pull`. Check the install:
-
-```bash
-~/.agent-harness/bin/wait --until true      # prints: wait: `true` exited 0 after 0.0s
-~/.agent-harness/bin/chat hello             # prints this session's agent id
-```
+Re-run `./install.sh` after `git pull`.
 
 ## What's in here
 
@@ -47,17 +41,16 @@ Re-run `./install.sh` after `git pull`. Check the install:
 | `skills/` | 22 skills (including unified `software-engineering`). The catalog is below. |
 | `profiles/` | Named install subsets (`profiles/minimal.txt`, installed with `./install.sh --profile minimal`) alongside the default full catalog. |
 | `agents/` | 14 subagents, each with a model tier, its own tools, and a turn budget where the job is small. One neutral source renders for six harness formats. |
-| `tools/` | `wait` and `chat`: single Python files, linked to `~/.agent-harness/bin`. See `docs/tools.md`. |
 | `third_party/` | Git submodule: the REA `reverse-engineer-anything` skill. `third_party/SKILLS` lists the skill directory in each submodule. |
 | `install.sh` | Fetches the submodule skills, exports the Xcode skill pack, and links everything into each detected harness. |
-| `docs/` | `AUTHORING.md` (how to write a skill, an agent, or a tool) and `tools.md` (the tools: reference and design). |
+| `docs/` | `AUTHORING.md` (how to write a skill or an agent). |
 
 ## Skills
 
 | Group | Skills |
 |---|---|
 | Unified A-to-Z | `software-engineering` (standalone end-to-end engineering standard: framing, design, Swift/Apple, testing, debugging, review, simplification, performance/memory/energy, security hardening, CI/CD, releases) |
-| Plan and deliver | `planner` (plans, task lists, orchestration, second opinions, agent messaging with `chat`), `engineering-practices` (small changes, delivery, waiting with `wait`), `project-conventions`, `simplification`, `work-docs` |
+| Plan and deliver | `planner` (plans, task lists, orchestration, second opinions), `engineering-practices` (small changes, delivery), `project-conventions`, `simplification`, `work-docs` |
 | Review and verify | `code-review`, `debugging`, `testing`, `performance-engineering`, `algorithms` |
 | Security and memory | `secure-coding` (reviews, and full audits with a coverage ledger and independent verification), `memory-safety`, `pentest` |
 | Swift and Apple platforms | `swift`, `swiftui`, `apple-platforms`, `apple-docs` (MCP + CLI + SDK interfaces), `xcode` |
@@ -81,15 +74,6 @@ independent verification, and a validator for its JSON files. See `THIRD-PARTY-N
 
 A skill description opens with its tier: `Language-agnostic:`, `Apple platforms:`, or the language or domain it owns.
 Each skill names the neighbouring skill that owns what it leaves out.
-
-## Tools
-
-| Tool | Use | Example |
-|---|---|---|
-| `wait` | Block until a stated condition holds: a process exits, a file is ready, a path is gone, a log line matches, or a command exits 0. It keeps no state. | `wait --run -- swift test` |
-| `chat` | Talk to other agents on this machine. A channel is one JSONL file with threads, reactions, unread cursors, and online status. No daemon, no database. | `chat say general "taking the parser task" --re ID` |
-
-`docs/tools.md` has the full reference, the file formats, and the reasoning behind the design.
 
 ## Subagents and cost
 
@@ -184,7 +168,6 @@ instructions/        per-harness additions to AGENTS.md (codex.md)
 install.sh           the linker
 skills/<skill>/      skills                 (SKILL.md, references/, evals/, scripts/)
 third_party/         the rea submodule, and SKILLS, the list of skill directories in submodules
-tools/               wait.py, chat.py, tests/
 agents/
   src/<name>.md      neutral agent sources: edit these
   tiers.json         tier -> per-harness model and effort (the cost dial)
@@ -193,7 +176,7 @@ agents/
   claude/  codex/  copilot/  vibe/  opencode/  agy/    generated, one format each
   tests/             tests for build.py and the guard
 tests/               tests for install.sh
-docs/                AUTHORING.md, tools.md
+docs/                AUTHORING.md
 ```
 
 ## Portability
@@ -211,7 +194,6 @@ Run these from the repository root. CI runs the same commands (`.github/workflow
 python3 agents/build.py --check                  # generated agent files are current
 python3 -m unittest discover -s tests            # install.sh against a temporary home
 python3 -m unittest discover -s agents/tests     # build.py and the read-only Bash guard
-python3 -m unittest discover -s tools/tests      # wait and chat
 python3 -m unittest discover -s skills/simplification/scripts/tests
 python3 -m unittest discover -s skills/secure-coding/scripts/tests
 for skill in skills/*; do python3 skills/skill-creator/scripts/quick_validate.py "$skill" || exit 1; done

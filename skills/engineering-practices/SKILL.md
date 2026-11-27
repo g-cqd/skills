@@ -3,8 +3,7 @@ name: engineering-practices
 description: >-
   Language-agnostic: refactoring, small reviewable changes, dependency hygiene, delivery
   flow, and verification before completion. Use when organizing commits or PRs, choosing
-  branch and release practices, upgrading dependencies, changing legacy code, or waiting on a
-  long build, test run, or process with `wait`. For code
+  branch and release practices, upgrading dependencies, or changing legacy code. For code
   review, use `code-review`; for test design, use `testing`; for task decomposition, use
   `planner`.
 allowed-tools:
@@ -34,7 +33,7 @@ one is `planner`.
           1 config while-developing ¬matrix · release ×1 per-task ∋ A∧B in-one-binary ·
           rerun ⇒ ¬rebuild · budget ≈4 per-task · report ∋ builds-by-kind
 §HANDBACK rebase-on-main ⇒ final build ⇒ full-suite ∀touched-packages ⇒ receiver ¬rebuilds
-§WAIT     long-work ⇒ harness-notify | wait (tools/wait.py) ⇒ ¬fixed-sleep
+§WAIT     long-work ⇒ harness-job-tools ⇒ ¬fixed-sleep
 §DEPS     add-dependency ∷ architectural-decision ¬convenience
 §BAN      big-bang-rewrite · drive-by-churn · flag ∅removal-ticket ·
           "tests pass" as done-evidence
@@ -155,43 +154,18 @@ The agent that made a change verifies it. The receiver of the change does not ve
 Do not wait for a build, a test run, or a delegated job with a fixed `sleep`: it either wastes
 time or checks too early. Wait on the event:
 
-1. **Let the harness notify you.** When the harness runs a command in the background and reports
-   its end (Claude Code does this for background commands and subagents), start the command that
-   way. Then continue with other work, or end the turn.
-2. **Otherwise run it with `wait`.** `wait` is `tools/wait.py`, installed at `~/.agent-harness/bin/wait`; it
-   needs no setup and keeps no state. It checks its conditions and returns when they hold, or with 124 when its limit
-   passes (570 s by default, below the tool call's own limit):
-   ```sh
-   wait --run -- swift test --parallel               # start it as a job, wait, exit with its status
-   wait --job 19a2b3c4d5e-3f2a                       # a job still running after a 124: keep waiting
-   wait --pid 4242                                   # a process you started elsewhere
-   wait --file tests.status                          # a status file; one holding a number exits with it
-   wait --log build.log --match 'Build complete'     # a line in a log (a Python regular expression)
-   wait --gone P2.lock                               # a lock file its phase deletes
-   wait --until "test -f out/report.json"            # done when the command exits 0: your own definition of done
-   ```
-   On 124 a job keeps running: continue with `wait --job ID` (the id is on the first line `wait`
-   prints), not with a second `--run`, which would start the command again. Other conditions:
-   run the same command again. Do not use a longer sleep. `wait --stop ID` stops a job. After 3 timeouts with no new log
-   output, stop and report that the job is stalled.
-3. **Keep the output complete and the status true.** Do not pipe a command into `tail`, `head`, or
+1. **Use the harness's background job tools.** Start long commands or subagents as background jobs,
+   continue with independent work, wait on completion events rather than polling with `sleep`, and
+   stop background jobs once they are no longer needed.
+2. **Keep the output complete and the status true.** Do not pipe a command into `tail`, `head`, or
    `grep` when you need its result: the pipe reports the last command's status, so a failed build
-   reads as success, and the cut output hides the result lines. Use `wait --run` instead: it passes
-   the output through and exits with the command's own status (127 when the command is missing, 126
-   when it cannot run, 128 plus the signal number when a signal killed it). To keep all the output,
-   send it to a file, check the exit status, then read the part you need. If the command must be a
-   pipeline, run it as `bash -c 'set -o pipefail; …'`.
-4. **Take the result from the exit status and from the tool's own report, not from the log.**
-   - Output sent to a file is buffered in blocks (Swift's test runner included), so a `--log` wait
-     can lag the work. `wait --run` and `--pid` wait on the process itself.
-   - A run that hangs or is killed loses its last log lines, summary included, so the log does not
-     show the test that did not finish.
-   - Use the report the tool writes: `swift test --xunit-output FILE`, `xcodebuild
-     -resultBundlePath DIR`.
-   - Treat a missing summary as a run that did not finish, not as a pass.
-   - To watch a long run live, run it under a pseudo-terminal, which buffers by line:
-     `script -q /dev/null swift test`.
-5. **Report the time the work took** from the line `wait` prints on its last line of standard error.
+   reads as success, and the cut output hides the result lines. Send output to a file, check the
+   exit status, then read the part you need. If the command must be a pipeline, run it with
+   `set -o pipefail`.
+3. **Take the result from the exit status and from the tool's own report, not from partial logs.**
+   - A run that hangs or is killed loses its last buffered log lines, summary included.
+   - Use structured output (`swift test --xunit-output FILE`, `xcodebuild -resultBundlePath DIR`)
+     when inspecting failures, and treat a missing summary as an incomplete run rather than a pass.
 
 ## 7. Rationalizations
 

@@ -107,25 +107,14 @@ class InstallTests(InstallCase):
         self.assertNotIn("CODEX MODEL PREFERENCE", (self.home / ".claude" / "CLAUDE.md").read_text())
         self.assertNotIn("CODEX MODEL PREFERENCE", (REPO / "AGENTS.md").read_text())
 
-    def test_wait_and_chat_are_linked_at_a_stable_path_and_run_from_it(self):
-        self.assertEqual(self.install().returncode, 0)
-        wait, chat = self.root / "bin" / "wait", self.root / "bin" / "chat"
-        self.assertLinks(wait, REPO / "tools" / "wait.py")
-        self.assertLinks(chat, REPO / "tools" / "chat.py")
-        environment = {"HOME": str(self.home), "PATH": "/usr/bin:/bin", "CHAT_HOME": str(self.home / "chat"),
-                       "CHAT_ANCHOR_PID": str(os.getpid())}
-        ran = subprocess.run([str(wait), "--run", "--", "echo", "linked"], env=environment, capture_output=True,
-                             text=True, timeout=120, cwd=self.directory.name)
-        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
-        self.assertIn("linked", ran.stdout)
-        hello = subprocess.run([str(chat), "hello"], env=environment, capture_output=True, text=True, timeout=120)
-        self.assertEqual(hello.returncode, 0, hello.stdout + hello.stderr)
-
-    def test_a_link_to_the_removed_work_tool_is_dropped(self):
+    def test_links_to_removed_wait_chat_and_work_tools_are_dropped(self):
         (self.root / "bin").mkdir(parents=True)
         (self.root / "bin" / "work").symlink_to(REPO / "skills" / "planner" / "scripts" / "work.py")
+        (self.root / "bin" / "wait").symlink_to(REPO / "tools" / "wait.py")
+        (self.root / "bin" / "chat").symlink_to(REPO / "tools" / "chat.py")
         self.assertEqual(self.install().returncode, 0)
-        self.assertFalse((self.root / "bin" / "work").is_symlink())
+        for retired in ("work", "wait", "chat"):
+            self.assertFalse((self.root / "bin" / retired).is_symlink(), retired)
 
     def test_a_dry_run_exits_0_and_changes_nothing(self):
         result = self.install("--dry-run")
@@ -185,7 +174,6 @@ class InstallTests(InstallCase):
             self.assertFalse((self.home / ".claude" / name).exists(), name)
         self.assertEqual(other.read_text(), "{}\n")
         self.assertTrue((self.root / "skills").is_dir())
-        self.assertTrue((self.root / "bin" / "wait").is_symlink(), "the root, wait and chat included, is left in place")
 
     def test_an_unknown_option_exits_2(self):
         result = self.install("--frobnicate")
