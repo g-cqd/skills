@@ -89,6 +89,7 @@ class InstallTests(InstallCase):
         self.assertLinks(self.home / ".pi" / "agent" / "AGENTS.md", self.root / "AGENTS.md")
         self.assertFalse((self.home / ".pi" / "agent" / "agents").exists())
         self.assertLinks(self.home / ".agents" / "skills", self.root / "skills")
+        self.assertLinks(self.home / ".agents" / "AGENTS.md", self.root / "AGENTS.md")
 
         uninstall = self.install("--uninstall")
         self.assertEqual(uninstall.returncode, 0, uninstall.stdout + uninstall.stderr)
@@ -97,6 +98,7 @@ class InstallTests(InstallCase):
         self.assertFalse((self.home / ".gemini" / "config" / "agents").exists())
         self.assertFalse((self.home / ".vibe" / "agents").exists())
         self.assertFalse((self.home / ".agents" / "skills").exists())
+        self.assertFalse((self.home / ".agents" / "AGENTS.md").exists())
 
     def test_codex_reads_the_standard_and_its_own_additions_and_no_other_harness_does(self):
         (self.home / ".codex").mkdir()
@@ -174,6 +176,24 @@ class InstallTests(InstallCase):
             self.assertFalse((self.home / ".claude" / name).exists(), name)
         self.assertEqual(other.read_text(), "{}\n")
         self.assertTrue((self.root / "skills").is_dir())
+
+    def test_cli_on_path_does_not_create_missing_harness_dirs_unless_harnesses_flag_requests_it(self):
+        fake_bin = pathlib.Path(self.directory.name) / "fakebin"
+        fake_bin.mkdir()
+        for cli in ("agy", "codex", "pi"):
+            exe = fake_bin / cli
+            exe.write_text("#!/bin/sh\nexit 0\n")
+            exe.chmod(0o755)
+        result = self.install(extra={"PATH": f"{fake_bin}:/usr/bin:/bin"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.home / ".gemini").exists())
+        self.assertFalse((self.home / ".codex").exists())
+        self.assertFalse((self.home / ".pi").exists())
+
+        explicit = self.install("--harnesses", "copilot", extra={"PATH": f"{fake_bin}:/usr/bin:/bin"})
+        self.assertEqual(explicit.returncode, 0, explicit.stdout + explicit.stderr)
+        self.assertLinks(self.home / ".copilot" / "skills", self.root / "skills")
+        self.assertFalse((self.home / ".gemini").exists())
 
     def test_an_unknown_option_exits_2(self):
         result = self.install("--frobnicate")

@@ -22,7 +22,8 @@
 #     <AGENTS.md|CLAUDE.md>-> the file that harness reads
 #
 # Usage:
-#   ./install.sh                   detect harnesses, link everything (default full profile)
+#   ./install.sh                   link into harnesses whose home directory exists (default full profile)
+#   ./install.sh --harnesses LIST  comma-separated harness ids to link/create (claude,codex,vibe,agy,opencode,pi,copilot)
 #   ./install.sh --profile NAME    link only skills listed in profiles/NAME.txt (e.g. --profile minimal)
 #   ./install.sh --dry-run         print what would happen, change nothing
 #   ./install.sh --uninstall       remove only the symlinks this script created
@@ -35,7 +36,7 @@ set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${AGENT_HARNESS_ROOT:-$HOME/.agent-harness}"
-DRY=0; MODE=install; SKIP_SUBMODULES=0; SKIP_XCODE=0; PROFILE="default"
+DRY=0; MODE=install; SKIP_SUBMODULES=0; SKIP_XCODE=0; PROFILE="default"; HARNESSES=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
@@ -48,6 +49,12 @@ while [[ $# -gt 0 ]]; do
       PROFILE="$2"; shift 2 ;;
     --profile=*)
       PROFILE="${1#--profile=}"; shift ;;
+    --harnesses)
+      [[ $# -ge 2 ]] || { printf '--harnesses requires a comma-separated list
+' >&2; exit 2; }
+      HARNESSES="$2"; shift 2 ;;
+    --harnesses=*)
+      HARNESSES="${1#--harnesses=}"; shift ;;
     -h|--help) sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
   esac
@@ -110,8 +117,9 @@ unlink_ours() {
 }
 
 # ---------------------------------------------------------------------------
-# Harness table: name | home dir | CLI binary | instruction file | agents subdir
-# A harness is "present" if its home dir exists OR its CLI is on PATH.
+# Harness table: name | home dir | id | instruction file | agents subdir
+# A harness is linked only when its home dir already exists (opt-in on disk) OR its id is listed in --harnesses.
+# Never auto-create a harness home directory merely because a CLI binary happens to sit on PATH.
 # If the instruction file starts with '/', it is an absolute path (e.g. Antigravity
 # reads ~/.gemini/AGENTS.md while skills and agents live under ~/.gemini/config/).
 # Each harness reads a different agent format, so it gets its own rendered subdir
@@ -123,9 +131,15 @@ harness_rows=(
   "Vibe|${VIBE_HOME:-$HOME/.vibe}|vibe|AGENTS.md|vibe"
   "Antigravity|$HOME/.gemini/config|agy|$HOME/.gemini/AGENTS.md|agy"
   "OpenCode|${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}|opencode|AGENTS.md|opencode"
-  "Pi|${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}||AGENTS.md|"
+  "Pi|${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}|pi|AGENTS.md|"
   "Copilot|$HOME/.copilot|copilot|AGENTS.md|copilot"
 )
+
+harness_requested() {
+  local hid="$1"
+  [[ -n "$HARNESSES" ]] || return 1
+  [[ ",$HARNESSES," == *",$hid,"* ]]
+}
 
 # ---------------------------------------------------------------------------
 [[ -f "$SRC/AGENTS.md" ]] || { printf 'AGENTS.md not found next to install.sh (%s)\n' "$SRC" >&2; exit 1; }
@@ -142,7 +156,10 @@ if [[ "$MODE" == uninstall ]]; then
       unlink_ours "$instr_link"   "$ROOT"
     fi
   done
-  [[ -d "$HOME/.agents" ]] && unlink_ours "$HOME/.agents/skills" "$ROOT"
+  if [[ -d "$HOME/.agents" ]]; then
+    unlink_ours "$HOME/.agents/skills"    "$ROOT"
+    unlink_ours "$HOME/.agents/AGENTS.md" "$ROOT"
+  fi
   say ""; say "Canonical root left in place: $ROOT (rm -rf it to remove)."
   exit 0
 fi
@@ -312,13 +329,16 @@ fi
 # ---------------------------------------------------------------------------
 found=0
 for row in "${harness_rows[@]}"; do
-  IFS='|' read -r hname home cli instr afmt <<<"$row"
-  present=0
-  [[ -d "$home" ]] && present=1
-  [[ "$hname" == "Antigravity" && -d "$HOME/.gemini/antigravity-cli" ]] && present=1
-  [[ "$hname" == "Pi" && -d "$HOME/.pi" ]] && present=1
-  [[ -n "$cli" ]] && command -v "$cli" >/dev/null 2>&1 && present=1
-  [[ $present -eq 1 ]] || { skip "$hname not detected"; continue; }
+  IFS='|' read -r hname home hid instr afmt <<<"$row"
+  if [[ -n "$HARNESSES" ]]; then
+    harness_requested "$hid" || { skip "$hname not in --harnesses"; continue; }
+  else
+    present=0
+    [[ -d "$home" ]] && present=1
+    [[ "$hname" == "Antigravity" && -d "$HOME/.gemini/antigravity-cli" ]] && present=1
+    [[ "$hname" == "Pi" && -d "$HOME/.pi" ]] && present=1
+    [[ $present -eq 1 ]] || { skip "$hname not detected"; continue; }
+  fi
 
   found=$((found + 1))
   step "Linking into $hname ($home)"
@@ -345,7 +365,8 @@ done
 
 if [[ -d "$HOME/.agents" ]]; then
   step "Linking shared Agent Skills directory ($HOME/.agents)"
-  link "$ROOT/skills" "$HOME/.agents/skills"
+  link "$ROOT/skills"    "$HOME/.agents/skills"
+  link "$ROOT/AGENTS.md" "$HOME/.agents/AGENTS.md"
 fi
 
 say ""

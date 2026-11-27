@@ -152,10 +152,10 @@ standard, the skills, the agents, and `bin/wait` and `bin/chat`. Besides the ski
 A real directory that is in the way of a skill link moves to `~/.agent-harness/backups/`, not into the skills
 directory, where a harness would load it as a second copy.
 
-It then detects each harness (by its home directory
-or its CLI on `PATH`) and symlinks the harness's `skills/`, `agents/`, and instruction file (`CLAUDE.md` or
-`AGENTS.md`, whichever the harness reads). When `~/.agents` exists, it also links `~/.agents/skills` to the canonical
-skills directory.
+It then detects each harness whose home directory exists on disk (or the harnesses named by `--harnesses`) and
+symlinks the harness's `skills/`, `agents/`, and instruction file (`CLAUDE.md` or `AGENTS.md`, whichever the harness
+reads). It never creates a harness directory merely because a CLI binary is on `PATH`. When `~/.agents` exists, it
+links both `~/.agents/skills` and `~/.agents/AGENTS.md` to the canonical root.
 
 Running it twice gives the same result. It replaces only its own symlinks and the links named after this repository's
 skills, backs up a real file to `<name>.bak` before replacing it, and leaves other skills in the root unchanged.
